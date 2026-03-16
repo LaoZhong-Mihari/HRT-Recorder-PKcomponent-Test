@@ -10,6 +10,7 @@
 		550EBB5E2ECEE3B500D3C38A /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4C2ECEE3B500D3C38A /* README.md */; };
 		550EBB5F2ECEE3B500D3C38A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */; };
 		550EBB602ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
+		550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		557D83D22F5D33B300CDF791 /* HRT-Recorder Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 557D83C82F5D33B100CDF791 /* HRT-Recorder Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -190,6 +191,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +238,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -243,8 +246,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "mihari.HRT-Recorder-beta";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -261,7 +266,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
@@ -270,15 +275,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = C9X96C3N8A;
+				DEVELOPMENT_TEAM = 3A977T7MMU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "mihari.HRT-Recorder-beta";
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -295,7 +303,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.2;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
@@ -438,6 +446,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder beta";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -469,15 +478,16 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "HRT-Recorder beta 0.1/HRTRecorder.entitlements";
+				CODE_SIGN_ENTITLEMENTS = "HRT-Recorder beta 0.1/HRT-Recorder beta 0.1Release.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = P94FB57G3A;
+				DEVELOPMENT_TEAM = 3A977T7MMU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder beta";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

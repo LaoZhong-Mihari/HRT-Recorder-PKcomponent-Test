@@ -9,12 +9,35 @@ import Foundation
 import Combine
 import SwiftUI
 
+struct TimelineDayGroup: Identifiable {
+    var id: String { day }
+    let day: String
+    let events: [DoseEvent]
+}
+
+private func makeTimelineDayGroups(from events: [DoseEvent]) -> [TimelineDayGroup] {
+    let sortedEvents = events.sorted { $0.timeH < $1.timeH }
+
+    let formatter = DateFormatter()
+    formatter.locale = Locale.current
+    formatter.setLocalizedDateFormatFromTemplate("yMMMMdEEEE")
+
+    let groupedDictionary = Dictionary(grouping: sortedEvents) { formatter.string(from: $0.date) }
+
+    return groupedDictionary.map { TimelineDayGroup(day: $0.key, events: $0.value) }
+        .sorted { ($0.events.first?.timeH ?? .leastNormalMagnitude) > ($1.events.first?.timeH ?? .leastNormalMagnitude) }
+}
+
 @MainActor
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
-        didSet { onChange?(events) }
+        didSet {
+            dayGroups = makeTimelineDayGroups(from: events)
+            onChange?(events)
+        }
     }
     @Published var result: SimulationResult? = nil
+    @Published private(set) var dayGroups: [TimelineDayGroup] = []
     private let weightKey = "user.weightKg"
 
     @Published var bodyWeightKG: Double {
@@ -25,7 +48,7 @@ final class DoseTimelineVM: ObservableObject {
     @Published var isSimulating: Bool = false
     
     private var cancellables = Set<AnyCancellable>()
-    private var simulationTask: Task<Void, Never>?
+    private var simulationGeneration: UInt64 = 0
     /// First event time used as zero reference (hours)
     private var baseT0: Double? = nil
     private var onChange: (([DoseEvent]) -> Void)?
@@ -33,6 +56,7 @@ final class DoseTimelineVM: ObservableObject {
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
         self.onChange = nil
+        self.dayGroups = []
         setupSubscriptions()
         runSimulation()
     }
@@ -42,6 +66,7 @@ final class DoseTimelineVM: ObservableObject {
         self.onChange = onChange
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        self.dayGroups = makeTimelineDayGroups(from: initialEvents)
         setupSubscriptions()
         if !initialEvents.isEmpty {
             runSimulation()
@@ -79,7 +104,6 @@ final class DoseTimelineVM: ObservableObject {
     }
     
     func runSimulation() {
-        simulationTask?.cancel()
         guard !events.isEmpty else {
             result = nil
             isSimulating = false
@@ -90,23 +114,17 @@ final class DoseTimelineVM: ObservableObject {
         let weight = self.bodyWeightKG
         
         isSimulating = true
-        
-        simulationTask = Task(priority: .userInitiated) {
-            let startTime = (sortedEvents.first?.timeH ?? 0) - 24.0
-            let endTime = (sortedEvents.last?.timeH ?? startTime) + 24 * 14
-            
-            let engine = SimulationEngine(events: sortedEvents,
-                                          bodyWeightKG: weight,
-                                          startTimeH: startTime,
-                                          endTimeH: endTime,
-                                          numberOfSteps: 1000)
-            
-            let simulationResult = engine.run()
-            
-            if Task.isCancelled { return }
-            
-            self.result = simulationResult
-            self.isSimulating = false
+        simulationGeneration &+= 1
+        let generation = simulationGeneration
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let simulationResult = simulateTimelineResult(events: sortedEvents, bodyWeightKG: weight)
+
+            DispatchQueue.main.async {
+                guard generation == self.simulationGeneration else { return }
+                self.result = simulationResult
+                self.isSimulating = false
+            }
         }
     }
 

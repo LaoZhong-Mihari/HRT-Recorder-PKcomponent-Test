@@ -19,7 +19,7 @@ import Accelerate
 
 // MARK: – Public dose event -------------------------------------------------
 
-struct DoseEvent: Equatable, Identifiable, Codable {
+struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     let id: UUID
     
     static func == (lhs: DoseEvent, rhs: DoseEvent) -> Bool {
@@ -45,7 +45,7 @@ struct DoseEvent: Equatable, Identifiable, Codable {
 // MARK: – Parameter bundle after resolution ---------------------------------
 
 // MODIFIED: Switched to Two-Part Depot model parameters.
-struct PKParams {
+struct PKParams: Sendable {
     let Frac_fast: Double
     let k1_fast: Double
     let k1_slow: Double
@@ -181,8 +181,8 @@ struct ParameterResolver {
 
 // MARK: – Pre-computed Model for Performance --------------------------------
 
-fileprivate struct PrecomputedEventModel {
-    private let model: (Double) -> Double
+fileprivate struct PrecomputedEventModel: Sendable {
+    private let model: @Sendable (Double) -> Double
 
     init(event: DoseEvent, allEvents: [DoseEvent], bodyWeightKG: Double) {
         let params = ParameterResolver.resolve(event: event, bodyWeightKG: bodyWeightKG)
@@ -366,7 +366,7 @@ struct ThreeCompartmentModel {
 
 // MARK: – Simulation Engine
 
-struct SimulationResult: Equatable {
+struct SimulationResult: Equatable, Sendable {
     let timeH: [Double]
     let concPGmL: [Double]
     let auc: Double
@@ -402,7 +402,28 @@ extension SimulationResult {
     }
 }
 
-struct SimulationEngine {
+func simulateTimelineResult(
+    events: [DoseEvent],
+    bodyWeightKG: Double,
+    historyPaddingHours: Double = 24.0,
+    forecastHours: Double = 24.0 * 14.0,
+    numberOfSteps: Int = 1000
+) -> SimulationResult {
+    let startTime = (events.first?.timeH ?? 0) - historyPaddingHours
+    let endTime = (events.last?.timeH ?? startTime) + forecastHours
+
+    let engine = SimulationEngine(
+        events: events,
+        bodyWeightKG: bodyWeightKG,
+        startTimeH: startTime,
+        endTimeH: endTime,
+        numberOfSteps: numberOfSteps
+    )
+
+    return engine.run()
+}
+
+struct SimulationEngine: Sendable {
     private let precomputedModels: [PrecomputedEventModel]
     private let plasmaVolumeML: Double
     let startTimeH: Double

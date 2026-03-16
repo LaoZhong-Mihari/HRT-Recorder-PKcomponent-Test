@@ -12,15 +12,19 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
         case oral
         case sublingual
 
-        var displayName: String {
+        var localizationKey: String {
             switch self {
-            case .injection: return "注射"
-            case .patchApply: return "贴片开始"
-            case .patchRemove: return "贴片移除"
-            case .gel: return "凝胶"
-            case .oral: return "口服"
-            case .sublingual: return "舌下"
+            case .injection: return "route.injection"
+            case .patchApply: return "route.patchApply"
+            case .patchRemove: return "route.patchRemove"
+            case .gel: return "route.gel"
+            case .oral: return "route.oral"
+            case .sublingual: return "route.sublingual"
             }
+        }
+
+        var displayName: String {
+            NSLocalizedString(localizationKey, comment: "Localized route name")
         }
     }
 
@@ -30,6 +34,53 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
         case EV
         case EC
         case EN
+
+        var localizedName: String {
+            NSLocalizedString(
+                "ester.\(rawValue).name",
+                tableName: nil,
+                bundle: .main,
+                value: defaultName,
+                comment: "Localized ester name"
+            )
+        }
+
+        var abbreviation: String {
+            NSLocalizedString(
+                "ester.\(rawValue).abbr",
+                tableName: nil,
+                bundle: .main,
+                value: rawValue,
+                comment: "Localized ester abbreviation"
+            )
+        }
+
+        var toE2Factor: Double {
+            guard self != .E2 else { return 1.0 }
+            return Self.e2MolecularWeight / molecularWeight
+        }
+
+        private var defaultName: String {
+            switch self {
+            case .E2: return "Estradiol"
+            case .EB: return "Estradiol Benzoate"
+            case .EV: return "Estradiol Valerate"
+            case .EC: return "Estradiol Cypionate"
+            case .EN: return "Estradiol Enanthate"
+            }
+        }
+
+        private var molecularWeight: Double {
+            switch self {
+            case .E2: return Self.e2MolecularWeight
+            case .EB: return 376.50
+            case .EV: return 356.50
+            case .EC: return 396.58
+            case .EN: return 384.56
+            }
+        }
+
+        private static let e2MolecularWeight = 272.38
     }
 
     enum ExtraKey: String, Codable, CaseIterable {
@@ -98,6 +149,16 @@ final class WatchDoseStore: ObservableObject {
 
     func add(_ event: WatchDoseEvent) {
         events.append(event)
+        events.sort { $0.date > $1.date }
+        save()
+    }
+
+    func upsert(_ event: WatchDoseEvent) {
+        if let index = events.firstIndex(where: { $0.id == event.id }) {
+            events[index] = event
+        } else {
+            events.append(event)
+        }
         events.sort { $0.date > $1.date }
         save()
     }

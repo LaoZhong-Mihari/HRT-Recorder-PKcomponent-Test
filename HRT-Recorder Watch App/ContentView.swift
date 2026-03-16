@@ -2,11 +2,23 @@ import SwiftUI
 import Charts
 import Combine
 
+private enum WatchEditorSheet: Identifiable {
+    case add(UUID)
+    case edit(WatchDoseEvent)
+
+    var id: UUID {
+        switch self {
+        case .add(let token): return token
+        case .edit(let event): return event.id
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var store: WatchDoseStore
     @StateObject private var syncService: WatchDoseSyncService
     @StateObject private var timelineVM: WatchDoseTimelineVM
-    @State private var showAddSheet = false
+    @State private var activeSheet: WatchEditorSheet?
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     init() {
@@ -23,20 +35,27 @@ struct ContentView: View {
                 concentrationSection
                 eventSection
             }
-            .navigationTitle("HRT 记录")
+            .navigationTitle("timeline.title")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showAddSheet = true
+                        activeSheet = .add(UUID())
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel(Text("timeline.toolbar.add"))
                 }
             }
-            .sheet(isPresented: $showAddSheet) {
-                WatchAddDoseView { event in
-                    store.add(event)
-                    syncService.send(event: event)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .add:
+                    WatchAddDoseView { event in
+                        save(event)
+                    }
+                case .edit(let event):
+                    WatchAddDoseView(eventToEdit: event) { updatedEvent in
+                        save(updatedEvent)
+                    }
                 }
             }
             .task {
@@ -69,22 +88,18 @@ struct ContentView: View {
     }
 
     private var concentrationSection: some View {
-        Section("当前浓度") {
+        Section("chart.title") {
             TimelineView(.periodic(from: .now, by: 60)) { _ in
-                if let value = concentrationForDisplay {
-                    Text(String(format: "%.1f pg/mL", value))
-                        .font(.headline)
-                } else {
-                    Text("暂无数据")
-                        .foregroundStyle(.secondary)
-                }
+                Text(currentConcentrationText)
+                    .font(.headline)
+                    .foregroundStyle(concentrationForDisplay == nil ? .secondary : .primary)
             }
 
             if !chartPointsForDisplay.isEmpty {
                 Chart(chartPointsForDisplay) { point in
                     LineMark(
-                        x: .value("时间", point.date),
-                        y: .value("浓度", point.concentration)
+                        x: .value(xAxisLabel, point.date),
+                        y: .value(yAxisLabel, point.concentration)
                     )
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(.pink)
@@ -96,22 +111,18 @@ struct ContentView: View {
     }
 
     private var eventSection: some View {
-        Section("用药记录") {
+        Section("watch.section.events") {
             if store.events.isEmpty {
-                Text("还没有记录")
+                Text("watch.events.empty")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(store.events) { event in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.route.displayName)
-                            .font(.headline)
-                        Text(eventDoseLabel(for: event))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Text(event.date, style: .time)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    Button {
+                        activeSheet = .edit(event)
+                    } label: {
+                        WatchEventRow(event: event)
                     }
+                    .buttonStyle(.plain)
                 }
                 .onDelete { offsets in
                     store.delete(at: offsets)
@@ -121,17 +132,118 @@ struct ContentView: View {
         }
     }
 
-    private func eventDoseLabel(for event: WatchDoseEvent) -> String {
-        if let rate = event.extras[.releaseRateUGPerDay] {
-            return String(format: "%@ · %.0f μg/day", event.ester.rawValue, rate)
+    private var currentConcentrationText: String {
+        if let value = concentrationForDisplay {
+            let formatted = String(format: "%.1f", locale: Locale.current, value)
+            return String(
+                format: NSLocalizedString("chart.currentConc.value", comment: "Current concentration label"),
+                locale: Locale.current,
+                formatted
+            )
         }
-        if let tier = event.extras[.sublingualTier] {
-            return String(format: "%@ · %.2f mg · tier %d", event.ester.rawValue, event.doseMG, Int(tier))
+        return NSLocalizedString("chart.currentConc.missing", comment: "Current concentration unavailable")
+    }
+
+    private var xAxisLabel: String {
+        NSLocalizedString("chart.axis.time", comment: "X-axis label")
+    }
+
+    private var yAxisLabel: String {
+        NSLocalizedString("chart.axis.conc", comment: "Y-axis label")
+    }
+
+    private func save(_ event: WatchDoseEvent) {
+        store.upsert(event)
+        syncService.replaceAll(events: store.events)
+    }
+}
+
+private struct WatchEventRow: View {
+    let event: WatchDoseEvent
+
+    private var icon: (name: String, color: Color) {
+        switch event.route {
+        case .injection: return ("syringe.fill", .red)
+        case .patchApply: return ("app.badge.fill", .orange)
+        case .patchRemove: return ("app.badge", .gray)
+        case .gel: return ("drop.fill", .cyan)
+        case .oral: return ("pills.fill", .purple)
+        case .sublingual: return ("pills.fill", .teal)
         }
-        if let theta = event.extras[.sublingualTheta] {
-            return String(format: "%@ · %.2f mg · θ %.2f", event.ester.rawValue, event.doseMG, theta)
+    }
+
+    private var title: String {
+        switch event.route {
+        case .injection:
+            return String(
+                format: NSLocalizedString("timeline.row.injection", comment: "Timeline row title for injection"),
+                locale: Locale.current,
+                event.ester.abbreviation
+            )
+        case .patchApply:
+            return NSLocalizedString("timeline.row.patchApply", comment: "Timeline row title for patch apply")
+        case .patchRemove:
+            return NSLocalizedString("timeline.row.patchRemove", comment: "Timeline row title for patch removal")
+        case .gel:
+            return NSLocalizedString("timeline.row.gel", comment: "Timeline row title for gel dosing")
+        case .oral:
+            return String(
+                format: NSLocalizedString("timeline.row.oral", comment: "Timeline row title for oral"),
+                locale: Locale.current,
+                event.ester.abbreviation
+            )
+        case .sublingual:
+            return String(
+                format: NSLocalizedString("timeline.row.sublingual", comment: "Timeline row title for sublingual"),
+                locale: Locale.current,
+                event.ester.abbreviation
+            )
         }
-        return String(format: "%@ · %.2f mg", event.ester.rawValue, event.doseMG)
+    }
+
+    private var doseText: String? {
+        if event.route == .patchRemove {
+            return nil
+        }
+
+        if let rateUG = event.extras[.releaseRateUGPerDay] {
+            let rounded = String(format: "%.0f", locale: Locale.current, rateUG)
+            return String(
+                format: NSLocalizedString("timeline.row.dose.releaseRate", comment: "Release rate label"),
+                locale: Locale.current,
+                rounded
+            )
+        }
+
+        guard event.doseMG > 0 else { return nil }
+        let formattedDose = String(format: "%.2f", locale: Locale.current, event.doseMG)
+        return String(
+            format: NSLocalizedString("timeline.row.dose.mg", comment: "Dose label in mg"),
+            locale: Locale.current,
+            formattedDose
+        )
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon.name)
+                .foregroundStyle(icon.color)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                Text(event.date, style: .time)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let doseText {
+                    Text(doseText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

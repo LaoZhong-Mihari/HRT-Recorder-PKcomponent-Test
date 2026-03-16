@@ -63,7 +63,7 @@ struct InjectionPK {
 // MARK: - Esters (水解速率 k₂)
 
 // Conforms to Identifiable for easier use in SwiftUI Pickers.
-enum Ester: String, CaseIterable, Identifiable, Codable {
+enum Ester: String, CaseIterable, Identifiable, Codable, Sendable {
     case E2, EB, EV, EC, EN
     var id: Self { self }
 

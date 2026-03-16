@@ -46,7 +46,7 @@ struct TimelineScreen: View {
                 // ... (ProgressView remains the same)
                 
                 List {
-                    ForEach(groupEventsByDay(vm.events), id: \.day) { dayGroup in
+                    ForEach(vm.dayGroups, id: \.day) { dayGroup in
                         Section(header: Text(dayGroup.day)) {
                             ForEach(dayGroup.events) { event in
                                 // **NEW**: Each row is now a button that triggers the edit sheet.
@@ -197,7 +197,7 @@ struct TimelineScreen: View {
     }
 
     // ... (findOriginalIndices helper remains the same)
-    private func findOriginalIndices(for localIndexSet: IndexSet, in dayGroup: DayGroup, from allEvents: [DoseEvent]) -> IndexSet {
+    private func findOriginalIndices(for localIndexSet: IndexSet, in dayGroup: TimelineDayGroup, from allEvents: [DoseEvent]) -> IndexSet {
         let idsToDelete = localIndexSet.map { dayGroup.events[$0].id }
         let originalIndices = allEvents.enumerated()
             .filter { idsToDelete.contains($0.element.id) }
@@ -232,6 +232,17 @@ private struct HealthSettingsView: View {
                 .buttonStyle(.plain)
             }
 
+            Section("about.settings.section") {
+                NavigationLink {
+                    ProjectCreditsView()
+                } label: {
+                    SettingsRow(
+                        title: NSLocalizedString("about.settings.entry.title", comment: "Settings entry title for credits page"),
+                        subtitle: NSLocalizedString("about.settings.entry.subtitle", comment: "Settings entry subtitle for credits page")
+                    )
+                }
+            }
+
             Section("用药") {
                 Button(action: onMedicationInfo) {
                     SettingsRow(
@@ -259,6 +270,147 @@ private struct SettingsRow: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private enum ProjectCreditsLinks {
+    static let algorithm = URL(string: "https://github.com/LaoZhong-Mihari")!
+    static let appDeveloper = URL(string: "https://github.com/RyouDYFZ")!
+    static let openSource = URL(string: "https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test")!
+    static let transmtfRepo = URL(string: "https://github.com/TransmtfTeam/Transmtf-HRT-Tracker")!
+    static let transmtfWeb = URL(string: "https://hrt.transmtf.com")!
+    static let oyamaRepo = URL(string: "https://github.com/SmirnovaOyama/Oyama-s-HRT-Tracker")!
+    static let oyamaWeb = URL(string: "https://oyama.hrt.uk")!
+    static let contact = URL(string: "mailto:mihari.suki@icloud.com")!
+}
+
+private struct ProjectCreditsView: View {
+    var body: some View {
+        List {
+            Section {
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.algorithm,
+                    title: NSLocalizedString("about.developer.algorithm.title", comment: "Algorithm developer title"),
+                    subtitle: "@Laozhong-Mihari"
+                )
+
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.appDeveloper,
+                    title: NSLocalizedString("about.developer.app.title", comment: "App developer title"),
+                    subtitle: "@RyouDYFZ"
+                )
+            } header: {
+                Text("about.section.developers")
+            }
+
+            Section {
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.openSource,
+                    title: NSLocalizedString("about.opensource.repo.title", comment: "Open source repository title"),
+                    subtitle: ProjectCreditsLinks.openSource.absoluteString
+                )
+            } header: {
+                Text("about.section.opensource")
+            }
+
+            Section {
+                SisterProjectCard(
+                    name: "Transmtf-HRT-Tracker",
+                    repoURL: ProjectCreditsLinks.transmtfRepo,
+                    websiteURL: ProjectCreditsLinks.transmtfWeb
+                )
+
+                SisterProjectCard(
+                    name: "Oyama's HRT Tracker",
+                    repoURL: ProjectCreditsLinks.oyamaRepo,
+                    websiteURL: ProjectCreditsLinks.oyamaWeb
+                )
+            } header: {
+                Text("about.section.sisters")
+            } footer: {
+                Text("about.sisters.footer")
+            }
+
+            Section {
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.contact,
+                    title: NSLocalizedString("about.contact.title", comment: "Contact us title"),
+                    subtitle: "mihari.suki@icloud.com"
+                )
+            } header: {
+                Text("about.section.contact")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("about.title")
+    }
+}
+
+private struct SisterProjectCard: View {
+    let name: String
+    let repoURL: URL
+    let websiteURL: URL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(verbatim: name)
+                .font(.headline)
+
+            ExternalLinkButton(
+                destination: repoURL,
+                title: NSLocalizedString("about.link.github", comment: "GitHub link label"),
+                subtitle: repoURL.absoluteString
+            )
+
+            ExternalLinkButton(
+                destination: websiteURL,
+                title: NSLocalizedString("about.link.website", comment: "Website link label"),
+                subtitle: websiteURL.absoluteString
+            )
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct ExternalLinkButton: View {
+    @Environment(\.openURL) private var openURL
+
+    let destination: URL
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        Button {
+            openURL(destination)
+        } label: {
+            ExternalLinkRow(title: title, subtitle: subtitle)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ExternalLinkRow: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .foregroundColor(.primary)
+                Text(verbatim: subtitle)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+
+            Spacer()
+
+            Image(systemName: "arrow.up.right.square.fill")
+                .foregroundColor(.secondary)
+                .padding(.top, 2)
+        }
         .contentShape(Rectangle())
     }
 }
@@ -339,26 +491,6 @@ struct TimelineRowView: View {
         }
         .padding(.vertical, 8)
     }
-}
-
-// MARK: - Grouping Logic
-struct DayGroup: Identifiable {
-    var id: String { day }
-    let day: String
-    let events: [DoseEvent]
-}
-
-private func groupEventsByDay(_ events: [DoseEvent]) -> [DayGroup] {
-    let sortedEvents = events.sorted { $0.timeH < $1.timeH }
-    
-    let formatter = DateFormatter()
-    formatter.locale = Locale.current
-    formatter.setLocalizedDateFormatFromTemplate("yMMMMdEEEE")
-    
-    let groupedDictionary = Dictionary(grouping: sortedEvents) { formatter.string(from: $0.date) }
-    
-    return groupedDictionary.map { DayGroup(day: $0.key, events: $0.value) }
-        .sorted { $0.events.first!.timeH > $1.events.first!.timeH }
 }
 
 // New: dedicated weight editor view used by the sheet above

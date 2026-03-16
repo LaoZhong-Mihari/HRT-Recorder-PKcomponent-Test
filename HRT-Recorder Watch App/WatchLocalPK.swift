@@ -8,19 +8,26 @@ private enum WatchCorePK {
     static let depotK1Corr: Double = 1.0
 }
 
-private enum WatchSublingualTier: Int {
+enum WatchSublingualTier: Int {
     case quick = 0
     case casual = 1
     case standard = 2
     case strict = 3
 }
 
-private enum WatchSublingualTheta {
+enum WatchSublingualTheta {
     static let recommended: [WatchSublingualTier: Double] = [
         .quick: 0.01,
         .casual: 0.04,
         .standard: 0.11,
         .strict: 0.18
+    ]
+
+    static let holdMinutes: [WatchSublingualTier: Double] = [
+        .quick: 2,
+        .casual: 5,
+        .standard: 10,
+        .strict: 15
     ]
 }
 
