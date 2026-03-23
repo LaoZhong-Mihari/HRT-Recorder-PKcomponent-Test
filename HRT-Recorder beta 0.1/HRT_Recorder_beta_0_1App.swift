@@ -31,26 +31,59 @@ struct HRTRecorderBetaApp: App {
             TimelineScreen(vm: timelineVM)
                 .task {
                     watchDoseReceiver.start(
-                        onReceiveDoseEvent: { event in
-                            timelineVM.save(event)
+                        onReceiveDoseEvent: { event, modifiedAt in
+                            timelineVM.save(event, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
                         },
-                        onReplaceAllEvents: { events in
-                            timelineVM.replaceAllEvents(events)
+                        onReplaceAllEvents: { events, modifiedAt in
+                            timelineVM.replaceAllEvents(events, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
                         },
                         currentStateProvider: {
-                            (events: timelineVM.events, result: timelineVM.result, bodyWeightKG: timelineVM.bodyWeightKG)
+                            (
+                                events: timelineVM.events,
+                                result: timelineVM.result,
+                                bodyWeightKG: timelineVM.bodyWeightKG,
+                                eventsModifiedAt: timelineVM.eventsModifiedAt
+                            )
                         }
                     )
-                    watchDoseReceiver.syncToWatch(events: timelineVM.events, result: timelineVM.result, bodyWeightKG: timelineVM.bodyWeightKG)
+                    watchDoseReceiver.syncToWatch(
+                        events: timelineVM.events,
+                        result: timelineVM.result,
+                        bodyWeightKG: timelineVM.bodyWeightKG,
+                        eventsModifiedAt: timelineVM.eventsModifiedAt
+                    )
                 }
                 .onReceive(timelineVM.$events) { events in
-                    watchDoseReceiver.syncToWatch(events: events, result: timelineVM.result, bodyWeightKG: timelineVM.bodyWeightKG)
+                    watchDoseReceiver.syncToWatch(
+                        events: events,
+                        result: timelineVM.result,
+                        bodyWeightKG: timelineVM.bodyWeightKG,
+                        eventsModifiedAt: timelineVM.eventsModifiedAt
+                    )
                 }
                 .onReceive(timelineVM.$result) { result in
-                    watchDoseReceiver.syncToWatch(events: timelineVM.events, result: result, bodyWeightKG: timelineVM.bodyWeightKG)
+                    watchDoseReceiver.syncToWatch(
+                        events: timelineVM.events,
+                        result: result,
+                        bodyWeightKG: timelineVM.bodyWeightKG,
+                        eventsModifiedAt: timelineVM.eventsModifiedAt
+                    )
                 }
                 .onReceive(timelineVM.$bodyWeightKG) { bodyWeightKG in
-                    watchDoseReceiver.syncToWatch(events: timelineVM.events, result: timelineVM.result, bodyWeightKG: bodyWeightKG)
+                    watchDoseReceiver.syncToWatch(
+                        events: timelineVM.events,
+                        result: timelineVM.result,
+                        bodyWeightKG: bodyWeightKG,
+                        eventsModifiedAt: timelineVM.eventsModifiedAt
+                    )
+                }
+                .onReceive(timelineVM.$eventsModifiedAt) { eventsModifiedAt in
+                    watchDoseReceiver.syncToWatch(
+                        events: timelineVM.events,
+                        result: timelineVM.result,
+                        bodyWeightKG: timelineVM.bodyWeightKG,
+                        eventsModifiedAt: eventsModifiedAt
+                    )
                 }
         }
         .onChange(of: phase) { _, newPhase in

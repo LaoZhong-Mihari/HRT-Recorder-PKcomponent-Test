@@ -403,6 +403,22 @@
         }
       }
     },
+    "common.ok" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定"
+          }
+        }
+      }
+    },
     "common.save" : {
       "localizations" : {
         "en" : {
@@ -1078,6 +1094,234 @@
         }
       }
     },
+    "settings.health.error" : {
+      "comment" : "HealthKit error message",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HealthKit operation failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HealthKit 操作失败：%@"
+          }
+        }
+      }
+    },
+    "settings.health.importWeight.success" : {
+      "comment" : "Weight import success message",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported latest body weight: %@ kg"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导入体重：%@ kg"
+          }
+        }
+      }
+    },
+    "settings.health.weightSync.partialFailure" : {
+      "comment" : "Weight sync partial failure message",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body weight was updated in the app, but syncing to Apple Health failed: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "体重已在 App 内更新，但同步到 Apple Health 失败：%@"
+          }
+        }
+      }
+    },
+    "settings.medication.import.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current version does not support importing medication data from HealthKit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前版本不支持从 HealthKit 导入用药数据"
+          }
+        }
+      }
+    },
+    "settings.medication.import.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication import"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药导入"
+          }
+        }
+      }
+    },
+    "settings.medication.import.unsupported" : {
+      "comment" : "Medication import unavailable message",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version only supports importing body weight from HealthKit. Medication import is currently unavailable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前版本仅支持从 HealthKit 导入体重数据；用药（Medication）导入已关闭。"
+          }
+        }
+      }
+    },
+    "settings.section.medication" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药"
+          }
+        }
+      }
+    },
+    "settings.section.weight" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body Weight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "体重"
+          }
+        }
+      }
+    },
+    "settings.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置"
+          }
+        }
+      }
+    },
+    "settings.toolbar.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置"
+          }
+        }
+      }
+    },
+    "settings.weight.edit.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust body weight in the app and sync it to Apple Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 App 内调整体重，并同步到 Apple Health"
+          }
+        }
+      }
+    },
+    "settings.weight.edit.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit body weight"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动编辑体重"
+          }
+        }
+      }
+    },
+    "settings.weight.import.subtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fetch the latest body weight record from Apple Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拉取 Apple Health 最新体重记录"
+          }
+        }
+      }
+    },
+    "settings.weight.import.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import body weight from HealthKit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 HealthKit 导入体重"
+          }
+        }
+      }
+    },
     "timeline.add.title" : {
       "shouldTranslate" : false
     },
@@ -1305,7 +1549,14 @@
       }
     },
     "timeline.toolbar.weightEdit" : {
+      "extractionState" : "stale",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit body weight"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1379,18 +1630,6 @@
           }
         }
       }
-    },
-    "体重" : {
-
-    },
-    "用药" : {
-
-    },
-    "确定" : {
-
-    },
-    "设置" : {
-
     }
   },
   "version" : "1.1"

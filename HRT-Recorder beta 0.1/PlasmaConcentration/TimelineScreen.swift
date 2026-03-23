@@ -90,9 +90,9 @@ struct TimelineScreen: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Label("设置", systemImage: "ellipsis.circle.fill")
+                            Label("settings.title", systemImage: "ellipsis.circle.fill")
                                 .font(.body)
-                                .accessibilityLabel(Text("timeline.toolbar.weightEdit"))
+                                .accessibilityLabel(Text("settings.toolbar.accessibility"))
                         }
                     }
                 }
@@ -159,7 +159,7 @@ struct TimelineScreen: View {
                 get: { healthMessage != nil },
                 set: { if !$0 { healthMessage = nil } }
             )) {
-                Button("确定", role: .cancel) { healthMessage = nil }
+                Button("common.ok", role: .cancel) { healthMessage = nil }
             } message: {
                 Text(healthMessage ?? "")
             }
@@ -174,14 +174,23 @@ struct TimelineScreen: View {
         do {
             try await vm.requestHealthKitAuthorization()
             let weight = try await vm.importLatestBodyWeightFromHealthKit()
-            healthMessage = "已导入体重：\(String(format: "%.1f", locale: Locale.current, weight)) kg"
+            let formattedWeight = String(format: "%.1f", locale: Locale.current, weight)
+            healthMessage = String(
+                format: NSLocalizedString("settings.health.importWeight.success", comment: "Weight import success message"),
+                locale: Locale.current,
+                formattedWeight
+            )
         } catch {
-            healthMessage = "HealthKit 操作失败：\(error.localizedDescription)"
+            healthMessage = String(
+                format: NSLocalizedString("settings.health.error", comment: "HealthKit error message"),
+                locale: Locale.current,
+                error.localizedDescription
+            )
         }
     }
 
     private func showMedicationNotSupportedMessage() {
-        healthMessage = "当前版本仅支持从 HealthKit 导入体重数据；用药（Medication）导入已关闭。"
+        healthMessage = NSLocalizedString("settings.medication.import.unsupported", comment: "Medication import unavailable message")
     }
 
     private func saveEditedWeightAndSync(_ newWeight: Double) async {
@@ -192,7 +201,11 @@ struct TimelineScreen: View {
         } catch {
             vm.bodyWeightKG = newWeight
             activeSheet = nil
-            healthMessage = "体重已在 App 内更新，但同步到 Apple Health 失败：\(error.localizedDescription)"
+            healthMessage = String(
+                format: NSLocalizedString("settings.health.weightSync.partialFailure", comment: "Weight sync partial failure message"),
+                locale: Locale.current,
+                error.localizedDescription
+            )
         }
     }
 
@@ -214,19 +227,19 @@ private struct HealthSettingsView: View {
 
     var body: some View {
         Form {
-            Section("体重") {
+            Section("settings.section.weight") {
                 Button(action: onEditWeight) {
                     SettingsRow(
-                        title: "手动编辑体重",
-                        subtitle: "在 App 内调整体重，并同步到 Apple Health"
+                        title: "settings.weight.edit.title",
+                        subtitle: "settings.weight.edit.subtitle"
                     )
                 }
                 .buttonStyle(.plain)
 
                 Button(action: onImportWeight) {
                     SettingsRow(
-                        title: "从 HealthKit 导入体重",
-                        subtitle: "拉取 Apple Health 最新体重记录"
+                        title: "settings.weight.import.title",
+                        subtitle: "settings.weight.import.subtitle"
                     )
                 }
                 .buttonStyle(.plain)
@@ -237,29 +250,29 @@ private struct HealthSettingsView: View {
                     ProjectCreditsView()
                 } label: {
                     SettingsRow(
-                        title: NSLocalizedString("about.settings.entry.title", comment: "Settings entry title for credits page"),
-                        subtitle: NSLocalizedString("about.settings.entry.subtitle", comment: "Settings entry subtitle for credits page")
+                        title: "about.settings.entry.title",
+                        subtitle: "about.settings.entry.subtitle"
                     )
                 }
             }
 
-            Section("用药") {
+            Section("settings.section.medication") {
                 Button(action: onMedicationInfo) {
                     SettingsRow(
-                        title: "用药导入",
-                        subtitle: "当前版本不支持从 HealthKit 导入用药数据"
+                        title: "settings.medication.import.title",
+                        subtitle: "settings.medication.import.subtitle"
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
-        .navigationTitle("设置")
+        .navigationTitle("settings.title")
     }
 }
 
 private struct SettingsRow: View {
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

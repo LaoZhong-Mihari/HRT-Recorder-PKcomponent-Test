@@ -136,50 +136,73 @@ struct WatchDoseSnapshot: Codable {
     let events: [WatchDoseBridgeEvent]
     let chartPoints: [WatchChartPoint]
     let bodyWeightKG: Double?
+    let eventsModifiedAt: TimeInterval
+}
+
+struct WatchDoseEventPayload: Codable {
+    let event: WatchDoseBridgeEvent
+    let modifiedAt: TimeInterval
+}
+
+struct WatchDoseReplacePayload: Codable {
+    let events: [WatchDoseBridgeEvent]
+    let modifiedAt: TimeInterval
 }
 
 final class WatchDoseStore: ObservableObject {
     @Published private(set) var events: [WatchDoseEvent] = []
+    @Published private(set) var eventsModifiedAt: TimeInterval = 0
 
     private let storageKey = "watch.dose.events"
+    private let modifiedAtKey = "watch.dose.events.modifiedAt"
 
     init() {
         load()
     }
 
     func add(_ event: WatchDoseEvent) {
-        events.append(event)
-        events.sort { $0.date > $1.date }
-        save()
+        upsert(event)
     }
 
-    func upsert(_ event: WatchDoseEvent) {
-        if let index = events.firstIndex(where: { $0.id == event.id }) {
-            events[index] = event
+    func upsert(_ event: WatchDoseEvent, modifiedAt: TimeInterval? = nil) {
+        var updatedEvents = events
+        if let index = updatedEvents.firstIndex(where: { $0.id == event.id }) {
+            updatedEvents[index] = event
         } else {
-            events.append(event)
+            updatedEvents.append(event)
         }
-        events.sort { $0.date > $1.date }
-        save()
+        apply(events: updatedEvents, modifiedAt: modifiedAt)
     }
 
-    func replace(with newEvents: [WatchDoseEvent]) {
-        events = newEvents.sorted { $0.date > $1.date }
-        save()
+    func replace(with newEvents: [WatchDoseEvent], modifiedAt: TimeInterval? = nil) {
+        apply(events: newEvents, modifiedAt: modifiedAt)
     }
 
     func delete(at offsets: IndexSet) {
-        events.remove(atOffsets: offsets)
-        save()
+        var updatedEvents = events
+        updatedEvents.remove(atOffsets: offsets)
+        apply(events: updatedEvents, modifiedAt: nil)
     }
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
             events = []
+            eventsModifiedAt = UserDefaults.standard.double(forKey: modifiedAtKey)
             return
         }
         events = (try? JSONDecoder().decode([WatchDoseEvent].self, from: data)) ?? []
         events.sort { $0.date > $1.date }
+        eventsModifiedAt = UserDefaults.standard.double(forKey: modifiedAtKey)
+    }
+
+    private func apply(events newEvents: [WatchDoseEvent], modifiedAt: TimeInterval?) {
+        events = newEvents.sorted { $0.date > $1.date }
+        if let modifiedAt, modifiedAt > 0 {
+            eventsModifiedAt = modifiedAt
+        } else {
+            eventsModifiedAt = Date().timeIntervalSince1970
+        }
+        save()
     }
 
     private func save() {
@@ -187,6 +210,7 @@ final class WatchDoseStore: ObservableObject {
             return
         }
         UserDefaults.standard.set(data, forKey: storageKey)
+        UserDefaults.standard.set(eventsModifiedAt, forKey: modifiedAtKey)
     }
 }
 
@@ -225,7 +249,11 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
                 partialResult[pair.key.rawValue] = pair.value
             }
         )
-        guard let payload = try? encoder.encode(payloadEvent) else { return }
+        let wrappedPayload = WatchDoseEventPayload(
+            event: payloadEvent,
+            modifiedAt: store?.eventsModifiedAt ?? Date().timeIntervalSince1970
+        )
+        guard let payload = try? encoder.encode(wrappedPayload) else { return }
         enqueueOrSend(PendingUserInfo(key: "watchDoseEvent", data: payload, boolValue: nil))
     }
 
@@ -242,7 +270,11 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
                 }
             )
         }
-        guard let payload = try? encoder.encode(payloadEvents) else { return }
+        let wrappedPayload = WatchDoseReplacePayload(
+            events: payloadEvents,
+            modifiedAt: store?.eventsModifiedAt ?? Date().timeIntervalSince1970
+        )
+        guard let payload = try? encoder.encode(wrappedPayload) else { return }
         enqueueOrSend(PendingUserInfo(key: "watchDoseReplace", data: payload, boolValue: nil))
     }
 
@@ -344,6 +376,15 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
     }
 
     private func applySnapshot(_ snapshot: WatchDoseSnapshot) {
+        let localModifiedAt = store?.eventsModifiedAt ?? 0
+        if snapshot.eventsModifiedAt > 0, snapshot.eventsModifiedAt < localModifiedAt {
+            chartPoints = []
+            if let bodyWeightKG = snapshot.bodyWeightKG, bodyWeightKG > 0 {
+                onReceiveSyncedBodyWeight?(bodyWeightKG)
+            }
+            return
+        }
+
         let convertedEvents = snapshot.events.compactMap { payload -> WatchDoseEvent? in
             guard let route = WatchDoseEvent.Route(rawValue: payload.routeRawValue),
                   let ester = WatchDoseEvent.Ester(rawValue: payload.esterRawValue) else {
@@ -361,7 +402,10 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
             )
         }
 
-        store?.replace(with: convertedEvents)
+        let appliedModifiedAt = snapshot.eventsModifiedAt > 0
+            ? snapshot.eventsModifiedAt
+            : store?.eventsModifiedAt
+        store?.replace(with: convertedEvents, modifiedAt: appliedModifiedAt)
         chartPoints = snapshot.chartPoints.sorted { $0.timeH < $1.timeH }
 
         if let bodyWeightKG = snapshot.bodyWeightKG, bodyWeightKG > 0 {
@@ -372,6 +416,7 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
 
 extension WatchDoseSyncService: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        guard activationState == .activated else { return }
         Task { @MainActor in
             self.flushPendingMessages()
             self.requestSnapshot()

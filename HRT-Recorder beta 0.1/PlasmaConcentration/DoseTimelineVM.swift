@@ -39,6 +39,13 @@ final class DoseTimelineVM: ObservableObject {
     @Published var result: SimulationResult? = nil
     @Published private(set) var dayGroups: [TimelineDayGroup] = []
     private let weightKey = "user.weightKg"
+    private let eventsModifiedKey = "dose.events.modifiedAt"
+
+    @Published private(set) var eventsModifiedAt: TimeInterval {
+        didSet {
+            UserDefaults.standard.set(eventsModifiedAt, forKey: eventsModifiedKey)
+        }
+    }
 
     @Published var bodyWeightKG: Double {
         didSet {
@@ -53,7 +60,9 @@ final class DoseTimelineVM: ObservableObject {
     private var baseT0: Double? = nil
     private var onChange: (([DoseEvent]) -> Void)?
     init() {
+        let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         let saved = UserDefaults.standard.double(forKey: weightKey)
+        self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         self.bodyWeightKG = saved > 0 ? saved : 70.0
         self.onChange = nil
         self.dayGroups = []
@@ -62,8 +71,10 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     init(initialEvents: [DoseEvent], onChange: (([DoseEvent]) -> Void)? = nil) {
+        let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         self.events = initialEvents
         self.onChange = onChange
+        self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
         self.dayGroups = makeTimelineDayGroups(from: initialEvents)
@@ -80,8 +91,16 @@ final class DoseTimelineVM: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private func resolvedModifiedAt(_ modifiedAt: TimeInterval?) -> TimeInterval {
+        if let modifiedAt, modifiedAt > 0 {
+            return modifiedAt
+        }
+        return Date().timeIntervalSince1970
+    }
+
     // **NEW**: A single function to handle both adding and updating events.
-    func save(_ event: DoseEvent) {
+    func save(_ event: DoseEvent, modifiedAt: TimeInterval? = nil) {
+        eventsModifiedAt = resolvedModifiedAt(modifiedAt)
         if let index = events.firstIndex(where: { $0.id == event.id }) {
             // 更新已有事件 —— 保持绝对小时不变（1970-epoch）
             events[index] = event
@@ -92,13 +111,15 @@ final class DoseTimelineVM: ObservableObject {
         }
         runSimulation()
     }
-    
-    func remove(at offsets: IndexSet) {
+
+    func remove(at offsets: IndexSet, modifiedAt: TimeInterval? = nil) {
+        eventsModifiedAt = resolvedModifiedAt(modifiedAt)
         events.remove(atOffsets: offsets)
         runSimulation()
     }
 
-    func replaceAllEvents(_ newEvents: [DoseEvent]) {
+    func replaceAllEvents(_ newEvents: [DoseEvent], modifiedAt: TimeInterval? = nil) {
+        eventsModifiedAt = resolvedModifiedAt(modifiedAt)
         events = newEvents.sorted { $0.timeH < $1.timeH }
         runSimulation()
     }
