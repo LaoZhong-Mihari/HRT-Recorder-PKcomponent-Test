@@ -71,9 +71,18 @@ struct WatchAddDoseView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    DatePicker("input.time", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                Section("input.time") {
+                    WatchCalendarDatePicker(selection: $date)
 
+                    DatePicker(
+                        date.formatted(date: .omitted, time: .shortened),
+                        selection: $date,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .datePickerStyle(.automatic)
+                }
+
+                Section {
                     Picker("input.route", selection: $route) {
                         ForEach(WatchDoseEvent.Route.allCases, id: \.self) { value in
                             Text(value.displayName).tag(value)
@@ -330,4 +339,156 @@ struct WatchAddDoseView: View {
     private static func format(_ value: Double, decimals: Int) -> String {
         String(format: "%.\(decimals)f", locale: Locale.current, value)
     }
+}
+
+private struct WatchCalendarDatePicker: View {
+    @Binding var selection: Date
+    @State private var displayedMonth: Date
+
+    private let calendar = Calendar.autoupdatingCurrent
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+
+    init(selection: Binding<Date>) {
+        _selection = selection
+        _displayedMonth = State(initialValue: Self.monthStart(for: selection.wrappedValue))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    displayedMonth = shiftMonth(displayedMonth, by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(.borderless)
+
+                Spacer(minLength: 0)
+
+                Text(displayedMonth, format: .dateTime.year().month(.abbreviated))
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    displayedMonth = shiftMonth(displayedMonth, by: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless)
+            }
+
+            LazyVGrid(columns: columns, spacing: 4) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+
+                ForEach(dayCells) { cell in
+                    if let date = cell.date {
+                        Button {
+                            selection = mergingDay(date, into: selection)
+                        } label: {
+                            Text("\(calendar.component(.day, from: date))")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(foregroundStyle(for: date))
+                                .frame(maxWidth: .infinity, minHeight: 24)
+                                .background(background(for: date))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                            .frame(height: 24)
+                    }
+                }
+            }
+
+            Button("common.today") {
+                selection = Date()
+                displayedMonth = Self.monthStart(for: selection)
+            }
+            .font(.footnote)
+        }
+        .onChange(of: selection) { _, newValue in
+            let month = Self.monthStart(for: newValue)
+            if !calendar.isDate(month, equalTo: displayedMonth, toGranularity: .month) {
+                displayedMonth = month
+            }
+        }
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.veryShortStandaloneWeekdaySymbols
+        let shift = max(calendar.firstWeekday - 1, 0)
+        return Array(symbols[shift...] + symbols[..<shift])
+    }
+
+    private var dayCells: [WatchCalendarDayCell] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
+              let firstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start),
+              let lastVisibleDate = calendar.date(byAdding: .day, value: -1, to: monthInterval.end),
+              let lastWeek = calendar.dateInterval(of: .weekOfMonth, for: lastVisibleDate) else {
+            return []
+        }
+
+        var dates: [WatchCalendarDayCell] = []
+        var cursor = firstWeek.start
+        while cursor < lastWeek.end {
+            let isCurrentMonth = calendar.isDate(cursor, equalTo: displayedMonth, toGranularity: .month)
+            dates.append(WatchCalendarDayCell(date: isCurrentMonth ? cursor : nil))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return dates
+    }
+
+    private func foregroundStyle(for date: Date) -> Color {
+        calendar.isDate(date, inSameDayAs: selection) ? .white : .primary
+    }
+
+    @ViewBuilder
+    private func background(for date: Date) -> some View {
+        if calendar.isDate(date, inSameDayAs: selection) {
+            Circle()
+                .fill(Color.accentColor)
+        } else if calendar.isDateInToday(date) {
+            Circle()
+                .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+        }
+    }
+
+    private func mergingDay(_ day: Date, into original: Date) -> Date {
+        let originalComponents = calendar.dateComponents([.hour, .minute, .second], from: original)
+        let dayComponents = calendar.dateComponents([.year, .month, .day], from: day)
+
+        var merged = DateComponents()
+        merged.year = dayComponents.year
+        merged.month = dayComponents.month
+        merged.day = dayComponents.day
+        merged.hour = originalComponents.hour
+        merged.minute = originalComponents.minute
+        merged.second = originalComponents.second
+
+        return calendar.date(from: merged) ?? day
+    }
+
+    private func shiftMonth(_ date: Date, by offset: Int) -> Date {
+        calendar.date(byAdding: .month, value: offset, to: date) ?? date
+    }
+
+    private static func monthStart(for date: Date) -> Date {
+        let calendar = Calendar.autoupdatingCurrent
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? date
+    }
+}
+
+private struct WatchCalendarDayCell: Identifiable {
+    let id = UUID()
+    let date: Date?
 }

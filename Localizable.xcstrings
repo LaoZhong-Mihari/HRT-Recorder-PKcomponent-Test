@@ -4,6 +4,9 @@
     "" : {
 
     },
+    "%lld" : {
+
+    },
     "about.contact.title" : {
       "comment" : "Contact us title",
       "localizations" : {
@@ -434,6 +437,25 @@
           }
         }
       }
+    },
+    "common.today" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天"
+          }
+        }
+      }
+    },
+    "Concentration" : {
+
     },
     "ester.%@.name" : {
       "shouldTranslate" : false
@@ -1321,6 +1343,9 @@
           }
         }
       }
+    },
+    "Time" : {
+
     },
     "timeline.add.title" : {
       "shouldTranslate" : false
