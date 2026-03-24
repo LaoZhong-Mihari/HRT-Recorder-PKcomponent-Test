@@ -423,6 +423,12 @@ extension WatchDoseSyncService: WCSessionDelegate {
         }
     }
 
+#if os(iOS)
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {}
+#endif
+
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String : Any]) {
         guard let data = applicationContext["doseSnapshot"] as? Data else { return }
         Task { @MainActor in

@@ -15,6 +15,7 @@ extension DoseEvent {
 private enum TimelineSheet: Identifiable {
     case add(UUID)
     case edit(DoseEvent)
+    case scheduledDose(DoseEntrySeed)
     case weight
     case settings
 
@@ -22,6 +23,7 @@ private enum TimelineSheet: Identifiable {
         switch self {
         case .add(let token): return token
         case .edit(let event): return event.id
+        case .scheduledDose(let seed): return seed.id
         case .weight: return UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         case .settings: return UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         }
@@ -30,9 +32,11 @@ private enum TimelineSheet: Identifiable {
 
 struct TimelineScreen: View {
     @StateObject var vm: DoseTimelineVM
+    @ObservedObject var medicationVM: MedicationPlanVM
 
-    init(vm: DoseTimelineVM) {
+    init(vm: DoseTimelineVM, medicationVM: MedicationPlanVM) {
         _vm = StateObject(wrappedValue: vm)
+        self.medicationVM = medicationVM
     }
 
     // **NEW**: State to manage which event is being edited.
@@ -120,6 +124,23 @@ struct TimelineScreen: View {
                         .navigationTitle("timeline.add.title")
                     }
 
+                case .scheduledDose(let seed):
+                    NavigationStack {
+                        InputEventView(
+                            eventToEdit: nil,
+                            seed: seed,
+                            onSave: { event in
+                                vm.save(event)
+                                medicationVM.consumePendingDoseSeed()
+                            },
+                            onCancel: {
+                                medicationVM.consumePendingDoseSeed()
+                            }
+                        )
+                        .padding()
+                        .navigationTitle(seed.title ?? "Confirm Dose")
+                    }
+
                 case .weight:
                     // Present a dedicated WeightEditorView which keeps a temporary value until saved.
                     NavigationStack {
@@ -133,14 +154,12 @@ struct TimelineScreen: View {
                 case .settings:
                     NavigationStack {
                         HealthSettingsView(
+                            weightStatusText: vm.bodyWeightHealthStatusText,
+                            medicationVM: medicationVM,
                             onEditWeight: { activeSheet = .weight },
                             onImportWeight: {
                                 activeSheet = nil
                                 Task { await importBodyWeight() }
-                            },
-                            onMedicationInfo: {
-                                activeSheet = nil
-                                showMedicationNotSupportedMessage()
                             }
                         )
                     }
@@ -162,6 +181,10 @@ struct TimelineScreen: View {
                 Button("common.ok", role: .cancel) { healthMessage = nil }
             } message: {
                 Text(healthMessage ?? "")
+            }
+            .onChange(of: medicationVM.pendingDoseSeed) { _, newSeed in
+                guard let newSeed else { return }
+                activeSheet = .scheduledDose(newSeed)
             }
         }
     }
@@ -189,17 +212,13 @@ struct TimelineScreen: View {
         }
     }
 
-    private func showMedicationNotSupportedMessage() {
-        healthMessage = NSLocalizedString("settings.medication.import.unsupported", comment: "Medication import unavailable message")
-    }
-
     private func saveEditedWeightAndSync(_ newWeight: Double) async {
         do {
             try await vm.requestHealthKitAuthorization()
             try await vm.updateBodyWeightAndSyncToHealthKit(newWeight)
             activeSheet = nil
         } catch {
-            vm.bodyWeightKG = newWeight
+            vm.updateBodyWeightLocally(newWeight)
             activeSheet = nil
             healthMessage = String(
                 format: NSLocalizedString("settings.health.weightSync.partialFailure", comment: "Weight sync partial failure message"),
@@ -221,9 +240,10 @@ struct TimelineScreen: View {
 }
 
 private struct HealthSettingsView: View {
+    let weightStatusText: String
+    @ObservedObject var medicationVM: MedicationPlanVM
     let onEditWeight: () -> Void
     let onImportWeight: () -> Void
-    let onMedicationInfo: () -> Void
 
     var body: some View {
         Form {
@@ -237,9 +257,9 @@ private struct HealthSettingsView: View {
                 .buttonStyle(.plain)
 
                 Button(action: onImportWeight) {
-                    SettingsRow(
-                        title: "settings.weight.import.title",
-                        subtitle: "settings.weight.import.subtitle"
+                    DynamicSettingsRow(
+                        title: "HealthKit weight sync",
+                        subtitle: weightStatusText
                     )
                 }
                 .buttonStyle(.plain)
@@ -257,13 +277,14 @@ private struct HealthSettingsView: View {
             }
 
             Section("settings.section.medication") {
-                Button(action: onMedicationInfo) {
-                    SettingsRow(
-                        title: "settings.medication.import.title",
-                        subtitle: "settings.medication.import.subtitle"
+                NavigationLink {
+                    MedicationPlansView(vm: medicationVM)
+                } label: {
+                    DynamicSettingsRow(
+                        title: "Medication & Reminders",
+                        subtitle: medicationVM.settingsSummaryText()
                     )
                 }
-                .buttonStyle(.plain)
             }
         }
         .navigationTitle("settings.title")
@@ -273,6 +294,23 @@ private struct HealthSettingsView: View {
 private struct SettingsRow: View {
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .foregroundStyle(.primary)
+            Text(subtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct DynamicSettingsRow: View {
+    let title: String
+    let subtitle: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -28,6 +28,11 @@ private func makeTimelineDayGroups(from events: [DoseEvent]) -> [TimelineDayGrou
         .sorted { ($0.events.first?.timeH ?? .leastNormalMagnitude) > ($1.events.first?.timeH ?? .leastNormalMagnitude) }
 }
 
+enum BodyWeightSyncSource: String {
+    case healthKit
+    case manual
+}
+
 @MainActor
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
@@ -40,6 +45,8 @@ final class DoseTimelineVM: ObservableObject {
     @Published private(set) var dayGroups: [TimelineDayGroup] = []
     private let weightKey = "user.weightKg"
     private let eventsModifiedKey = "dose.events.modifiedAt"
+    private let weightSyncDateKey = "user.weight.syncDate"
+    private let weightSyncSourceKey = "user.weight.syncSource"
 
     @Published private(set) var eventsModifiedAt: TimeInterval {
         didSet {
@@ -52,6 +59,8 @@ final class DoseTimelineVM: ObservableObject {
             UserDefaults.standard.set(bodyWeightKG, forKey: weightKey)
         }
     }
+    @Published private(set) var lastBodyWeightSyncDate: Date?
+    @Published private(set) var bodyWeightSyncSource: BodyWeightSyncSource?
     @Published var isSimulating: Bool = false
     
     private var cancellables = Set<AnyCancellable>()
@@ -64,6 +73,13 @@ final class DoseTimelineVM: ObservableObject {
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
+        self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
+        if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
+            self.bodyWeightSyncSource = BodyWeightSyncSource(rawValue: rawValue)
+        } else {
+            self.bodyWeightSyncSource = nil
+        }
         self.onChange = nil
         self.dayGroups = []
         setupSubscriptions()
@@ -77,6 +93,13 @@ final class DoseTimelineVM: ObservableObject {
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
+        self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
+        if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
+            self.bodyWeightSyncSource = BodyWeightSyncSource(rawValue: rawValue)
+        } else {
+            self.bodyWeightSyncSource = nil
+        }
         self.dayGroups = makeTimelineDayGroups(from: initialEvents)
         setupSubscriptions()
         if !initialEvents.isEmpty {
@@ -150,30 +173,78 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     func requestHealthKitAuthorization() async throws {
-        try await HealthKitService.shared.requestAuthorizationIfNeeded()
+        try await HealthKitService.shared.requestBodyMassAuthorizationIfNeeded()
     }
 
     func importLatestBodyWeightFromHealthKit() async throws -> Double {
-        let weightKG = try await HealthKitService.shared.fetchLatestBodyMassKG()
-        bodyWeightKG = weightKG
-        return weightKG
+        let sample = try await HealthKitService.shared.fetchLatestBodyMassSample()
+        applyBodyWeightFromHealthKit(sample.weightKG, at: sample.recordedAt)
+        return sample.weightKG
     }
 
     func refreshLatestBodyWeightSilently() async {
-        guard let weightKG = try? await HealthKitService.shared.fetchLatestBodyMassKG() else {
+        guard let sample = try? await HealthKitService.shared.fetchLatestBodyMassSample() else {
             return
         }
-        bodyWeightKG = weightKG
+        applyBodyWeightFromHealthKit(sample.weightKG, at: sample.recordedAt)
     }
 
     func updateBodyWeightAndSyncToHealthKit(_ newWeightKG: Double) async throws {
         bodyWeightKG = newWeightKG
         try await HealthKitService.shared.saveBodyMassKG(newWeightKG)
+        storeWeightSyncMetadata(source: .manual, date: Date())
+    }
+
+    func updateBodyWeightLocally(_ newWeightKG: Double) {
+        bodyWeightKG = newWeightKG
+        storeWeightSyncMetadata(source: .manual, date: Date())
+    }
+
+    func beginBodyWeightHealthKitSync() async {
+        do {
+            try await HealthKitService.shared.startBodyMassBackgroundSync { [weak self] weightKG, date in
+                self?.applyBodyWeightFromHealthKit(weightKG, at: date)
+            }
+        } catch {
+            #if DEBUG
+            print("Body mass sync setup failed:", error)
+            #endif
+        }
     }
 
     func concentration(at date: Date) -> Double? {
         guard let result else { return nil }
         let hourValue = date.timeIntervalSince1970 / 3600.0
         return result.concentration(at: hourValue)
+    }
+
+    var bodyWeightHealthStatusText: String {
+        let weightText = String(format: "%.1f kg", locale: Locale.current, bodyWeightKG)
+        guard let lastBodyWeightSyncDate, let bodyWeightSyncSource else {
+            return "Current \(weightText)"
+        }
+
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale.current
+        let relative = formatter.localizedString(for: lastBodyWeightSyncDate, relativeTo: Date())
+
+        switch bodyWeightSyncSource {
+        case .healthKit:
+            return "Current \(weightText) · synced from Health \(relative)"
+        case .manual:
+            return "Current \(weightText) · manually updated \(relative)"
+        }
+    }
+
+    private func applyBodyWeightFromHealthKit(_ weightKG: Double, at date: Date) {
+        bodyWeightKG = weightKG
+        storeWeightSyncMetadata(source: .healthKit, date: date)
+    }
+
+    private func storeWeightSyncMetadata(source: BodyWeightSyncSource, date: Date) {
+        lastBodyWeightSyncDate = date
+        bodyWeightSyncSource = source
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: weightSyncDateKey)
+        UserDefaults.standard.set(source.rawValue, forKey: weightSyncSourceKey)
     }
 }

@@ -6,13 +6,20 @@ final class HealthKitService {
     static let shared = HealthKitService()
 
     private let store = HKHealthStore()
+    private var bodyMassObserverQuery: HKObserverQuery?
+    private var bodyMassUpdateHandler: ((Double, Date) -> Void)?
+    private let bodyMassAnchorKey = "healthkit.bodyMass.anchor"
 
     private init() {}
+
+    private var bodyMassType: HKQuantityType? {
+        HKObjectType.quantityType(forIdentifier: .bodyMass)
+    }
 
     private var bodyMassReadTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = []
 
-        if let bodyMassType = HKObjectType.quantityType(forIdentifier: .bodyMass) {
+        if let bodyMassType {
             types.insert(bodyMassType)
         }
 
@@ -22,14 +29,34 @@ final class HealthKitService {
     private var bodyMassShareTypes: Set<HKSampleType> {
         var types: Set<HKSampleType> = []
 
-        if let bodyMassType = HKObjectType.quantityType(forIdentifier: .bodyMass) {
+        if let bodyMassType {
             types.insert(bodyMassType)
         }
 
         return types
     }
 
-    func requestAuthorizationIfNeeded() async throws {
+    private var medicationReadTypes: Set<HKObjectType> {
+        guard #available(iOS 26.0, *) else {
+            return []
+        }
+
+        return [
+            HKObjectType.userAnnotatedMedicationType(),
+            HKObjectType.medicationDoseEventType()
+        ]
+    }
+
+    func requestBodyMassAuthorizationIfNeeded() async throws {
+        try await requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes)
+    }
+
+    func requestMedicationAuthorizationIfNeeded() async throws {
+        guard !medicationReadTypes.isEmpty else { return }
+        try await requestAuthorization(toShare: [], read: medicationReadTypes)
+    }
+
+    private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw NSError(
                 domain: "HealthKitService",
@@ -38,28 +65,15 @@ final class HealthKitService {
             )
         }
 
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            store.requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "HealthKitService",
-                        code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "HealthKit 授权失败"]
-                    ))
-                }
-            }
-        }
+        try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
     }
 
     func fetchLatestBodyMassKG() async throws -> Double {
-        guard let bodyMassType = HKObjectType.quantityType(forIdentifier: .bodyMass) else {
+        try await fetchLatestBodyMassSample().weightKG
+    }
+
+    func fetchLatestBodyMassSample() async throws -> (weightKG: Double, recordedAt: Date) {
+        guard let bodyMassType else {
             throw NSError(
                 domain: "HealthKitService",
                 code: 3,
@@ -85,7 +99,7 @@ final class HealthKitService {
                 }
 
                 let valueKG = sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
-                continuation.resume(returning: valueKG)
+                continuation.resume(returning: (valueKG, sample.endDate))
             }
             store.execute(query)
         }
@@ -123,4 +137,88 @@ final class HealthKitService {
         }
     }
 
+    func startBodyMassBackgroundSync(onUpdate: @escaping (Double, Date) -> Void) async throws {
+        guard let bodyMassType else {
+            throw NSError(
+                domain: "HealthKitService",
+                code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "无法订阅体重类型"]
+            )
+        }
+
+        bodyMassUpdateHandler = onUpdate
+
+        if bodyMassObserverQuery == nil {
+            let query = HKObserverQuery(sampleType: bodyMassType, predicate: nil) { [weak self] _, completionHandler, error in
+                guard let self else {
+                    completionHandler()
+                    return
+                }
+
+                Task { @MainActor in
+                    defer { completionHandler() }
+
+                    guard error == nil else { return }
+                    try? await self.syncLatestBodyMassFromAnchoredQuery()
+                }
+            }
+
+            bodyMassObserverQuery = query
+            store.execute(query)
+        }
+
+        try await store.enableBackgroundDelivery(for: bodyMassType, frequency: .immediate)
+        try await syncLatestBodyMassFromAnchoredQuery()
+    }
+
+    private func syncLatestBodyMassFromAnchoredQuery() async throws {
+        let result = try await fetchBodyMassChanges()
+        if let newestSample = result.samples.max(by: { $0.endDate < $1.endDate }) {
+            let valueKG = newestSample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+            bodyMassUpdateHandler?(valueKG, newestSample.endDate)
+        }
+        saveBodyMassAnchor(result.anchor)
+    }
+
+    private func fetchBodyMassChanges() async throws -> (samples: [HKQuantitySample], anchor: HKQueryAnchor?) {
+        guard let bodyMassType else {
+            return ([], nil)
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let query = HKAnchoredObjectQuery(
+                type: bodyMassType,
+                predicate: nil,
+                anchor: loadBodyMassAnchor(),
+                limit: HKObjectQueryNoLimit
+            ) { _, samples, _, newAnchor, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let quantitySamples = (samples as? [HKQuantitySample]) ?? []
+                continuation.resume(returning: (quantitySamples, newAnchor))
+            }
+
+            store.execute(query)
+        }
+    }
+
+    private func loadBodyMassAnchor() -> HKQueryAnchor? {
+        guard let data = UserDefaults.standard.data(forKey: bodyMassAnchorKey) else {
+            return nil
+        }
+
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+    }
+
+    private func saveBodyMassAnchor(_ anchor: HKQueryAnchor?) {
+        guard let anchor,
+              let data = try? NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true) else {
+            return
+        }
+
+        UserDefaults.standard.set(data, forKey: bodyMassAnchorKey)
+    }
 }

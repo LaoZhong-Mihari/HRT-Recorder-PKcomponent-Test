@@ -65,18 +65,18 @@ struct InjectionPK {
 // Conforms to Identifiable for easier use in SwiftUI Pickers.
 enum Ester: String, CaseIterable, Identifiable, Codable, Sendable {
     case E2, EB, EV, EC, EN
-    var id: Self { self }
+    nonisolated var id: Self { self }
 
     /// Provides the full name for display in pickers.
-    var fullName: String { EsterInfo.by(ester: self).fullName }
+    nonisolated var fullName: String { EsterInfo.by(ester: self).fullName }
 
     /// Localized full display name for UI pickers.
-    var localizedNameKey: LocalizedStringKey {
+    nonisolated var localizedNameKey: LocalizedStringKey {
         LocalizedStringKey("ester.\(rawValue).name")
     }
 
     /// Localized abbreviation (e.g. "EV" → localized or transliterated).
-    var abbreviation: String {
+    nonisolated var abbreviation: String {
         NSLocalizedString("ester.\(rawValue).abbr", comment: "Localized ester abbreviation")
     }
 }
@@ -105,7 +105,7 @@ struct EsterInfo {
         .EN: .init(ester: .EN, fullName: "Estradiol Enanthate", molecularWeight: 384.56) // C25H36O3
     ]
     
-    static func by(ester: Ester) -> EsterInfo {
+    nonisolated static func by(ester: Ester) -> EsterInfo {
         return all[ester]!
     }
 }

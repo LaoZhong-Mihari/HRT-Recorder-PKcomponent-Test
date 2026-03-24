@@ -12,7 +12,10 @@ struct HRTRecorderBetaApp: App {
     @Environment(\.scenePhase) private var phase
     @AppStorage("healthkit.weight.authorization.requested") private var didRequestHealthKitWeightAuthorization = false
     @StateObject private var store: PersistedStore<[DoseEvent]>
+    @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
+    @StateObject private var notificationCoordinator: NotificationCoordinator
     @StateObject private var timelineVM: DoseTimelineVM
+    @StateObject private var medicationVM: MedicationPlanVM
     @StateObject private var watchDoseReceiver = WatchDoseReceiver()
     
     init() {
@@ -20,16 +23,32 @@ struct HRTRecorderBetaApp: App {
             filename: "dose_events.json",
             defaultValue: []
         )
+        let persistedMedicationPlans = PersistedStore<[MedicationPlan]>(
+            filename: "medication_plans.json",
+            defaultValue: []
+        )
+        let notificationCoordinator = NotificationCoordinator()
         _store = StateObject(wrappedValue: persistedStore)
+        _medicationPlanStore = StateObject(wrappedValue: persistedMedicationPlans)
+        _notificationCoordinator = StateObject(wrappedValue: notificationCoordinator)
         _timelineVM = StateObject(wrappedValue: DoseTimelineVM(initialEvents: persistedStore.value) { updated in
             persistedStore.value = updated
         })
+        _medicationVM = StateObject(
+            wrappedValue: MedicationPlanVM(
+                initialPlans: persistedMedicationPlans.value,
+                notificationCoordinator: notificationCoordinator
+            ) { updated in
+                persistedMedicationPlans.value = updated
+            }
+        )
     }
     
     var body: some Scene {
         WindowGroup {
-            TimelineScreen(vm: timelineVM)
+            TimelineScreen(vm: timelineVM, medicationVM: medicationVM)
                 .task {
+                    await medicationVM.configure()
                     watchDoseReceiver.start(
                         onReceiveDoseEvent: { event, modifiedAt in
                             timelineVM.save(event, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
@@ -93,10 +112,13 @@ struct HRTRecorderBetaApp: App {
                         try? await timelineVM.requestHealthKitAuthorization()
                         didRequestHealthKitWeightAuthorization = true
                     }
+                    await timelineVM.beginBodyWeightHealthKitSync()
                     await timelineVM.refreshLatestBodyWeightSilently()
+                    await medicationVM.refreshSystemState()
                 }
             } else if newPhase == .inactive || newPhase == .background {
                 store.saveSync()
+                medicationPlanStore.saveSync()
             }
         }
     }

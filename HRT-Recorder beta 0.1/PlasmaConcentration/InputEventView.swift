@@ -59,10 +59,17 @@ struct InputEventView: View {
     @FocusState private var focusedField: FocusedDoseField?
 
     var onSave: (DoseEvent) -> Void
+    var onCancel: (() -> Void)?
     
     // **NEW**: Initializer for both creating a new event and editing an existing one.
-    init(eventToEdit: DoseEvent? = nil, onSave: @escaping (DoseEvent) -> Void) {
+    init(
+        eventToEdit: DoseEvent? = nil,
+        seed: DoseEntrySeed? = nil,
+        onSave: @escaping (DoseEvent) -> Void,
+        onCancel: (() -> Void)? = nil
+    ) {
         self.onSave = onSave
+        self.onCancel = onCancel
         if let event = eventToEdit {
             let esterInfo = EsterInfo.by(ester: event.ester)
             let rawDose = event.doseMG / esterInfo.toE2Factor
@@ -94,6 +101,39 @@ struct InputEventView: View {
                 if let tierCode = event.extras[.sublingualTier] {
                     let clampedIndex = min(max(Int(tierCode.rounded()), 0), 3)
                     initialDraft.slTierIndex = clampedIndex
+                }
+            }
+
+            _draft = State(initialValue: initialDraft)
+        } else if let seed {
+            var initialDraft = DraftDoseEvent(
+                id: nil,
+                date: seed.date,
+                route: seed.template.route,
+                ester: seed.template.ester,
+                rawEsterDoseText: seed.template.ester == .E2 ? "" : String(
+                    format: "%.2f",
+                    locale: Locale.current,
+                    seed.template.doseMG / EsterInfo.by(ester: seed.template.ester).toE2Factor
+                ),
+                e2EquivalentDoseText: seed.template.doseMG > 0 ? String(format: "%.2f", locale: Locale.current, seed.template.doseMG) : ""
+            )
+
+            if seed.template.route == .patchApply {
+                if let rate = seed.template.extras[.releaseRateUGPerDay] {
+                    initialDraft.patchMode = .releaseRate
+                    initialDraft.releaseRateText = String(format: "%.0f", locale: Locale.current, rate)
+                    initialDraft.e2EquivalentDoseText = ""
+                }
+            }
+
+            if seed.template.route == .sublingual {
+                if let theta = seed.template.extras[.sublingualTheta] {
+                    initialDraft.useCustomTheta = true
+                    initialDraft.customThetaText = String(format: "%.2f", locale: Locale.current, theta)
+                }
+                if let tierCode = seed.template.extras[.sublingualTier] {
+                    initialDraft.slTierIndex = min(max(Int(tierCode.rounded()), 0), 3)
                 }
             }
 
@@ -281,7 +321,12 @@ struct InputEventView: View {
             .navigationTitle(draft.id == nil ? Text("input.title.add") : Text("input.title.edit"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("common.cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("common.cancel") {
+                        onCancel?()
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) { Button("common.save") { save() } }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

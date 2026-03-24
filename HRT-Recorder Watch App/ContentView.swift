@@ -231,6 +231,7 @@ private struct WatchInlineConcentrationChart: View {
     }
 
     private var activeChart: some View {
+#if os(watchOS)
         chartBase
             .focusable()
             .focused($isFocused)
@@ -246,6 +247,14 @@ private struct WatchInlineConcentrationChart: View {
             .onTapGesture {
                 expandChart()
             }
+#else
+        chartBase
+            .focusable()
+            .focused($isFocused)
+            .onTapGesture {
+                expandChart()
+            }
+#endif
     }
 
     private var chartBase: some View {
@@ -479,6 +488,7 @@ private struct WatchFullscreenConcentrationChart: View {
             toggleCursorMode()
         }
 
+#if os(watchOS)
         if isCursorActive {
             baseChart.digitalCrownRotation(
                 $crownSelection,
@@ -500,6 +510,9 @@ private struct WatchFullscreenConcentrationChart: View {
                 isHapticFeedbackEnabled: true
             )
         }
+#else
+        baseChart
+#endif
     }
 
     private func toggleCursorMode() {

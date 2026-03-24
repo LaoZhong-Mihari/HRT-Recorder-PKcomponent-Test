@@ -446,9 +446,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder beta";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -487,9 +486,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder beta";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSHealthClinicalHealthRecordsShareUsageDescription = "";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read and write body weight in HealthKit to keep your weight in sync.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

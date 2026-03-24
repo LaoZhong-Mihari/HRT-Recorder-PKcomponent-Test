@@ -1,0 +1,269 @@
+import Combine
+import Foundation
+import UserNotifications
+
+@MainActor
+final class MedicationPlanVM: ObservableObject {
+    @Published private(set) var plans: [MedicationPlan]
+    @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published private(set) var importSuggestions: [MedicationImportSuggestion] = []
+    @Published private(set) var isImporting = false
+    @Published var importErrorMessage: String?
+    @Published var notificationMessage: String?
+    @Published private(set) var pendingDoseSeed: DoseEntrySeed?
+
+    private let notificationCoordinator: NotificationCoordinator
+    private let importService = HealthMedicationImportService()
+    private let onChange: (([MedicationPlan]) -> Void)?
+    private var cancellables = Set<AnyCancellable>()
+
+    init(
+        initialPlans: [MedicationPlan],
+        notificationCoordinator: NotificationCoordinator,
+        onChange: (([MedicationPlan]) -> Void)? = nil
+    ) {
+        self.plans = Self.sortedPlans(initialPlans)
+        self.notificationCoordinator = notificationCoordinator
+        self.onChange = onChange
+
+        notificationCoordinator.$authorizationStatus
+            .receive(on: RunLoop.main)
+            .sink { [weak self] status in
+                self?.authorizationStatus = status
+            }
+            .store(in: &cancellables)
+
+        notificationCoordinator.$pendingLaunchContext
+            .receive(on: RunLoop.main)
+            .sink { [weak self] context in
+                self?.handlePendingLaunchContext(context)
+            }
+            .store(in: &cancellables)
+    }
+
+    func configure() async {
+        notificationCoordinator.configure()
+        await notificationCoordinator.refreshAuthorizationStatus()
+        await syncNotifications()
+    }
+
+    func refreshSystemState() async {
+        await notificationCoordinator.refreshAuthorizationStatus()
+        await syncNotifications()
+    }
+
+    func loadImportSuggestions() async {
+        guard !isImporting else { return }
+
+        isImporting = true
+        importErrorMessage = nil
+        defer { isImporting = false }
+
+        do {
+            importSuggestions = try await importService.loadSuggestions()
+        } catch {
+            importSuggestions = []
+            importErrorMessage = error.localizedDescription
+        }
+    }
+
+    func clearImportError() {
+        importErrorMessage = nil
+    }
+
+    func clearNotificationMessage() {
+        notificationMessage = nil
+    }
+
+    func savePlanRequestingNotificationsIfNeeded(_ plan: MedicationPlan) async {
+        let resolvedPlan = await resolvedPlanForNotificationAuthorization(from: plan)
+        persist(plan: resolvedPlan)
+    }
+
+    func savePlan(_ plan: MedicationPlan) {
+        persist(plan: plan)
+    }
+
+    func removePlans(at offsets: IndexSet) {
+        var updatedPlans = plans
+        for index in offsets.sorted(by: >) {
+            updatedPlans.remove(at: index)
+        }
+        apply(plans: updatedPlans)
+    }
+
+    func removePlan(_ plan: MedicationPlan) {
+        let updatedPlans = plans.filter { $0.id != plan.id }
+        apply(plans: updatedPlans)
+    }
+
+    func setEnabled(_ isEnabled: Bool, for plan: MedicationPlan) {
+        var updated = plan
+        updated.isEnabled = isEnabled
+        updated.updatedAt = Date()
+
+        Task { @MainActor in
+            let resolved = isEnabled
+                ? await self.resolvedPlanForNotificationAuthorization(from: updated)
+                : updated
+            self.persist(plan: resolved)
+        }
+    }
+
+    func nextOccurrence(for plan: MedicationPlan) -> PlannedDoseOccurrence? {
+        plan.nextOccurrence()
+    }
+
+    func nextOverallOccurrence() -> PlannedDoseOccurrence? {
+        plans
+            .filter(\.isEnabled)
+            .compactMap(nextOccurrence(for:))
+            .min { $0.scheduledDate < $1.scheduledDate }
+    }
+
+    func requestNotificationAuthorization() async {
+        let granted = await notificationCoordinator.requestAuthorizationIfNeeded()
+        if granted {
+            notificationMessage = nil
+        } else {
+            notificationMessage = notificationPermissionMessage(for: notificationCoordinator.authorizationStatus)
+        }
+        await syncNotifications()
+    }
+
+    func consumePendingDoseSeed() {
+        pendingDoseSeed = nil
+        notificationCoordinator.clearPendingLaunchContext()
+    }
+
+    func settingsSummaryText() -> String {
+        let activeCount = plans.filter { $0.isEnabled }.count
+        let statusText = notificationStatusText()
+        return "\(activeCount) active plan\(activeCount == 1 ? "" : "s") · \(statusText)"
+    }
+
+    func notificationStatusText() -> String {
+        switch authorizationStatus {
+        case .authorized:
+            return "notifications allowed"
+        case .provisional:
+            return "notifications provisional"
+        case .ephemeral:
+            return "notifications temporary"
+        case .denied:
+            return "notifications denied"
+        case .notDetermined:
+            return "notifications not set"
+        @unknown default:
+            return "notifications unknown"
+        }
+    }
+
+    var activePlans: [MedicationPlan] {
+        plans.filter(\.isEnabled)
+    }
+
+    var pausedPlans: [MedicationPlan] {
+        plans.filter { !$0.isEnabled }
+    }
+
+    var activePlanCount: Int {
+        activePlans.count
+    }
+
+    var pausedPlanCount: Int {
+        pausedPlans.count
+    }
+
+    var supportsMedicationImport: Bool {
+        importService.isSupported
+    }
+
+    var importAvailabilityDescription: String {
+        importService.availabilityDescription
+    }
+
+    func makeSeed(for plan: MedicationPlan, at date: Date) -> DoseEntrySeed {
+        DoseEntrySeed(date: date, template: plan.template, title: plan.displayName)
+    }
+
+    private func apply(plans updatedPlans: [MedicationPlan]) {
+        plans = Self.sortedPlans(updatedPlans)
+        onChange?(plans)
+
+        Task { @MainActor in
+            await self.syncNotifications()
+        }
+    }
+
+    private func syncNotifications() async {
+        await notificationCoordinator.syncNotifications(for: plans)
+    }
+
+    private func handlePendingLaunchContext(_ context: ReminderLaunchContext?) {
+        guard let context,
+              let plan = plans.first(where: { $0.id == context.planID }) else {
+            return
+        }
+
+        pendingDoseSeed = makeSeed(for: plan, at: context.scheduledDate)
+    }
+
+    private func persist(plan: MedicationPlan) {
+        var updatedPlans = plans
+        if let index = updatedPlans.firstIndex(where: { $0.id == plan.id }) {
+            updatedPlans[index] = plan
+        } else {
+            updatedPlans.append(plan)
+        }
+        apply(plans: updatedPlans)
+    }
+
+    private func resolvedPlanForNotificationAuthorization(from plan: MedicationPlan) async -> MedicationPlan {
+        guard plan.isEnabled else {
+            notificationMessage = nil
+            return plan
+        }
+
+        let granted = await notificationCoordinator.requestAuthorizationIfNeeded()
+        guard granted else {
+            var disabledPlan = plan
+            disabledPlan.isEnabled = false
+            disabledPlan.updatedAt = Date()
+            notificationMessage = notificationPermissionMessage(for: notificationCoordinator.authorizationStatus)
+            return disabledPlan
+        }
+
+        notificationMessage = nil
+        return plan
+    }
+
+    private func notificationPermissionMessage(for status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .denied:
+            return "Notifications are off. Turn them on in Settings before reminders can run."
+        case .notDetermined:
+            return "The app couldn't finish requesting notification access. Try again from the status card."
+        case .authorized, .provisional, .ephemeral:
+            return "Notification access is available."
+        @unknown default:
+            return "Notification access is unavailable right now."
+        }
+    }
+
+    private static func sortedPlans(_ plans: [MedicationPlan]) -> [MedicationPlan] {
+        plans.sorted { lhs, rhs in
+            if lhs.isEnabled != rhs.isEnabled {
+                return lhs.isEnabled && !rhs.isEnabled
+            }
+
+            let lhsDate = lhs.nextOccurrence()?.scheduledDate ?? .distantFuture
+            let rhsDate = rhs.nextOccurrence()?.scheduledDate ?? .distantFuture
+            if lhsDate != rhsDate {
+                return lhsDate < rhsDate
+            }
+
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+}

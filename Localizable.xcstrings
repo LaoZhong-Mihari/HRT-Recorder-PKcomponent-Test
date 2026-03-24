@@ -255,6 +255,15 @@
         }
       }
     },
+    "Add another time" : {
+
+    },
+    "Bring supported Apple Health medications into reusable reminder plans." : {
+
+    },
+    "Cancel" : {
+
+    },
     "chart.accessibility" : {
 
     },
@@ -341,6 +350,9 @@
           }
         }
       }
+    },
+    "Close" : {
+
     },
     "common.cancel" : {
       "localizations" : {
@@ -455,6 +467,42 @@
       }
     },
     "Concentration" : {
+
+    },
+    "Configure dose template" : {
+
+    },
+    "Create a reusable plan for oral doses, injections, gels, or patch changes. The app can then prefill dose logging and schedule reminders for you." : {
+
+    },
+    "Create medication plan" : {
+
+    },
+    "Create Plan" : {
+
+    },
+    "Daily" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete plan?" : {
+
+    },
+    "Dose Template" : {
+
+    },
+    "Edit" : {
+
+    },
+    "Edit dose template" : {
+
+    },
+    "Edit Plan" : {
+
+    },
+    "Enabled" : {
 
     },
     "ester.%@.name" : {
@@ -630,7 +678,29 @@
         }
       }
     },
+    "Every %lld day%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Every %1$lld day%2$@"
+          }
+        }
+      }
+    },
+    "Every N Days" : {
+
+    },
     "HealthKit" : {
+
+    },
+    "High-confidence mappings are created automatically. Patch release rate, gel area, and other PK-specific values still need confirmation before saving." : {
+
+    },
+    "Import from Health" : {
+
+    },
+    "Import Notes" : {
 
     },
     "input.dose.e2" : {
@@ -988,6 +1058,18 @@
         }
       }
     },
+    "Medication & Reminders" : {
+
+    },
+    "Medication Plan" : {
+
+    },
+    "No medication plans yet" : {
+
+    },
+    "Notifications enabled" : {
+
+    },
     "patch.mode.releaseRate" : {
       "localizations" : {
         "en" : {
@@ -1019,6 +1101,21 @@
           }
         }
       }
+    },
+    "Pattern" : {
+
+    },
+    "Plan" : {
+
+    },
+    "Plan name" : {
+
+    },
+    "Reload" : {
+
+    },
+    "Reminder Schedule" : {
+
     },
     "route.gel" : {
       "localizations" : {
@@ -1116,6 +1213,9 @@
         }
       }
     },
+    "Save" : {
+
+    },
     "settings.health.error" : {
       "comment" : "HealthKit error message",
       "localizations" : {
@@ -1168,6 +1268,7 @@
       }
     },
     "settings.medication.import.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1184,6 +1285,7 @@
       }
     },
     "settings.medication.import.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1201,6 +1303,7 @@
     },
     "settings.medication.import.unsupported" : {
       "comment" : "Medication import unavailable message",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1313,6 +1416,7 @@
       }
     },
     "settings.weight.import.subtitle" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1329,6 +1433,7 @@
       }
     },
     "settings.weight.import.title" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1344,7 +1449,19 @@
         }
       }
     },
+    "Start" : {
+
+    },
+    "Stay ahead of each dose" : {
+
+    },
+    "This removes the reminder schedule but keeps your logged dose history unchanged." : {
+
+    },
     "Time" : {
+
+    },
+    "Time %lld" : {
 
     },
     "timeline.add.title" : {
@@ -1590,6 +1707,9 @@
         }
       }
     },
+    "Try Again" : {
+
+    },
     "watch.events.empty" : {
       "localizations" : {
         "en" : {
@@ -1655,6 +1775,12 @@
           }
         }
       }
+    },
+    "Weekly" : {
+
+    },
+    "You need a dose template before saving the plan." : {
+
     }
   },
   "version" : "1.1"
