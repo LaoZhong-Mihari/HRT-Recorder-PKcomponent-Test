@@ -36,24 +36,19 @@ final class HealthKitService {
         return types
     }
 
-    private var medicationReadTypes: Set<HKObjectType> {
-        guard #available(iOS 26.0, *) else {
-            return []
-        }
-
-        return [
-            HKObjectType.userAnnotatedMedicationType(),
-            HKObjectType.medicationDoseEventType()
-        ]
-    }
-
     func requestBodyMassAuthorizationIfNeeded() async throws {
         try await requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes)
     }
 
     func requestMedicationAuthorizationIfNeeded() async throws {
-        guard !medicationReadTypes.isEmpty else { return }
-        try await requestAuthorization(toShare: [], read: medicationReadTypes)
+        guard #available(iOS 26.0, *) else { return }
+
+        // HealthKit medication-tracking objects are queryable through their
+        // dedicated APIs, but requesting them through the generic authorization
+        // sheet currently raises an exception:
+        // "Authorization to read the following types is disallowed..."
+        // Keep medication import on the query path only so tapping Import from
+        // Apple Health degrades through normal query errors instead of crashing.
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
