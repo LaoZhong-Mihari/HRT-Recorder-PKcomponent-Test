@@ -123,22 +123,22 @@ struct ReminderMessageTemplate: Codable, Identifiable, Equatable, Sendable {
             ReminderMessageTemplate(
                 titleTemplate: "Hi!",
                 bodyTemplate: "It's time for {{dose_line}}.",
-                weight: 0
+                weight: 40
             ),
             ReminderMessageTemplate(
                 titleTemplate: "Onii...Mahiro-chan!",
                 bodyTemplate: "Don't forget about {{dose_line}}.",
-                weight: 100
+                weight: 10
             ),
             ReminderMessageTemplate(
                 titleTemplate: "Reminder",
                 bodyTemplate: "{{time}} is your window for {{dose_line}}.",
-                weight: 0
+                weight: 30
             ),
             ReminderMessageTemplate(
                 titleTemplate: "Quick check-in",
                 bodyTemplate: "Ready when you are: {{dose_line}}.",
-                weight: 0
+                weight: 20
             )
         ]
     }

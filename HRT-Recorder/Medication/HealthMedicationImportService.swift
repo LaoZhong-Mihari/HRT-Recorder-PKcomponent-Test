@@ -425,6 +425,9 @@ private final class QueryExecutionState<Value>: @unchecked Sendable {
         self.continuation = continuation
     }
 
+    @_optimize(none)
+    deinit {}
+
     nonisolated
     func setQuery(_ query: HKQuery) {
         lock.lock()

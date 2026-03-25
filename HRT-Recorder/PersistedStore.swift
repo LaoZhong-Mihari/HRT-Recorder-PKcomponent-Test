@@ -1,6 +1,6 @@
 //
 //  PersistedStore.swift
-//  HRT-Recorder beta 0.1
+//  HRT-Recorder
 //
 //  Created by Mihari on 2025/9/28.
 //

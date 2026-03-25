@@ -1,6 +1,6 @@
 //
-//  HRT_Recorder_beta_0_1App.swift
-//  HRT-Recorder beta 0.1
+//  HRT_RecorderApp.swift
+//  HRT-Recorder
 //
 //  Created by wzzzz Shao on 2025/9/28.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct HRTRecorderBetaApp: App {
+struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
     @AppStorage("healthkit.weight.authorization.requested") private var didRequestHealthKitWeightAuthorization = false
     @StateObject private var store: PersistedStore<[DoseEvent]>
