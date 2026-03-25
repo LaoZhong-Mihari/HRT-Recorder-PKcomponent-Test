@@ -7,6 +7,22 @@
     "%lld" : {
 
     },
+    "%lld active plan%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld active plan%2$@ · %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 个启用计划 · %3$@"
+          }
+        }
+      }
+    },
     "about.contact.title" : {
       "comment" : "Contact us title",
       "localizations" : {
@@ -255,14 +271,75 @@
         }
       }
     },
-    "Add another time" : {
-
+    "Active" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用中"
+          }
+        }
+      }
     },
-    "Bring supported Apple Health medications into reusable reminder plans." : {
-
+    "Active Plans" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用中的计划"
+          }
+        }
+      }
+    },
+    "Add another time" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加一个时间"
+          }
+        }
+      }
+    },
+    "Allow notifications when you're ready." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备好后再开启通知即可。"
+          }
+        }
+      }
+    },
+    "Apple Health took too long to answer. Close the sheet and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health 响应时间过长，请关闭后重试。"
+          }
+        }
+      }
+    },
+    "Blocked" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已阻止"
+          }
+        }
+      }
     },
     "Cancel" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消"
+          }
+        }
+      }
     },
     "chart.accessibility" : {
 
@@ -352,7 +429,14 @@
       }
     },
     "Close" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
     },
     "common.cancel" : {
       "localizations" : {
@@ -469,41 +553,218 @@
     "Concentration" : {
 
     },
-    "Configure dose template" : {
+    "Configure dose details" : {
 
     },
-    "Create a reusable plan for oral doses, injections, gels, or patch changes. The app can then prefill dose logging and schedule reminders for you." : {
-
+    "Configure dose template" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置剂量模板"
+          }
+        }
+      }
+    },
+    "Couldn't finish notification setup. Try again from the status card." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能完成通知设置，请在状态卡片中重试。"
+          }
+        }
+      }
+    },
+    "Create a plan for doses or patch changes. The app can fill dose details and schedule reminders." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建一个给药或贴片更换计划，App 可自动填充剂量并安排提醒。"
+          }
+        }
+      }
+    },
+    "Create First Plan" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建第一个计划"
+          }
+        }
+      }
     },
     "Create medication plan" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建用药计划"
+          }
+        }
+      }
     },
     "Create Plan" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建计划"
+          }
+        }
+      }
     },
     "Daily" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每天"
+          }
+        }
+      }
+    },
+    "Daily at %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily at %1$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每天 %1$@"
+          }
+        }
+      }
     },
     "Delete" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除"
+          }
+        }
+      }
     },
     "Delete plan?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除计划？"
+          }
+        }
+      }
+    },
+    "Delete this time" : {
+
+    },
+    "Detected template" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别出的模板"
+          }
+        }
+      }
+    },
+    "Done" : {
+
+    },
+    "Dose Details" : {
+
+    },
+    "Dose details still need confirmation." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剂量详情仍需确认。"
+          }
+        }
+      }
+    },
+    "Dose from Health needs confirmation before the plan can be saved." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 Health 的剂量仍需确认后才能保存计划。"
+          }
+        }
+      }
+    },
+    "Dose Schedule" : {
 
     },
     "Dose Template" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剂量模板"
+          }
+        }
+      }
+    },
+    "Dose Time" : {
+
+    },
+    "Each row has its own reminder time and dose, so one plan can handle mixed schedules like 2 mg in the morning and 1 mg later." : {
 
     },
     "Edit" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Edit dose details" : {
 
     },
     "Edit dose template" : {
-
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑剂量模板"
+          }
+        }
+      }
     },
     "Edit Plan" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑计划"
+          }
+        }
+      }
     },
     "Enabled" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用"
+          }
+        }
+      }
     },
     "ester.%@.name" : {
       "shouldTranslate" : false
@@ -682,26 +943,146 @@
       "localizations" : {
         "en" : {
           "stringUnit" : {
-            "state" : "new",
+            "state" : "translated",
             "value" : "Every %1$lld day%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 %1$lld 天"
+          }
+        }
+      }
+    },
+    "Every %lld day%@ from %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every %1$lld day%2$@ from %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 %3$@ 起每 %1$lld 天"
           }
         }
       }
     },
     "Every N Days" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 N 天"
+          }
+        }
+      }
+    },
+    "Gel area is not available from Health. The app will use its default area unless you edit it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 不提供凝胶涂抹面积，如不手动编辑将使用默认面积。"
+          }
+        }
+      }
+    },
+    "Health data isn't available on this device." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备不支持健康数据。"
+          }
+        }
+      }
+    },
+    "Health marks this medication as taken as needed. Add a reminder plan manually if needed." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 将该药物标记为按需使用，如有需要请手动添加提醒计划。"
+          }
+        }
+      }
     },
     "HealthKit" : {
 
     },
-    "High-confidence mappings are created automatically. Patch release rate, gel area, and other PK-specific values still need confirmation before saving." : {
-
-    },
     "Import from Health" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Health 导入"
+          }
+        }
+      }
     },
     "Import Notes" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入说明"
+          }
+        }
+      }
+    },
+    "Import plans from Apple Health." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Apple Health 导入计划。"
+          }
+        }
+      }
+    },
+    "Import supported Apple Health medications into reminder plans." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将受支持的 Apple Health 用药导入为提醒计划。"
+          }
+        }
+      }
+    },
+    "Import unavailable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂时无法导入"
+          }
+        }
+      }
+    },
+    "Imported" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已导入"
+          }
+        }
+      }
+    },
+    "Imported from Health" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Health 导入"
+          }
+        }
+      }
     },
     "input.dose.e2" : {
       "comment" : "E2-equivalent dose placeholder",
@@ -1058,17 +1439,305 @@
         }
       }
     },
+    "Latest Health event" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最新 Health 事件"
+          }
+        }
+      }
+    },
+    "Loading medications" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取用药"
+          }
+        }
+      }
+    },
     "Medication & Reminders" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药与提醒"
+          }
+        }
+      }
+    },
+    "Medication import needs iOS 26 or later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药导入需要 iOS 26 或更高版本。"
+          }
+        }
+      }
     },
     "Medication Plan" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药计划"
+          }
+        }
+      }
+    },
+    "Most fields can be filled automatically. Confirm patch, gel, and other PK-specific details before saving." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大部分字段可自动填写，保存前请确认贴片、凝胶等 PK 相关细节。"
+          }
+        }
+      }
+    },
+    "Needs Access" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需授权"
+          }
+        }
+      }
+    },
+    "New Plan" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建计划"
+          }
+        }
+      }
+    },
+    "Next reminder" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次提醒"
+          }
+        }
+      }
+    },
+    "No Apple Health medications matched the current import rules." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health 中暂无符合当前导入规则的用药。"
+          }
+        }
+      }
     },
     "No medication plans yet" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有用药计划"
+          }
+        }
+      }
+    },
+    "No reminder scheduled." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前没有已安排的提醒。"
+          }
+        }
+      }
+    },
+    "No suggestions found" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到建议"
+          }
+        }
+      }
+    },
+    "No upcoming reminder." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无即将到来的提醒。"
+          }
+        }
+      }
+    },
+    "Not interacted" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未操作"
+          }
+        }
+      }
+    },
+    "Not logged" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未记录"
+          }
+        }
+      }
+    },
+    "Notification access is available." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知权限可用。"
+          }
+        }
+      }
+    },
+    "Notification access is unavailable right now." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前无法获取通知权限。"
+          }
+        }
+      }
+    },
+    "Notification failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知失败"
+          }
+        }
+      }
+    },
+    "Notifications" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知"
+          }
+        }
+      }
+    },
+    "notifications allowed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已允许"
+          }
+        }
+      }
+    },
+    "Notifications are off. Turn them on in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已关闭，请前往设置开启。"
+          }
+        }
+      }
+    },
+    "notifications denied" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已拒绝"
+          }
+        }
+      }
     },
     "Notifications enabled" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用通知"
+          }
+        }
+      }
+    },
+    "notifications not set" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知未设置"
+          }
+        }
+      }
+    },
+    "notifications provisional" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知为预授权"
+          }
+        }
+      }
+    },
+    "notifications temporary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知为临时会话"
+          }
+        }
+      }
+    },
+    "notifications unknown" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知状态未知"
+          }
+        }
+      }
+    },
+    "Open Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置"
+          }
+        }
+      }
+    },
+    "Patch release rate is not available from Health. Please confirm the patch model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 不提供贴片释放速率，请确认贴片型号。"
+          }
+        }
+      }
     },
     "patch.mode.releaseRate" : {
       "localizations" : {
@@ -1103,18 +1772,172 @@
       }
     },
     "Pattern" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模式"
+          }
+        }
+      }
+    },
+    "Paused" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停"
+          }
+        }
+      }
+    },
+    "Paused Plans" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停的计划"
+          }
+        }
+      }
     },
     "Plan" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "计划"
+          }
+        }
+      }
     },
     "Plan name" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "计划名称"
+          }
+        }
+      }
+    },
+    "Plans and reminders are ready." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "计划和提醒已就绪。"
+          }
+        }
+      }
+    },
+    "Plans with reminders on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒已开启的计划。"
+          }
+        }
+      }
+    },
+    "Provisional" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预授权"
+          }
+        }
+      }
+    },
+    "Pull to refresh reminder status." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下拉以刷新提醒状态。"
+          }
+        }
+      }
+    },
+    "Reading Apple Health medications and dose events." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 Apple Health 的用药和给药事件。"
+          }
+        }
+      }
+    },
+    "Ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已就绪"
+          }
+        }
+      }
     },
     "Reload" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新载入"
+          }
+        }
+      }
+    },
+    "Reminder pattern is inferred from recent scheduled dose events when possible." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如有可能，提醒模式会根据最近的计划给药事件推断。"
+          }
+        }
+      }
     },
     "Reminder Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒安排"
+          }
+        }
+      }
+    },
+    "Reminder status" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒状态"
+          }
+        }
+      }
+    },
+    "Reminder Time" : {
+
+    },
+    "Reminder times are controlled here. Dose details only control route, ester, and amount." : {
+
+    },
+    "Reminders paused" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒已暂停"
+          }
+        }
+      }
+    },
+    "Remove this time" : {
 
     },
     "route.gel" : {
@@ -1214,7 +2037,34 @@
       }
     },
     "Save" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        }
+      }
+    },
+    "Saved plans with reminders off." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存但提醒关闭的计划。"
+          }
+        }
+      }
+    },
+    "Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间安排"
+          }
+        }
+      }
     },
     "settings.health.error" : {
       "comment" : "HealthKit error message",
@@ -1449,20 +2299,108 @@
         }
       }
     },
+    "Skipped" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过"
+          }
+        }
+      }
+    },
+    "Snoozed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已稍后提醒"
+          }
+        }
+      }
+    },
     "Start" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始"
+          }
+        }
+      }
+    },
+    "Sublingual dosing isn't auto-detected. Please confirm if this should stay oral or become sublingual." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统不会自动识别舌下含服，请确认应保持口服还是改为舌下含服。"
+          }
+        }
+      }
+    },
+    "Taken" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已服用"
+          }
+        }
+      }
+    },
+    "Temporary" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时会话"
+          }
+        }
+      }
+    },
+    "This editor controls the medication details only. The reminder time comes from the wheel above." : {
 
     },
-    "Stay ahead of each dose" : {
-
+    "This only removes the reminder schedule. Logged doses stay." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这只会删除提醒计划，已记录的给药会保留。"
+          }
+        }
+      }
     },
-    "This removes the reminder schedule but keeps your logged dose history unchanged." : {
-
+    "This plan is paused." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该计划已暂停。"
+          }
+        }
+      }
     },
     "Time" : {
 
     },
     "Time %lld" : {
-
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time %1$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间 %1$lld"
+          }
+        }
+      }
     },
     "timeline.add.title" : {
       "shouldTranslate" : false
@@ -1708,7 +2646,44 @@
       }
     },
     "Try Again" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "Turn On Notifications" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启通知"
+          }
+        }
+      }
+    },
+    "Turn on notifications in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请前往设置开启通知。"
+          }
+        }
+      }
+    },
+    "Unknown" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未知"
+          }
+        }
+      }
     },
     "watch.events.empty" : {
       "localizations" : {
@@ -1777,10 +2752,41 @@
       }
     },
     "Weekly" : {
-
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每周"
+          }
+        }
+      }
+    },
+    "Weekly on %@ at %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly on %1$@ at %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每周 %1$@ %2$@"
+          }
+        }
+      }
     },
     "You need a dose template before saving the plan." : {
-
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存计划前需要先设置剂量模板。"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

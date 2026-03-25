@@ -15,14 +15,14 @@ final class HealthMedicationImportService {
 
     var availabilityDescription: String {
         guard HKHealthStore.isHealthDataAvailable() else {
-            return "Health data isn't available on this device."
+            return String(localized: "Health data isn't available on this device.")
         }
 
         if #available(iOS 26.0, *) {
-            return "Import plans from Apple Health medications."
+            return String(localized: "Import plans from Apple Health.")
         }
 
-        return "Medication import requires iOS 26 or later."
+        return String(localized: "Medication import needs iOS 26 or later.")
     }
 
     func loadSuggestions() async throws -> [MedicationImportSuggestion] {
@@ -127,24 +127,24 @@ final class HealthMedicationImportService {
         if let template = makeTemplate(route: route, ester: ester, latestEvent: latestEvent) {
             suggestedTemplate = template
         } else {
-            noteParts.append("Dose from Health needs confirmation before the plan can be saved.")
+            noteParts.append(String(localized: "Dose from Health needs confirmation before the plan can be saved."))
         }
 
         switch route {
         case .patchApply:
-            noteParts.append("Patch release rate is not available from Health. Please confirm the patch model.")
+            noteParts.append(String(localized: "Patch release rate is not available from Health. Please confirm the patch model."))
         case .gel:
-            noteParts.append("Gel area is not available from Health. The app will use its default area unless you edit it.")
+            noteParts.append(String(localized: "Gel area is not available from Health. The app will use its default area unless you edit it."))
         case .sublingual:
-            noteParts.append("Sublingual dosing isn't auto-detected. Please confirm if this should stay oral or become sublingual.")
+            noteParts.append(String(localized: "Sublingual dosing isn't auto-detected. Please confirm if this should stay oral or become sublingual."))
         default:
             break
         }
 
         if medication.hasSchedule {
-            noteParts.append("Reminder pattern is inferred from recent scheduled dose events when possible.")
+            noteParts.append(String(localized: "Reminder pattern is inferred from recent scheduled dose events when possible."))
         } else {
-            noteParts.append("Health marks this medication as taken as needed. Add a reminder plan manually if needed.")
+            noteParts.append(String(localized: "Health marks this medication as taken as needed. Add a reminder plan manually if needed."))
         }
 
         return MedicationImportSuggestion(
@@ -336,19 +336,19 @@ final class HealthMedicationImportService {
     private func statusText(for status: HKMedicationDoseEvent.LogStatus) -> String {
         switch status {
         case .taken:
-            return "Taken"
+            return String(localized: "Taken")
         case .skipped:
-            return "Skipped"
+            return String(localized: "Skipped")
         case .snoozed:
-            return "Snoozed"
+            return String(localized: "Snoozed")
         case .notificationNotSent:
-            return "Notification failed"
+            return String(localized: "Notification failed")
         case .notInteracted:
-            return "Not interacted"
+            return String(localized: "Not interacted")
         case .notLogged:
-            return "Not logged"
+            return String(localized: "Not logged")
         @unknown default:
-            return "Unknown"
+            return String(localized: "Unknown")
         }
     }
 
@@ -406,11 +406,11 @@ private enum HealthMedicationImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .healthDataUnavailable:
-            return "Health data isn't available on this device."
+            return String(localized: "Health data isn't available on this device.")
         case .unsupportedOS:
-            return "Medication import requires iOS 26 or later."
+            return String(localized: "Medication import needs iOS 26 or later.")
         case .queryTimedOut:
-            return "Apple Health took too long to answer. Close the sheet and try again."
+            return String(localized: "Apple Health took too long to answer. Close the sheet and try again.")
         }
     }
 }

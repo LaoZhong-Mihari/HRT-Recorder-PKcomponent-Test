@@ -139,23 +139,28 @@ final class MedicationPlanVM: ObservableObject {
     func settingsSummaryText() -> String {
         let activeCount = plans.filter { $0.isEnabled }.count
         let statusText = notificationStatusText()
-        return "\(activeCount) active plan\(activeCount == 1 ? "" : "s") · \(statusText)"
+        return String.localizedStringWithFormat(
+            String(localized: "%lld active plan%@ · %@"),
+            Int64(activeCount),
+            activeCount == 1 ? "" : "s",
+            statusText
+        )
     }
 
     func notificationStatusText() -> String {
         switch authorizationStatus {
         case .authorized:
-            return "notifications allowed"
+            return String(localized: "notifications allowed")
         case .provisional:
-            return "notifications provisional"
+            return String(localized: "notifications provisional")
         case .ephemeral:
-            return "notifications temporary"
+            return String(localized: "notifications temporary")
         case .denied:
-            return "notifications denied"
+            return String(localized: "notifications denied")
         case .notDetermined:
-            return "notifications not set"
+            return String(localized: "notifications not set")
         @unknown default:
-            return "notifications unknown"
+            return String(localized: "notifications unknown")
         }
     }
 
@@ -184,7 +189,15 @@ final class MedicationPlanVM: ObservableObject {
     }
 
     func makeSeed(for plan: MedicationPlan, at date: Date) -> DoseEntrySeed {
-        DoseEntrySeed(date: date, template: plan.template, title: plan.displayName)
+        makeSeed(for: plan, at: date, doseSlotID: nil)
+    }
+
+    func makeSeed(for plan: MedicationPlan, at date: Date, doseSlotID: UUID?) -> DoseEntrySeed {
+        DoseEntrySeed(
+            date: date,
+            template: plan.template(for: date, doseSlotID: doseSlotID),
+            title: plan.displayName
+        )
     }
 
     private func apply(plans updatedPlans: [MedicationPlan]) {
@@ -206,7 +219,7 @@ final class MedicationPlanVM: ObservableObject {
             return
         }
 
-        pendingDoseSeed = makeSeed(for: plan, at: context.scheduledDate)
+        pendingDoseSeed = makeSeed(for: plan, at: context.scheduledDate, doseSlotID: context.doseSlotID)
     }
 
     private func persist(plan: MedicationPlan) {
@@ -241,13 +254,13 @@ final class MedicationPlanVM: ObservableObject {
     private func notificationPermissionMessage(for status: UNAuthorizationStatus) -> String {
         switch status {
         case .denied:
-            return "Notifications are off. Turn them on in Settings before reminders can run."
+            return String(localized: "Notifications are off. Turn them on in Settings.")
         case .notDetermined:
-            return "The app couldn't finish requesting notification access. Try again from the status card."
+            return String(localized: "Couldn't finish notification setup. Try again from the status card.")
         case .authorized, .provisional, .ephemeral:
-            return "Notification access is available."
+            return String(localized: "Notification access is available.")
         @unknown default:
-            return "Notification access is unavailable right now."
+            return String(localized: "Notification access is unavailable right now.")
         }
     }
 

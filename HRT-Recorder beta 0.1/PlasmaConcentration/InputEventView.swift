@@ -58,6 +58,7 @@ struct InputEventView: View {
     @State private var draft: DraftDoseEvent
     @FocusState private var focusedField: FocusedDoseField?
 
+    var showsDatePicker: Bool
     var onSave: (DoseEvent) -> Void
     var onCancel: (() -> Void)?
     
@@ -65,9 +66,11 @@ struct InputEventView: View {
     init(
         eventToEdit: DoseEvent? = nil,
         seed: DoseEntrySeed? = nil,
+        showsDatePicker: Bool = true,
         onSave: @escaping (DoseEvent) -> Void,
         onCancel: (() -> Void)? = nil
     ) {
+        self.showsDatePicker = showsDatePicker
         self.onSave = onSave
         self.onCancel = onCancel
         if let event = eventToEdit {
@@ -177,7 +180,9 @@ struct InputEventView: View {
             Form {
                 // ... (DatePicker and Route Picker remain the same)
                 Section {
-                    DatePicker("input.time", selection: $draft.date, displayedComponents: [.date, .hourAndMinute])
+                    if showsDatePicker {
+                        DatePicker("input.time", selection: $draft.date, displayedComponents: [.date, .hourAndMinute])
+                    }
                     Picker("input.route", selection: $draft.route) {
                         Text("route.injection").tag(DoseEvent.Route.injection)
                         Text("route.patchApply").tag(DoseEvent.Route.patchApply)

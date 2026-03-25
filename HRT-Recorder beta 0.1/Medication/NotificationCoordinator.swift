@@ -11,6 +11,7 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     private let requestPrefix = "med-plan-"
     private let userInfoPlanID = "medicationPlanID"
     private let userInfoScheduledDate = "scheduledDate"
+    private let userInfoDoseSlotID = "doseSlotID"
 
     func configure() {
         center.delegate = self
@@ -84,6 +85,9 @@ final class NotificationCoordinator: NSObject, ObservableObject {
             userInfoPlanID: occurrence.planID.uuidString,
             userInfoScheduledDate: occurrence.scheduledDate.timeIntervalSince1970
         ]
+        if let doseSlotID = occurrence.doseSlotID {
+            content.userInfo[userInfoDoseSlotID] = doseSlotID.uuidString
+        }
 
         let calendar = Calendar.autoupdatingCurrent
         let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: occurrence.scheduledDate)
@@ -100,12 +104,13 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     }
 
     private func reminderMessage(for occurrence: PlannedDoseOccurrence, plan: MedicationPlan) -> (title: String, body: String) {
+        let template = plan.template(for: occurrence.scheduledDate, doseSlotID: occurrence.doseSlotID)
         let context = ReminderMessageContext(
             planName: occurrence.planName,
-            action: actionVerb(for: plan.template.route),
-            routeLabel: plan.template.route.planLabel,
-            doseText: doseText(for: plan.template),
-            doseLine: doseLine(for: plan.template),
+            action: actionVerb(for: template.route),
+            routeLabel: template.route.planLabel,
+            doseText: doseText(for: template),
+            doseLine: doseLine(for: template),
             timeText: timeText(for: occurrence.scheduledDate)
         )
 
@@ -118,13 +123,13 @@ final class NotificationCoordinator: NSObject, ObservableObject {
 
             return (
                 title.isEmpty ? occurrence.planName : title,
-                body.isEmpty ? fallbackNotificationBody(for: plan.template, scheduledDate: occurrence.scheduledDate) : body
+                body.isEmpty ? fallbackNotificationBody(for: template, scheduledDate: occurrence.scheduledDate) : body
             )
         }
 
         return (
             occurrence.planName,
-            fallbackNotificationBody(for: plan.template, scheduledDate: occurrence.scheduledDate)
+            fallbackNotificationBody(for: template, scheduledDate: occurrence.scheduledDate)
         )
     }
 
@@ -226,7 +231,12 @@ final class NotificationCoordinator: NSObject, ObservableObject {
             return nil
         }
 
-        return ReminderLaunchContext(planID: planID, scheduledDate: Date(timeIntervalSince1970: timestamp))
+        let doseSlotID = (userInfo[userInfoDoseSlotID] as? String).flatMap(UUID.init(uuidString:))
+        return ReminderLaunchContext(
+            planID: planID,
+            scheduledDate: Date(timeIntervalSince1970: timestamp),
+            doseSlotID: doseSlotID
+        )
     }
 }
 

@@ -169,7 +169,35 @@ struct ReminderClockTime: Codable, Hashable, Identifiable, Equatable, Sendable {
         self.minute = minute
     }
 
-    nonisolated static let defaultMorning = ReminderClockTime(hour: 9, minute: 0)
+    nonisolated static var defaultMorning: ReminderClockTime {
+        ReminderClockTime(hour: 9, minute: 0)
+    }
+
+    nonisolated var formattedText: String {
+        let date = Calendar.autoupdatingCurrent.date(
+            bySettingHour: hour,
+            minute: minute,
+            second: 0,
+            of: Date()
+        ) ?? Date()
+        return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+struct MedicationPlanDoseSlot: Codable, Identifiable, Equatable, Sendable {
+    var id: UUID
+    var time: ReminderClockTime
+    var template: MedicationDoseTemplate
+
+    init(
+        id: UUID = UUID(),
+        time: ReminderClockTime,
+        template: MedicationDoseTemplate
+    ) {
+        self.id = id
+        self.time = time
+        self.template = template
+    }
 }
 
 struct MedicationPlanRecurrence: Codable, Equatable, Sendable {
@@ -233,6 +261,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
     var template: MedicationDoseTemplate
+    var dailyDoseSlots: [MedicationPlanDoseSlot]
     var recurrence: MedicationPlanRecurrence
     var isEnabled: Bool
     var reminderTemplates: [ReminderMessageTemplate]
@@ -244,6 +273,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         case id
         case name
         case template
+        case dailyDoseSlots
         case recurrence
         case isEnabled
         case reminderTemplates
@@ -256,6 +286,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(),
         name: String,
         template: MedicationDoseTemplate,
+        dailyDoseSlots: [MedicationPlanDoseSlot] = [],
         recurrence: MedicationPlanRecurrence,
         isEnabled: Bool = true,
         reminderTemplates: [ReminderMessageTemplate] = ReminderMessageTemplate.defaultTemplates,
@@ -267,6 +298,11 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         self.name = name
         self.template = template
         self.recurrence = recurrence
+        self.dailyDoseSlots = Self.normalizedDailyDoseSlots(
+            dailyDoseSlots,
+            fallbackTemplate: template,
+            recurrence: recurrence
+        )
         self.isEnabled = isEnabled
         self.reminderTemplates = reminderTemplates.isEmpty ? ReminderMessageTemplate.defaultTemplates : reminderTemplates
         self.sourceMedicationName = sourceMedicationName
@@ -280,6 +316,11 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         template = try container.decode(MedicationDoseTemplate.self, forKey: .template)
         recurrence = try container.decode(MedicationPlanRecurrence.self, forKey: .recurrence)
+        dailyDoseSlots = Self.normalizedDailyDoseSlots(
+            try container.decodeIfPresent([MedicationPlanDoseSlot].self, forKey: .dailyDoseSlots) ?? [],
+            fallbackTemplate: template,
+            recurrence: recurrence
+        )
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
         reminderTemplates = try container.decodeIfPresent([ReminderMessageTemplate].self, forKey: .reminderTemplates) ?? ReminderMessageTemplate.defaultTemplates
         sourceMedicationName = try container.decodeIfPresent(String.self, forKey: .sourceMedicationName)
@@ -292,6 +333,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(template, forKey: .template)
+        try container.encode(dailyDoseSlots, forKey: .dailyDoseSlots)
         try container.encode(recurrence, forKey: .recurrence)
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(reminderTemplates, forKey: .reminderTemplates)
@@ -309,9 +351,9 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
     }
 
     nonisolated var defaultPlanName: String {
-        switch template.route {
+        switch primaryTemplate.route {
         case .injection:
-            return "Inject \(template.ester.abbreviation)"
+            return "Inject \(primaryTemplate.ester.abbreviation)"
         case .patchApply:
             return "Apply patch"
         case .patchRemove:
@@ -319,14 +361,73 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         case .gel:
             return "Apply gel"
         case .oral:
-            return "Take \(template.ester.abbreviation)"
+            return "Take \(primaryTemplate.ester.abbreviation)"
         case .sublingual:
-            return "Take \(template.ester.abbreviation) sublingually"
+            return "Take \(primaryTemplate.ester.abbreviation) sublingually"
         }
     }
 
     nonisolated var enabledReminderTemplateCount: Int {
         reminderTemplates.filter(\.isEnabled).count
+    }
+
+    nonisolated var primaryTemplate: MedicationDoseTemplate {
+        resolvedDailyDoseSlots.first?.template ?? template
+    }
+
+    nonisolated var resolvedDailyDoseSlots: [MedicationPlanDoseSlot] {
+        guard recurrence.kind == .daily else { return [] }
+        let slots = dailyDoseSlots.isEmpty
+            ? recurrence.times.map { MedicationPlanDoseSlot(time: $0, template: template) }
+            : dailyDoseSlots
+        return slots.sorted(by: Self.compareDoseSlots)
+    }
+
+    nonisolated var dailyReminderTimes: [ReminderClockTime] {
+        if recurrence.kind == .daily {
+            return resolvedDailyDoseSlots.map(\.time)
+        }
+        return recurrence.times.sorted(by: Self.compareTimes)
+    }
+
+    nonisolated func doseSlot(
+        for scheduledDate: Date,
+        doseSlotID: UUID? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> MedicationPlanDoseSlot? {
+        let slots = resolvedDailyDoseSlots
+        guard !slots.isEmpty else { return nil }
+
+        if let doseSlotID,
+           let matchedSlot = slots.first(where: { $0.id == doseSlotID }) {
+            return matchedSlot
+        }
+
+        let hour = calendar.component(.hour, from: scheduledDate)
+        let minute = calendar.component(.minute, from: scheduledDate)
+        return slots.first {
+            $0.time.hour == hour && $0.time.minute == minute
+        }
+    }
+
+    nonisolated func template(
+        for scheduledDate: Date,
+        doseSlotID: UUID? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) -> MedicationDoseTemplate {
+        doseSlot(for: scheduledDate, doseSlotID: doseSlotID, calendar: calendar)?.template ?? primaryTemplate
+    }
+
+    private nonisolated static func normalizedDailyDoseSlots(
+        _ dailyDoseSlots: [MedicationPlanDoseSlot],
+        fallbackTemplate: MedicationDoseTemplate,
+        recurrence: MedicationPlanRecurrence
+    ) -> [MedicationPlanDoseSlot] {
+        guard recurrence.kind == .daily else { return [] }
+        let slots = dailyDoseSlots.isEmpty
+            ? recurrence.times.map { MedicationPlanDoseSlot(time: $0, template: fallbackTemplate) }
+            : dailyDoseSlots
+        return slots.sorted(by: compareDoseSlots)
     }
 }
 
@@ -334,22 +435,32 @@ struct PlannedDoseOccurrence: Identifiable, Equatable, Sendable {
     let planID: UUID
     let planName: String
     let scheduledDate: Date
+    let doseSlotID: UUID?
 
     var id: String {
         notificationIdentifier
     }
 
     var notificationIdentifier: String {
-        "med-plan-\(planID.uuidString)-\(Int(scheduledDate.timeIntervalSince1970))"
+        let timestamp = Int(scheduledDate.timeIntervalSince1970)
+        if let doseSlotID {
+            return "med-plan-\(planID.uuidString)-\(doseSlotID.uuidString)-\(timestamp)"
+        }
+        return "med-plan-\(planID.uuidString)-\(timestamp)"
     }
 }
 
 struct ReminderLaunchContext: Identifiable, Equatable, Sendable {
     let planID: UUID
     let scheduledDate: Date
+    let doseSlotID: UUID?
 
     var id: String {
-        "\(planID.uuidString)-\(Int(scheduledDate.timeIntervalSince1970))"
+        let timestamp = Int(scheduledDate.timeIntervalSince1970)
+        if let doseSlotID {
+            return "\(planID.uuidString)-\(doseSlotID.uuidString)-\(timestamp)"
+        }
+        return "\(planID.uuidString)-\(timestamp)"
     }
 }
 
@@ -379,22 +490,27 @@ extension MedicationPlan {
 
         switch recurrence.kind {
         case .daily:
-            let times = recurrence.times.sorted(by: Self.compareTimes)
-            guard !times.isEmpty else { return [] }
+            let slots = resolvedDailyDoseSlots
+            guard !slots.isEmpty else { return [] }
 
             var day = calendar.startOfDay(for: referenceDate)
             while day <= horizonEnd && occurrences.count < limit {
-                for time in times {
+                for slot in slots {
                     let candidate = calendar.date(
-                        bySettingHour: time.hour,
-                        minute: time.minute,
+                        bySettingHour: slot.time.hour,
+                        minute: slot.time.minute,
                         second: 0,
                         of: day
                     ) ?? day
 
                     if candidate >= referenceDate {
                         occurrences.append(
-                            PlannedDoseOccurrence(planID: id, planName: displayName, scheduledDate: candidate)
+                            PlannedDoseOccurrence(
+                                planID: id,
+                                planName: displayName,
+                                scheduledDate: candidate,
+                                doseSlotID: slot.id
+                            )
                         )
                         if occurrences.count == limit {
                             break
@@ -424,7 +540,12 @@ extension MedicationPlan {
 
                     if candidate >= referenceDate {
                         occurrences.append(
-                            PlannedDoseOccurrence(planID: id, planName: displayName, scheduledDate: candidate)
+                            PlannedDoseOccurrence(
+                                planID: id,
+                                planName: displayName,
+                                scheduledDate: candidate,
+                                doseSlotID: nil
+                            )
                         )
                     }
                 }
@@ -446,7 +567,12 @@ extension MedicationPlan {
             while current <= horizonEnd && occurrences.count < limit {
                 if current >= referenceDate {
                     occurrences.append(
-                        PlannedDoseOccurrence(planID: id, planName: displayName, scheduledDate: current)
+                        PlannedDoseOccurrence(
+                            planID: id,
+                            planName: displayName,
+                            scheduledDate: current,
+                            doseSlotID: nil
+                        )
                     )
                 }
 
@@ -470,6 +596,19 @@ extension MedicationPlan {
             return lhs.minute < rhs.minute
         }
         return lhs.hour < rhs.hour
+    }
+
+    private nonisolated static func compareDoseSlots(
+        _ lhs: MedicationPlanDoseSlot,
+        _ rhs: MedicationPlanDoseSlot
+    ) -> Bool {
+        if lhs.time.hour == rhs.time.hour {
+            if lhs.time.minute == rhs.time.minute {
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            return lhs.time.minute < rhs.time.minute
+        }
+        return lhs.time.hour < rhs.time.hour
     }
 }
 

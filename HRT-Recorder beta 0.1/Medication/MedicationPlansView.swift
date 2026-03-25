@@ -14,7 +14,7 @@ struct MedicationPlansView: View {
 
                 if let notificationMessage = vm.notificationMessage {
                     InlineNoticeCard(
-                        title: "Reminders paused",
+                        title: String(localized: "Reminders paused"),
                         message: notificationMessage,
                         systemImage: "bell.slash.fill",
                         tint: .orange,
@@ -27,8 +27,8 @@ struct MedicationPlansView: View {
                 } else {
                     if !vm.activePlans.isEmpty {
                         sectionHeader(
-                            title: "Active Plans",
-                            subtitle: "Scheduled reminders that can notify you."
+                            title: String(localized: "Active Plans"),
+                            subtitle: String(localized: "Plans with reminders on.")
                         )
 
                         ForEach(vm.activePlans) { plan in
@@ -47,8 +47,8 @@ struct MedicationPlansView: View {
 
                     if !vm.pausedPlans.isEmpty {
                         sectionHeader(
-                            title: "Paused Plans",
-                            subtitle: "Saved templates that are not currently scheduling reminders."
+                            title: String(localized: "Paused Plans"),
+                            subtitle: String(localized: "Saved plans with reminders off.")
                         )
 
                         ForEach(vm.pausedPlans) { plan in
@@ -79,7 +79,7 @@ struct MedicationPlansView: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                 }
-                .accessibilityLabel("Create medication plan")
+                .accessibilityLabel(String(localized: "Create medication plan"))
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -121,7 +121,7 @@ struct MedicationPlansView: View {
                 planPendingDeletion = nil
             }
         } message: {
-            Text("This removes the reminder schedule but keeps your logged dose history unchanged.")
+            Text("This only removes the reminder schedule. Logged doses stay.")
         }
     }
 
@@ -129,7 +129,7 @@ struct MedicationPlansView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Stay ahead of each dose")
+                    Text("Reminder status")
                         .font(.title2.weight(.bold))
                         .foregroundStyle(.primary)
 
@@ -142,28 +142,34 @@ struct MedicationPlansView: View {
 
                 Image(systemName: "cross.case.fill")
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [MedicationPalette.blue, MedicationPalette.pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
                     .padding(12)
                     .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
             HStack(spacing: 12) {
                 OverviewStatCard(
-                    title: "Notifications",
+                    title: String(localized: "Notifications"),
                     value: notificationStatusTitle,
                     icon: notificationStatusIcon,
                     tint: notificationTint
                 )
 
                 OverviewStatCard(
-                    title: "Active",
+                    title: String(localized: "Active"),
                     value: "\(vm.activePlanCount)",
                     icon: "bell.badge.fill",
                     tint: .blue
                 )
 
                 OverviewStatCard(
-                    title: "Paused",
+                    title: String(localized: "Paused"),
                     value: "\(vm.pausedPlanCount)",
                     icon: "pause.circle.fill",
                     tint: .orange
@@ -172,14 +178,14 @@ struct MedicationPlansView: View {
 
             if let nextReminder = vm.nextOverallOccurrence() {
                 LabeledStatusRow(
-                    title: "Next reminder",
+                    title: String(localized: "Next reminder"),
                     value: nextReminder.scheduledDate.formatted(date: .abbreviated, time: .shortened),
                     systemImage: "calendar.badge.clock"
                 )
             } else {
                 LabeledStatusRow(
-                    title: "Next reminder",
-                    value: "No reminder is currently scheduled.",
+                    title: String(localized: "Next reminder"),
+                    value: String(localized: "No reminder scheduled."),
                     systemImage: "calendar.badge.exclamationmark"
                 )
             }
@@ -188,14 +194,14 @@ struct MedicationPlansView: View {
                 Button {
                     activeSheet = .add
                 } label: {
-                    ActionChip(title: "New Plan", systemImage: "plus.circle.fill", prominent: true)
+                    ActionChip(title: String(localized: "New Plan"), systemImage: "plus.circle.fill", prominent: true)
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     activeSheet = .import
                 } label: {
-                    ActionChip(title: "Import from Health", systemImage: "heart.text.square.fill", prominent: false)
+                    ActionChip(title: String(localized: "Import from Health"), systemImage: "heart.text.square.fill", prominent: false)
                 }
                 .buttonStyle(.plain)
                 .disabled(!vm.supportsMedicationImport)
@@ -207,14 +213,14 @@ struct MedicationPlansView: View {
                     Button {
                         Task { await vm.requestNotificationAuthorization() }
                     } label: {
-                        ActionChip(title: "Turn On Notifications", systemImage: "bell.fill", prominent: false)
+                        ActionChip(title: String(localized: "Turn On Notifications"), systemImage: "bell.fill", prominent: false)
                     }
                     .buttonStyle(.plain)
                 } else if vm.authorizationStatus == .denied {
                     Button {
                         openAppSettings()
                     } label: {
-                        ActionChip(title: "Open Settings", systemImage: "gearshape.fill", prominent: false)
+                        ActionChip(title: String(localized: "Open Settings"), systemImage: "gearshape.fill", prominent: false)
                     }
                     .buttonStyle(.plain)
                 }
@@ -227,23 +233,45 @@ struct MedicationPlansView: View {
             }
         }
         .padding(20)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.accentColor.opacity(0.18),
-                            Color.orange.opacity(0.12),
-                            Color(uiColor: .secondarySystemBackground)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
+                .fill(Color(uiColor: .secondarySystemBackground))
+                .overlay {
+                    ZStack {
+                        LinearGradient(
+                            colors: [
+                                MedicationPalette.blue.opacity(0.14),
+                                MedicationPalette.pink.opacity(0.08),
+                                Color.clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+
+                        Circle()
+                            .fill(MedicationPalette.blue.opacity(0.22))
+                            .frame(width: 230, height: 230)
+                            .blur(radius: 28)
+                            .offset(x: 130, y: -120)
+
+                        Circle()
+                            .fill(MedicationPalette.pink.opacity(0.18))
+                            .frame(width: 210, height: 210)
+                            .blur(radius: 32)
+                            .offset(x: 120, y: 90)
+
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 150, height: 150)
+                            .blur(radius: 24)
+                            .offset(x: 155, y: -30)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                }
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                .stroke(Color.white.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 20, x: 0, y: 12)
     }
@@ -253,7 +281,7 @@ struct MedicationPlansView: View {
             Label("No medication plans yet", systemImage: "capsule.portrait")
                 .font(.headline)
 
-            Text("Create a reusable plan for oral doses, injections, gels, or patch changes. The app can then prefill dose logging and schedule reminders for you.")
+            Text("Create a plan for doses or patch changes. The app can fill dose details and schedule reminders.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -261,14 +289,14 @@ struct MedicationPlansView: View {
                 Button {
                     activeSheet = .add
                 } label: {
-                    ActionChip(title: "Create First Plan", systemImage: "plus.circle.fill", prominent: true)
+                    ActionChip(title: String(localized: "Create First Plan"), systemImage: "plus.circle.fill", prominent: true)
                 }
                 .buttonStyle(.plain)
 
                 Button {
                     activeSheet = .import
                 } label: {
-                    ActionChip(title: "Import from Health", systemImage: "heart.text.square.fill", prominent: false)
+                    ActionChip(title: String(localized: "Import from Health"), systemImage: "heart.text.square.fill", prominent: false)
                 }
                 .buttonStyle(.plain)
                 .disabled(!vm.supportsMedicationImport)
@@ -300,30 +328,30 @@ struct MedicationPlansView: View {
     private var overviewDescription: String {
         switch vm.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
-            return "Reminders are ready. Active plans will schedule local notifications and open straight into dose confirmation."
+            return String(localized: "Plans and reminders are ready.")
         case .denied:
-            return "Notifications are turned off, so plans stay saved but reminders cannot be delivered until access is restored."
+            return String(localized: "Turn on notifications in Settings.")
         case .notDetermined:
-            return "Create plans now, then allow notifications the first time you enable reminders."
+            return String(localized: "Allow notifications when you're ready.")
         @unknown default:
-            return "Reminder status is unclear right now. Pull to refresh if this looks wrong."
+            return String(localized: "Pull to refresh reminder status.")
         }
     }
 
     private var notificationStatusTitle: String {
         switch vm.authorizationStatus {
         case .authorized:
-            return "Ready"
+            return String(localized: "Ready")
         case .provisional:
-            return "Provisional"
+            return String(localized: "Provisional")
         case .ephemeral:
-            return "Temporary"
+            return String(localized: "Temporary")
         case .denied:
-            return "Blocked"
+            return String(localized: "Blocked")
         case .notDetermined:
-            return "Needs Access"
+            return String(localized: "Needs Access")
         @unknown default:
-            return "Unknown"
+            return String(localized: "Unknown")
         }
     }
 
@@ -376,6 +404,11 @@ private enum MedicationPlansSheet: Identifiable {
     }
 }
 
+private enum MedicationPalette {
+    static let blue = Color(red: 0.36, green: 0.56, blue: 0.98)
+    static let pink = Color(red: 0.95, green: 0.5, blue: 0.74)
+}
+
 private struct MedicationPlanCard: View {
     let plan: MedicationPlan
     let nextOccurrence: PlannedDoseOccurrence?
@@ -389,14 +422,14 @@ private struct MedicationPlanCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         StatusBadge(
-                            title: plan.isEnabled ? "Active" : "Paused",
+                            title: plan.isEnabled ? String(localized: "Active") : String(localized: "Paused"),
                             systemImage: plan.isEnabled ? "bell.fill" : "pause.fill",
                             tint: plan.isEnabled ? .green : .orange
                         )
 
                         if plan.sourceMedicationName != nil {
                             StatusBadge(
-                                title: "Imported",
+                                title: String(localized: "Imported"),
                                 systemImage: "heart.text.square.fill",
                                 tint: .pink
                             )
@@ -420,28 +453,28 @@ private struct MedicationPlanCard: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 LabeledStatusRow(
-                    title: "Schedule",
+                    title: String(localized: "Schedule"),
                     value: recurrenceSummary,
                     systemImage: "calendar"
                 )
 
                 if let nextOccurrence {
                     LabeledStatusRow(
-                        title: "Next reminder",
+                        title: String(localized: "Next reminder"),
                         value: nextOccurrence.scheduledDate.formatted(date: .abbreviated, time: .shortened),
                         systemImage: "clock.badge.checkmark"
                     )
                 } else {
                     LabeledStatusRow(
-                        title: "Next reminder",
-                        value: isEnabled ? "No upcoming slot was generated." : "This plan is paused.",
+                        title: String(localized: "Next reminder"),
+                        value: isEnabled ? String(localized: "No upcoming reminder.") : String(localized: "This plan is paused."),
                         systemImage: isEnabled ? "clock.badge.xmark" : "pause.circle"
                     )
                 }
 
                 if let sourceMedicationName = plan.sourceMedicationName, !sourceMedicationName.isEmpty {
                     LabeledStatusRow(
-                        title: "Imported from Health",
+                        title: String(localized: "Imported from Health"),
                         value: sourceMedicationName,
                         systemImage: "heart.text.square"
                     )
@@ -453,18 +486,24 @@ private struct MedicationPlanCard: View {
                 Button {
                     onEdit()
                 } label: {
-                    Label("Edit", systemImage: "slider.horizontal.3")
-                        .frame(maxWidth: .infinity)
+                    PlanActionButton(
+                        title: String(localized: "Edit"),
+                        systemImage: "slider.horizontal.3",
+                        style: .primary
+                    )
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
 
                 Button(role: .destructive) {
                     onDelete()
                 } label: {
-                    Label("Delete", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
+                    PlanActionButton(
+                        title: String(localized: "Delete"),
+                        systemImage: "trash",
+                        style: .destructive
+                    )
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
             }
         }
         .padding(18)
@@ -479,17 +518,26 @@ private struct MedicationPlanCard: View {
     }
 
     private var templateSummary: String {
-        plan.template.planSummaryText
+        let slots = plan.resolvedDailyDoseSlots
+        if slots.count > 1 {
+            return slots
+                .map { "\($0.time.formattedText) · \($0.template.planSummaryText)" }
+                .joined(separator: "\n")
+        }
+        return slots.first?.template.planSummaryText ?? plan.template.planSummaryText
     }
 
     private var recurrenceSummary: String {
         switch plan.recurrence.kind {
         case .daily:
-            let times = plan.recurrence.times
+            let times = plan.dailyReminderTimes
                 .sorted(by: compareTimes)
                 .map { timeText($0) }
                 .joined(separator: ", ")
-            return "Daily at \(times)"
+            return String.localizedStringWithFormat(
+                String(localized: "Daily at %@"),
+                times
+            )
 
         case .weekly:
             let calendar = Calendar.autoupdatingCurrent
@@ -500,10 +548,19 @@ private struct MedicationPlanCard: View {
                     return calendar.shortStandaloneWeekdaySymbols[index]
                 }
                 .joined(separator: ", ")
-            return "Weekly on \(weekdays) at \(timeText(plan.recurrence.primaryTime))"
+            return String.localizedStringWithFormat(
+                String(localized: "Weekly on %@ at %@"),
+                weekdays,
+                timeText(plan.recurrence.primaryTime)
+            )
 
         case .everyNDays:
-            return "Every \(plan.recurrence.intervalDays) day\(plan.recurrence.intervalDays == 1 ? "" : "s") from \(plan.recurrence.startDate.formatted(date: .abbreviated, time: .shortened))"
+            return String.localizedStringWithFormat(
+                String(localized: "Every %lld day%@ from %@"),
+                Int64(plan.recurrence.intervalDays),
+                plan.recurrence.intervalDays == 1 ? "" : "s",
+                plan.recurrence.startDate.formatted(date: .abbreviated, time: .shortened)
+            )
         }
     }
 
@@ -538,15 +595,15 @@ private struct MedicationImportView: View {
 
                     if vm.isImporting {
                         StateCard(
-                            title: "Loading medications",
-                            message: "Reading Apple Health medications and recent dose events.",
+                            title: String(localized: "Loading medications"),
+                            message: String(localized: "Reading Apple Health medications and dose events."),
                             systemImage: "heart.text.square.fill",
                             tint: .pink,
                             showsProgress: true
                         )
                     } else if let error = vm.importErrorMessage {
                         StateCard(
-                            title: "Import unavailable",
+                            title: String(localized: "Import unavailable"),
                             message: error,
                             systemImage: "exclamationmark.triangle.fill",
                             tint: .orange
@@ -558,8 +615,8 @@ private struct MedicationImportView: View {
                         }
                     } else if vm.importSuggestions.isEmpty {
                         StateCard(
-                            title: "No suggestions found",
-                            message: "No medication records from Apple Health matched the supported import rules yet.",
+                            title: String(localized: "No suggestions found"),
+                            message: String(localized: "No Apple Health medications matched the current import rules."),
                             systemImage: "cross.case.fill",
                             tint: .blue
                         )
@@ -606,7 +663,7 @@ private struct MedicationImportView: View {
 
     private var importHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Bring supported Apple Health medications into reusable reminder plans.")
+            Text("Import supported Apple Health medications into reminder plans.")
                 .font(.headline)
 
             Text(vm.importAvailabilityDescription)
@@ -614,7 +671,7 @@ private struct MedicationImportView: View {
                 .foregroundStyle(.secondary)
 
             if vm.supportsMedicationImport {
-                Text("High-confidence mappings are created automatically. Patch release rate, gel area, and other PK-specific values still need confirmation before saving.")
+                Text("Most fields can be filled automatically. Confirm patch, gel, and other PK-specific details before saving.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -640,14 +697,15 @@ private struct MedicationPlanEditorView: View {
 
     @State private var name: String
     @State private var isEnabled: Bool
-    @State private var template: MedicationDoseTemplate?
+    @State private var sharedTemplate: MedicationDoseTemplate?
     @State private var recurrenceKind: MedicationPlanRecurrence.Kind
-    @State private var dailyTimes: [ReminderClockTime]
+    @State private var dailyDoseSlots: [EditableDailyDoseSlot]
     @State private var weeklyWeekdays: [Int]
     @State private var weeklyTime: Date
     @State private var intervalDays: Int
     @State private var intervalStartDate: Date
-    @State private var isDoseEditorPresented = false
+    @State private var activeDailySlotEditor: EditableDailyDoseSlot?
+    @State private var isSharedDoseEditorPresented = false
 
     init(
         existingPlan: MedicationPlan?,
@@ -660,14 +718,19 @@ private struct MedicationPlanEditorView: View {
 
         let initialPlan = existingPlan
         let initialRecurrence = initialPlan?.recurrence ?? importSuggestion?.suggestedRecurrence ?? .daily()
-        let initialTemplate = initialPlan?.template ?? importSuggestion?.suggestedTemplate
+        let initialTemplate = initialPlan?.primaryTemplate ?? importSuggestion?.suggestedTemplate
         let initialName = initialPlan?.name ?? importSuggestion?.sourceName ?? ""
+        let initialDailyDoseSlots = Self.makeInitialDailyDoseSlots(
+            existingPlan: initialPlan,
+            recurrence: initialRecurrence,
+            fallbackTemplate: initialTemplate
+        )
 
         _name = State(initialValue: initialName)
         _isEnabled = State(initialValue: initialPlan?.isEnabled ?? true)
-        _template = State(initialValue: initialTemplate)
+        _sharedTemplate = State(initialValue: initialTemplate ?? initialDailyDoseSlots.first?.template)
         _recurrenceKind = State(initialValue: initialRecurrence.kind)
-        _dailyTimes = State(initialValue: initialRecurrence.times.isEmpty ? [.defaultMorning] : initialRecurrence.times)
+        _dailyDoseSlots = State(initialValue: initialDailyDoseSlots)
         _weeklyWeekdays = State(initialValue: initialRecurrence.weekdays.isEmpty ? [Calendar.autoupdatingCurrent.component(.weekday, from: Date())] : initialRecurrence.weekdays)
         _weeklyTime = State(initialValue: Self.date(for: initialRecurrence.primaryTime))
         _intervalDays = State(initialValue: max(1, initialRecurrence.intervalDays))
@@ -682,22 +745,6 @@ private struct MedicationPlanEditorView: View {
                     Toggle("Notifications enabled", isOn: $isEnabled)
                 }
 
-                Section("Dose Template") {
-                    Button(template == nil ? "Configure dose template" : "Edit dose template") {
-                        isDoseEditorPresented = true
-                    }
-
-                    if let template {
-                        Text(templateSummary(for: template))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("You need a dose template before saving the plan.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
                 Section("Reminder Schedule") {
                     Picker("Pattern", selection: $recurrenceKind) {
                         Text("Daily").tag(MedicationPlanRecurrence.Kind.daily)
@@ -708,30 +755,13 @@ private struct MedicationPlanEditorView: View {
 
                     switch recurrenceKind {
                     case .daily:
-                        ForEach(Array(dailyTimes.enumerated()), id: \.element.id) { index, _ in
-                            HStack {
-                                DatePicker(
-                                    "Time \(index + 1)",
-                                    selection: bindingForDailyTime(at: index),
-                                    displayedComponents: .hourAndMinute
-                                )
-
-                                if dailyTimes.count > 1 {
-                                    Button(role: .destructive) {
-                                        dailyTimes.remove(at: index)
-                                    } label: {
-                                        Image(systemName: "minus.circle.fill")
-                                    }
-                                }
-                            }
-                        }
-
-                        Button("Add another time") {
-                            dailyTimes.append(.defaultMorning)
-                        }
+                        Text("Each row has its own reminder time and dose, so one plan can handle mixed schedules like 2 mg in the morning and 1 mg later.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
 
                     case .weekly:
                         DatePicker("Time", selection: $weeklyTime, displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.wheel)
 
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
                             ForEach(1...7, id: \.self) { weekday in
@@ -744,8 +774,82 @@ private struct MedicationPlanEditorView: View {
                         }
 
                     case .everyNDays:
-                        Stepper("Every \(intervalDays) day\(intervalDays == 1 ? "" : "s")", value: $intervalDays, in: 1...90)
+                        Stepper(
+                            String.localizedStringWithFormat(
+                                String(localized: "Every %lld day%@"),
+                                Int64(intervalDays),
+                                intervalDays == 1 ? "" : "s"
+                            ),
+                            value: $intervalDays,
+                            in: 1...90
+                        )
                         DatePicker("Start", selection: $intervalStartDate, displayedComponents: [.date, .hourAndMinute])
+                    }
+                }
+
+                if recurrenceKind == .daily {
+                    Section("Dose Schedule") {
+                        ForEach(sortedDailyDoseSlots) { slot in
+                            DailyDoseSlotCard(
+                                slot: slot,
+                                canDelete: dailyDoseSlots.count > 1,
+                                onEdit: {
+                                    activeDailySlotEditor = slot
+                                },
+                                onDelete: {
+                                    removeDailyDoseSlot(id: slot.id)
+                                }
+                            )
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                        }
+
+                        Button {
+                            addDailyDoseSlot()
+                        } label: {
+                            Label("Add another time", systemImage: "plus.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(Color(uiColor: .secondarySystemBackground))
+                                )
+                        }
+                        .buttonStyle(.plain)
+
+                        Text("Reminder times are controlled here. Dose details only control route, ester, and amount.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Dose Details") {
+                        Button {
+                            isSharedDoseEditorPresented = true
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(sharedTemplate == nil ? "Configure dose details" : "Edit dose details")
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    Text(sharedTemplate.map { templateSummary(for: $0) } ?? "You need dose details before saving the plan.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+
+                                Spacer(minLength: 8)
+
+                                Image(systemName: "chevron.right")
+                                    .font(.footnote.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
@@ -757,7 +861,7 @@ private struct MedicationPlanEditorView: View {
                     }
                 }
             }
-            .navigationTitle(existingPlan == nil ? "Medication Plan" : "Edit Plan")
+            .navigationTitle(existingPlan == nil ? String(localized: "Medication Plan") : String(localized: "Edit Plan"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -769,7 +873,460 @@ private struct MedicationPlanEditorView: View {
                     Button("Save") {
                         savePlan()
                     }
-                    .disabled(template == nil || !isRecurrenceValid)
+                    .disabled(!canSavePlan)
+                }
+            }
+        }
+        .sheet(item: $activeDailySlotEditor) { slot in
+            DailyDoseSlotEditorView(
+                slot: slot,
+                canDelete: dailyDoseSlots.count > 1,
+                onSave: { updatedSlot in
+                    upsertDailyDoseSlot(updatedSlot)
+                },
+                onDelete: {
+                    removeDailyDoseSlot(id: slot.id)
+                }
+            )
+        }
+        .sheet(isPresented: $isSharedDoseEditorPresented) {
+            NavigationStack {
+                InputEventView(
+                    eventToEdit: nil,
+                    seed: sharedDoseSeed,
+                    showsDatePicker: false,
+                    onSave: { event in
+                        sharedTemplate = MedicationDoseTemplate(
+                            route: event.route,
+                            doseMG: event.doseMG,
+                            ester: event.ester,
+                            extras: event.extras
+                        )
+                    },
+                    onCancel: nil
+                )
+                .padding()
+            }
+        }
+#if swift(>=5.9)
+        .onChange(of: recurrenceKind) { _, _ in
+            syncEditorStateForSelectedPattern()
+        }
+#else
+        .onChange(of: recurrenceKind) { _ in
+            syncEditorStateForSelectedPattern()
+        }
+#endif
+    }
+
+    private var sharedDoseSeed: DoseEntrySeed {
+        let baseTemplate = sharedTemplate ?? dailyDoseSlots.first?.template ?? MedicationDoseTemplate.empty
+        return DoseEntrySeed(date: intervalStartDate, template: baseTemplate)
+    }
+
+    private var isRecurrenceValid: Bool {
+        switch recurrenceKind {
+        case .daily:
+            return !dailyDoseSlots.isEmpty
+        case .weekly:
+            return !weeklyWeekdays.isEmpty
+        case .everyNDays:
+            return intervalDays > 0
+        }
+    }
+
+    private var canSavePlan: Bool {
+        guard isRecurrenceValid else { return false }
+
+        switch recurrenceKind {
+        case .daily:
+            return !dailyDoseSlots.isEmpty && dailyDoseSlots.allSatisfy { $0.template != nil }
+        case .weekly, .everyNDays:
+            return sharedTemplate != nil
+        }
+    }
+
+    private var sortedDailyDoseSlots: [EditableDailyDoseSlot] {
+        dailyDoseSlots.sorted(by: Self.compareEditableSlots)
+    }
+
+    private func savePlan() {
+        let recurrence: MedicationPlanRecurrence
+        let planTemplate: MedicationDoseTemplate
+        let persistedDailyDoseSlots: [MedicationPlanDoseSlot]
+
+        switch recurrenceKind {
+        case .daily:
+            let slots = sortedDailyDoseSlots.compactMap { slot -> MedicationPlanDoseSlot? in
+                guard let template = slot.template else { return nil }
+                return MedicationPlanDoseSlot(id: slot.id, time: slot.time, template: template)
+            }
+            guard let firstTemplate = slots.first?.template else { return }
+            recurrence = .daily(times: slots.map(\.time))
+            planTemplate = firstTemplate
+            persistedDailyDoseSlots = slots
+        case .weekly:
+            guard let template = sharedTemplate else { return }
+            recurrence = .weekly(
+                weekdays: weeklyWeekdays.sorted(),
+                time: clockTime(from: weeklyTime)
+            )
+            planTemplate = template
+            persistedDailyDoseSlots = []
+        case .everyNDays:
+            guard let template = sharedTemplate else { return }
+            recurrence = .everyNDays(
+                intervalDays: intervalDays,
+                startDate: intervalStartDate,
+                time: clockTime(from: intervalStartDate)
+            )
+            planTemplate = template
+            persistedDailyDoseSlots = []
+        }
+
+        let plan = MedicationPlan(
+            id: existingPlan?.id ?? UUID(),
+            name: name,
+            template: planTemplate,
+            dailyDoseSlots: persistedDailyDoseSlots,
+            recurrence: recurrence,
+            isEnabled: isEnabled,
+            sourceMedicationName: importSuggestion?.sourceMedicationName ?? existingPlan?.sourceMedicationName,
+            sourceMedicationGeneralForm: importSuggestion?.generalFormText ?? existingPlan?.sourceMedicationGeneralForm,
+            updatedAt: Date()
+        )
+
+        onSave(plan)
+        dismiss()
+    }
+
+    private func templateSummary(for template: MedicationDoseTemplate) -> String {
+        template.planSummaryText
+    }
+
+    private func addDailyDoseSlot() {
+        let newSlot = EditableDailyDoseSlot(
+            time: suggestedDailyTimeForNewSlot(),
+            template: sortedDailyDoseSlots.last?.template ?? sharedTemplate
+        )
+        dailyDoseSlots.append(newSlot)
+        dailyDoseSlots.sort(by: Self.compareEditableSlots)
+        activeDailySlotEditor = newSlot
+    }
+
+    private func upsertDailyDoseSlot(_ slot: EditableDailyDoseSlot) {
+        if let index = dailyDoseSlots.firstIndex(where: { $0.id == slot.id }) {
+            dailyDoseSlots[index] = slot
+        } else {
+            dailyDoseSlots.append(slot)
+        }
+        dailyDoseSlots.sort(by: Self.compareEditableSlots)
+        sharedTemplate = sortedDailyDoseSlots.first?.template ?? sharedTemplate
+    }
+
+    private func removeDailyDoseSlot(id: UUID) {
+        guard dailyDoseSlots.count > 1 else { return }
+        dailyDoseSlots.removeAll { $0.id == id }
+        if activeDailySlotEditor?.id == id {
+            activeDailySlotEditor = nil
+        }
+        sharedTemplate = sortedDailyDoseSlots.first?.template ?? sharedTemplate
+    }
+
+    private func suggestedDailyTimeForNewSlot() -> ReminderClockTime {
+        let existingTimes = Set(sortedDailyDoseSlots.map { "\($0.time.hour):\($0.time.minute)" })
+        let baseDate: Date
+        if let lastSlot = sortedDailyDoseSlots.last {
+            let lastDate = Self.date(for: lastSlot.time)
+            baseDate = Calendar.autoupdatingCurrent.date(byAdding: .hour, value: 4, to: lastDate) ?? lastDate
+        } else {
+            baseDate = Self.date(for: .defaultMorning)
+        }
+
+        var candidate = baseDate
+        for _ in 0..<48 {
+            let candidateTime = clockTime(from: candidate)
+            let key = "\(candidateTime.hour):\(candidateTime.minute)"
+            if !existingTimes.contains(key) {
+                return candidateTime
+            }
+            candidate = Calendar.autoupdatingCurrent.date(byAdding: .minute, value: 30, to: candidate) ?? candidate
+        }
+
+        return clockTime(from: baseDate)
+    }
+
+    private func toggleWeekday(_ weekday: Int) {
+        if let index = weeklyWeekdays.firstIndex(of: weekday) {
+            weeklyWeekdays.remove(at: index)
+        } else {
+            weeklyWeekdays.append(weekday)
+        }
+    }
+
+    private func weekdayLabel(_ weekday: Int) -> String {
+        let symbols = Calendar.autoupdatingCurrent.shortStandaloneWeekdaySymbols
+        let index = min(max(weekday - 1, 0), symbols.count - 1)
+        return symbols[index]
+    }
+
+    private func syncEditorStateForSelectedPattern() {
+        switch recurrenceKind {
+        case .daily:
+            if dailyDoseSlots.isEmpty {
+                let seedTime: ReminderClockTime
+                if intervalDays > 0 {
+                    seedTime = clockTime(from: intervalStartDate)
+                } else {
+                    seedTime = clockTime(from: weeklyTime)
+                }
+                dailyDoseSlots = [
+                    EditableDailyDoseSlot(
+                        time: seedTime,
+                        template: sharedTemplate
+                    )
+                ]
+            }
+            dailyDoseSlots.sort(by: Self.compareEditableSlots)
+            sharedTemplate = sortedDailyDoseSlots.first?.template ?? sharedTemplate
+
+        case .weekly:
+            sharedTemplate = sharedTemplate ?? sortedDailyDoseSlots.first?.template
+            if let firstSlot = sortedDailyDoseSlots.first {
+                weeklyTime = Self.date(for: firstSlot.time)
+            }
+            if weeklyWeekdays.isEmpty {
+                weeklyWeekdays = [Calendar.autoupdatingCurrent.component(.weekday, from: Date())]
+            }
+
+        case .everyNDays:
+            sharedTemplate = sharedTemplate ?? sortedDailyDoseSlots.first?.template
+            if let firstSlot = sortedDailyDoseSlots.first {
+                intervalStartDate = intervalStartDate.settingTime(hour: firstSlot.time.hour, minute: firstSlot.time.minute)
+            }
+            intervalDays = max(intervalDays, 1)
+        }
+    }
+
+    private func clockTime(from date: Date) -> ReminderClockTime {
+        let calendar = Calendar.autoupdatingCurrent
+        return ReminderClockTime(
+            id: UUID(),
+            hour: calendar.component(.hour, from: date),
+            minute: calendar.component(.minute, from: date)
+        )
+    }
+
+    nonisolated fileprivate static func date(for time: ReminderClockTime) -> Date {
+        Calendar.autoupdatingCurrent.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+    }
+
+    private nonisolated static func compareEditableSlots(
+        _ lhs: EditableDailyDoseSlot,
+        _ rhs: EditableDailyDoseSlot
+    ) -> Bool {
+        if lhs.time.hour == rhs.time.hour {
+            if lhs.time.minute == rhs.time.minute {
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            return lhs.time.minute < rhs.time.minute
+        }
+        return lhs.time.hour < rhs.time.hour
+    }
+
+    private nonisolated static func compareTimes(_ lhs: ReminderClockTime, _ rhs: ReminderClockTime) -> Bool {
+        if lhs.hour == rhs.hour {
+            return lhs.minute < rhs.minute
+        }
+        return lhs.hour < rhs.hour
+    }
+
+    private nonisolated static func makeInitialDailyDoseSlots(
+        existingPlan: MedicationPlan?,
+        recurrence: MedicationPlanRecurrence,
+        fallbackTemplate: MedicationDoseTemplate?
+    ) -> [EditableDailyDoseSlot] {
+        guard recurrence.kind == .daily else { return [] }
+
+        if let existingPlan {
+            let existingSlots = existingPlan.resolvedDailyDoseSlots
+            if !existingSlots.isEmpty {
+                return existingSlots.map {
+                    EditableDailyDoseSlot(
+                        id: $0.id,
+                        time: $0.time,
+                        template: $0.template
+                    )
+                }
+            }
+        }
+
+        let times = recurrence.times.isEmpty ? [.defaultMorning] : recurrence.times.sorted(by: compareTimes)
+        return times.map { EditableDailyDoseSlot(time: $0, template: fallbackTemplate) }
+    }
+}
+
+private struct EditableDailyDoseSlot: Identifiable, Equatable {
+    let id: UUID
+    var time: ReminderClockTime
+    var template: MedicationDoseTemplate?
+
+    init(
+        id: UUID = UUID(),
+        time: ReminderClockTime,
+        template: MedicationDoseTemplate?
+    ) {
+        self.id = id
+        self.time = time
+        self.template = template
+    }
+}
+
+private struct DailyDoseSlotCard: View {
+    let slot: EditableDailyDoseSlot
+    let canDelete: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                onEdit()
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(slot.time.formattedText)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Text(slot.template?.planSummaryText ?? "Configure dose details")
+                            .font(.subheadline)
+                            .foregroundStyle(slot.template == nil ? .primary : .secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if canDelete {
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Label("Remove this time", systemImage: "trash")
+                        .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(uiColor: .separator).opacity(0.12), lineWidth: 1)
+        )
+        .padding(.vertical, 4)
+    }
+}
+
+private struct DailyDoseSlotEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let slot: EditableDailyDoseSlot
+    let canDelete: Bool
+    let onSave: (EditableDailyDoseSlot) -> Void
+    let onDelete: () -> Void
+
+    @State private var time: Date
+    @State private var template: MedicationDoseTemplate?
+    @State private var isDoseEditorPresented = false
+
+    init(
+        slot: EditableDailyDoseSlot,
+        canDelete: Bool,
+        onSave: @escaping (EditableDailyDoseSlot) -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        self.slot = slot
+        self.canDelete = canDelete
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _time = State(initialValue: MedicationPlanEditorView.date(for: slot.time))
+        _template = State(initialValue: slot.template)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Reminder Time") {
+                    DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                        .datePickerStyle(.wheel)
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                }
+
+                Section("Dose Details") {
+                    Button {
+                        isDoseEditorPresented = true
+                    } label: {
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(template == nil ? "Configure dose details" : "Edit dose details")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.primary)
+
+                                Text(template?.planSummaryText ?? "Choose route, ester, and dose for this reminder.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("This editor controls the medication details only. The reminder time comes from the wheel above.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if canDelete {
+                    Section {
+                        Button("Delete this time", role: .destructive) {
+                            onDelete()
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Dose Time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        saveSlot()
+                    }
+                    .disabled(template == nil)
                 }
             }
         }
@@ -778,6 +1335,7 @@ private struct MedicationPlanEditorView: View {
                 InputEventView(
                     eventToEdit: nil,
                     seed: currentDoseSeed,
+                    showsDatePicker: false,
                     onSave: { event in
                         template = MedicationDoseTemplate(
                             route: event.route,
@@ -795,93 +1353,22 @@ private struct MedicationPlanEditorView: View {
 
     private var currentDoseSeed: DoseEntrySeed {
         let baseTemplate = template ?? MedicationDoseTemplate.empty
-        return DoseEntrySeed(date: intervalStartDate, template: baseTemplate)
+        return DoseEntrySeed(date: time, template: baseTemplate)
     }
 
-    private var isRecurrenceValid: Bool {
-        switch recurrenceKind {
-        case .daily:
-            return !dailyTimes.isEmpty
-        case .weekly:
-            return !weeklyWeekdays.isEmpty
-        case .everyNDays:
-            return intervalDays > 0
-        }
-    }
-
-    private func savePlan() {
+    private func saveSlot() {
         guard let template else { return }
-
-        let recurrence: MedicationPlanRecurrence
-        switch recurrenceKind {
-        case .daily:
-            recurrence = .daily(times: dailyTimes)
-        case .weekly:
-            recurrence = .weekly(
-                weekdays: weeklyWeekdays.sorted(),
-                time: clockTime(from: weeklyTime)
+        onSave(
+            EditableDailyDoseSlot(
+                id: slot.id,
+                time: ReminderClockTime(
+                    hour: Calendar.autoupdatingCurrent.component(.hour, from: time),
+                    minute: Calendar.autoupdatingCurrent.component(.minute, from: time)
+                ),
+                template: template
             )
-        case .everyNDays:
-            recurrence = .everyNDays(
-                intervalDays: intervalDays,
-                startDate: intervalStartDate,
-                time: clockTime(from: intervalStartDate)
-            )
-        }
-
-        let plan = MedicationPlan(
-            id: existingPlan?.id ?? UUID(),
-            name: name,
-            template: template,
-            recurrence: recurrence,
-            isEnabled: isEnabled,
-            sourceMedicationName: importSuggestion?.sourceMedicationName ?? existingPlan?.sourceMedicationName,
-            sourceMedicationGeneralForm: importSuggestion?.generalFormText ?? existingPlan?.sourceMedicationGeneralForm,
-            updatedAt: Date()
         )
-
-        onSave(plan)
         dismiss()
-    }
-
-    private func templateSummary(for template: MedicationDoseTemplate) -> String {
-        template.planSummaryText
-    }
-
-    private func toggleWeekday(_ weekday: Int) {
-        if let index = weeklyWeekdays.firstIndex(of: weekday) {
-            weeklyWeekdays.remove(at: index)
-        } else {
-            weeklyWeekdays.append(weekday)
-        }
-    }
-
-    private func weekdayLabel(_ weekday: Int) -> String {
-        let symbols = Calendar.autoupdatingCurrent.shortStandaloneWeekdaySymbols
-        let index = min(max(weekday - 1, 0), symbols.count - 1)
-        return symbols[index]
-    }
-
-    private func bindingForDailyTime(at index: Int) -> Binding<Date> {
-        Binding<Date>(
-            get: { Self.date(for: dailyTimes[index]) },
-            set: { newValue in
-                dailyTimes[index] = clockTime(from: newValue)
-            }
-        )
-    }
-
-    private func clockTime(from date: Date) -> ReminderClockTime {
-        let calendar = Calendar.autoupdatingCurrent
-        return ReminderClockTime(
-            id: UUID(),
-            hour: calendar.component(.hour, from: date),
-            minute: calendar.component(.minute, from: date)
-        )
-    }
-
-    nonisolated private static func date(for time: ReminderClockTime) -> Date {
-        Calendar.autoupdatingCurrent.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
     }
 }
 
@@ -907,7 +1394,7 @@ private struct OverviewStatCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.white.opacity(0.54), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
@@ -1012,13 +1499,74 @@ private struct ActionChip: View {
         if prominent {
             return AnyShapeStyle(
                 LinearGradient(
-                    colors: [Color.accentColor, Color.accentColor.opacity(0.78)],
+                    colors: [MedicationPalette.blue, MedicationPalette.pink],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
             )
         }
         return AnyShapeStyle(Color.white.opacity(0.62))
+    }
+}
+
+private struct PlanActionButton: View {
+    enum Style {
+        case primary
+        case destructive
+    }
+
+    let title: String
+    let systemImage: String
+    let style: Style
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(foregroundStyle)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 14)
+            .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+    }
+
+    private var foregroundStyle: Color {
+        switch style {
+        case .primary:
+            return .white
+        case .destructive:
+            return .red
+        }
+    }
+
+    private var background: some ShapeStyle {
+        switch style {
+        case .primary:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        MedicationPalette.blue.opacity(0.98),
+                        MedicationPalette.pink.opacity(0.92)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+        case .destructive:
+            return AnyShapeStyle(Color.white.opacity(0.08))
+        }
+    }
+
+    private var borderColor: Color {
+        switch style {
+        case .primary:
+            return Color.white.opacity(0.18)
+        case .destructive:
+            return Color.red.opacity(0.12)
+        }
     }
 }
 
@@ -1107,21 +1655,21 @@ private struct MedicationImportSuggestionCard: View {
 
             if let suggestedTemplate = suggestion.suggestedTemplate {
                 LabeledStatusRow(
-                    title: "Detected template",
+                    title: String(localized: "Detected template"),
                     value: templateSummary(for: suggestedTemplate),
                     systemImage: "wand.and.stars"
                 )
             } else {
                 LabeledStatusRow(
-                    title: "Detected template",
-                    value: "Dose details still need confirmation.",
+                    title: String(localized: "Detected template"),
+                    value: String(localized: "Dose details still need confirmation."),
                     systemImage: "exclamationmark.circle"
                 )
             }
 
             if let latestDoseDescription = suggestion.latestDoseDescription {
                 LabeledStatusRow(
-                    title: "Latest Health event",
+                    title: String(localized: "Latest Health event"),
                     value: latestDoseDescription,
                     systemImage: "clock.arrow.circlepath"
                 )
