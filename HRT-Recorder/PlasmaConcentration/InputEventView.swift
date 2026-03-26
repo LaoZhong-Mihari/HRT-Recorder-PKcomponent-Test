@@ -223,6 +223,34 @@ struct InputEventView: View {
                     }
                     #endif
                 }
+
+                if draft.route == .patchApply {
+                    Section("input.patchMode") {
+                        ViewThatFits(in: .horizontal) {
+                            Picker("input.patchMode.label", selection: $draft.patchMode) {
+                                ForEach(PatchInputMode.allCases) { mode in
+                                    Text(mode.label).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
+                            Picker("input.patchMode.label", selection: $draft.patchMode) {
+                                ForEach(PatchInputMode.allCases) { mode in
+                                    Text(mode.label).tag(mode)
+                                }
+                            }
+                        }
+#if swift(>=5.9)
+                        .onChange(of: draft.patchMode) { _, newValue in
+                            focusedField = newValue == .totalDose ? .patchTotal : .patchRelease
+                        }
+#else
+                        .onChange(of: draft.patchMode) { newValue in
+                            focusedField = newValue == .totalDose ? .patchTotal : .patchRelease
+                        }
+#endif
+                    }
+                }
                 
                 if draft.route != .patchRemove {
                     Section("input.drugDetails") {
@@ -245,43 +273,40 @@ struct InputEventView: View {
 #endif
                         }
 
-                        // **NEW**: Two-way binding text fields for dose conversion.
-                        if draft.ester != .E2 {
-                             TextField(String(format: NSLocalizedString("input.dose.raw", comment: "Dose input placeholder"), locale: Locale.current, draft.ester.abbreviation), text: $draft.rawEsterDoseText)
+                        if draft.route == .patchApply {
+                            if draft.patchMode == .totalDose {
+                                TextField("input.patchMode.totalDose", text: $draft.e2EquivalentDoseText)
+                                    .keyboardType(.decimalPad)
+                                    .submitLabel(.done)
+                                    .focused($focusedField, equals: .patchTotal)
+                                    .onSubmit { handleSubmit(for: .patchTotal) }
+                            } else {
+                                TextField("input.patchMode.releaseRate", text: $draft.releaseRateText)
+                                    .keyboardType(.decimalPad)
+                                    .submitLabel(.done)
+                                    .focused($focusedField, equals: .patchRelease)
+                                    .onSubmit { handleSubmit(for: .patchRelease) }
+                            }
+                        } else {
+                            if draft.ester != .E2 {
+                                TextField(
+                                    String(
+                                        format: NSLocalizedString("input.dose.raw", comment: "Dose input placeholder"),
+                                        locale: Locale.current,
+                                        draft.ester.abbreviation
+                                    ),
+                                    text: $draft.rawEsterDoseText
+                                )
                                 .keyboardType(.decimalPad)
                                 .submitLabel(.done)
                                 .focused($focusedField, equals: .raw)
                                 .onSubmit { handleSubmit(for: .raw) }
-                        }
-
-                        TextField("input.dose.e2", text: $draft.e2EquivalentDoseText)
-                            .keyboardType(.decimalPad)
-                            .submitLabel(.done)
-                            .focused($focusedField, equals: draft.route == .patchApply ? .patchTotal : .e2)
-                            .onSubmit { handleSubmit(for: draft.route == .patchApply ? .patchTotal : .e2) }
-                    }
-                }
-
-                // MARK: Patch‑specific input
-                if draft.route == .patchApply {
-                    Section("input.patchMode") {
-                        Picker("input.patchMode.label", selection: $draft.patchMode) {
-                            ForEach(PatchInputMode.allCases) { mode in
-                                Text(mode.label).tag(mode)
                             }
-                        }
-                        .pickerStyle(.segmented)
-
-                        if draft.patchMode == .totalDose {
-                            TextField("input.patchMode.totalDose", text: $draft.e2EquivalentDoseText)
+                            TextField("input.dose.e2", text: $draft.e2EquivalentDoseText)
                                 .keyboardType(.decimalPad)
                                 .submitLabel(.done)
-                                .focused($focusedField, equals: .patchTotal)
-                        } else {
-                            TextField("input.patchMode.releaseRate", text: $draft.releaseRateText)
-                                .keyboardType(.decimalPad)
-                                .submitLabel(.done)
-                                .focused($focusedField, equals: .patchRelease)
+                                .focused($focusedField, equals: .e2)
+                                .onSubmit { handleSubmit(for: .e2) }
                         }
                     }
                 }
@@ -289,19 +314,17 @@ struct InputEventView: View {
                 // MARK: Sublingual behavior (θ)
                 if draft.route == .sublingual {
                     Section("input.sublingual") {
-                        // Tier picker (segmented)
+                        let tier = [SublingualTier.quick, .casual, .standard, .strict][min(max(draft.slTierIndex, 0), 3)]
+                        let hold = SublingualTheta.holdMinutes[tier] ?? 0
+                        let theta = SublingualTheta.recommended[tier] ?? 0.11
+
                         Picker("input.sublingual.hold", selection: $draft.slTierIndex) {
                             Text("input.sublingual.quick").tag(0)
                             Text("input.sublingual.casual").tag(1)
                             Text("input.sublingual.standard").tag(2)
                             Text("input.sublingual.strict").tag(3)
                         }
-                        .pickerStyle(.segmented)
 
-                        // Show suggested hold time and θ for current tier
-                        let tier = [SublingualTier.quick, .casual, .standard, .strict][min(max(draft.slTierIndex, 0), 3)]
-                        let hold = SublingualTheta.holdMinutes[tier] ?? 0
-                        let theta = SublingualTheta.recommended[tier] ?? 0.11
                         Text(String(format: NSLocalizedString("input.sublingual.suggestion", comment: "Sublingual suggestion"), locale: Locale.current, hold, theta))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -311,7 +334,6 @@ struct InputEventView: View {
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.leading)
 
-                        // Optional: custom theta override
                         Toggle("input.sublingual.customTheta", isOn: $draft.useCustomTheta)
                         if draft.useCustomTheta {
                             TextField("input.sublingual.customThetaPlaceholder", text: $draft.customThetaText)

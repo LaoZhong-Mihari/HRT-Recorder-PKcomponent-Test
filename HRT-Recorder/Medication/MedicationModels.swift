@@ -474,6 +474,8 @@ struct MedicationImportSuggestion: Identifiable, Equatable, Sendable {
     var suggestedRecurrence: MedicationPlanRecurrence
     var note: String?
     var sourceMedicationName: String?
+    var alignmentStatus: MedicationImportAlignmentStatus
+    var alignmentRuleName: String?
 }
 
 extension MedicationPlan {

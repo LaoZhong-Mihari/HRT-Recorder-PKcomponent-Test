@@ -939,6 +939,14 @@ private struct WatchEventRow: View {
         )
     }
 
+    private var timestampText: String {
+        let calendar = Calendar.autoupdatingCurrent
+        if calendar.isDateInToday(event.date) {
+            return event.date.formatted(date: .omitted, time: .shortened)
+        }
+        return event.date.formatted(date: .abbreviated, time: .shortened)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon.name)
@@ -948,7 +956,7 @@ private struct WatchEventRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.headline)
-                Text(event.date, style: .time)
+                Text(timestampText)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if let doseText {

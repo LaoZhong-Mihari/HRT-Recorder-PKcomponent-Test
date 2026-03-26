@@ -44,43 +44,51 @@ struct TimelineScreen: View {
     @State private var healthMessage: String?
     @State private var isHealthActionRunning = false
 
+    private var hasVisibleChart: Bool {
+        guard let sim = vm.result else { return false }
+        return !sim.timeH.isEmpty
+    }
+
+    private var shouldShowEmptyState: Bool {
+        vm.dayGroups.isEmpty && !vm.isSimulating && !hasVisibleChart
+    }
+
     var body: some View {
         NavigationStack {
             VStack {
-                // ... (ProgressView remains the same)
-                
-                List {
-                    ForEach(vm.dayGroups, id: \.day) { dayGroup in
-                        Section(header: Text(dayGroup.day)) {
-                            ForEach(dayGroup.events) { event in
-                                // **NEW**: Each row is now a button that triggers the edit sheet.
-                                Button(action: {
-                                    activeSheet = .edit(event)
-                                }) {
-                                    TimelineRowView(event: event)
+                ZStack {
+                    List {
+                        ForEach(vm.dayGroups, id: \.day) { dayGroup in
+                            Section(header: Text(dayGroup.day)) {
+                                ForEach(dayGroup.events) { event in
+                                    Button(action: {
+                                        activeSheet = .edit(event)
+                                    }) {
+                                        TimelineRowView(event: event)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
                                 }
-                                .buttonStyle(PlainButtonStyle()) // Use plain style to avoid default button appearance
-                            }
-                            .onDelete { indexSet in
-                                let originalIndices = findOriginalIndices(for: indexSet, in: dayGroup, from: vm.events)
-                                vm.remove(at: originalIndices)
+                                .onDelete { indexSet in
+                                    let originalIndices = findOriginalIndices(for: indexSet, in: dayGroup, from: vm.events)
+                                    vm.remove(at: originalIndices)
+                                }
                             }
                         }
                     }
-                }
-                .listStyle(InsetGroupedListStyle())
+                    .listStyle(InsetGroupedListStyle())
 
-                // ... (ResultChartView and placeholder text remain the same)
-                if let sim = vm.result, !sim.timeH.isEmpty {
+                    if shouldShowEmptyState {
+                        TimelineEmptyStateView {
+                            activeSheet = .add(UUID())
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                }
+
+                if let sim = vm.result, hasVisibleChart {
                     ResultChartView(sim: sim)
                         .frame(height: 280)
                         .padding([.horizontal, .bottom])
-                } else if !vm.isSimulating {
-                    Spacer()
-                    Text("timeline.empty")
-                        .font(.headline).foregroundColor(.secondary)
-                        .multilineTextAlignment(.center).padding()
-                    Spacer()
                 }
             }
             .navigationTitle("timeline.title")
@@ -239,6 +247,34 @@ struct TimelineScreen: View {
 
 }
 
+private struct TimelineEmptyStateView: View {
+    let onAdd: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "waveform.path.ecg")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.pink)
+
+            Text("timeline.empty")
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+
+            Button(action: onAdd) {
+                Label("timeline.toolbar.add", systemImage: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.pink)
+        }
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 10)
+    }
+}
+
 private struct HealthSettingsView: View {
     let weightStatusText: String
     @ObservedObject var medicationVM: MedicationPlanVM
@@ -332,7 +368,7 @@ private enum ProjectCreditsLinks {
     static let transmtfRepo = URL(string: "https://github.com/TransmtfTeam/Transmtf-HRT-Tracker")!
     static let transmtfWeb = URL(string: "https://hrt.transmtf.com")!
     static let oyamaRepo = URL(string: "https://github.com/SmirnovaOyama/Oyama-s-HRT-Tracker")!
-    static let oyamaWeb = URL(string: "https://oyama.hrt.uk")!
+    static let oyamaWeb = URL(string: "https://hrt.mahiro.uk")!
     static let contact = URL(string: "mailto:mihari.suki@icloud.com")!
 }
 

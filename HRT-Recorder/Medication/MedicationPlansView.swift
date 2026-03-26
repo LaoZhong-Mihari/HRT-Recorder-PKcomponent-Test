@@ -153,7 +153,7 @@ struct MedicationPlansView: View {
                     .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
-            HStack(spacing: 12) {
+            AdaptiveStack(spacing: 12) {
                 OverviewStatCard(
                     title: String(localized: "Notifications"),
                     value: notificationStatusTitle,
@@ -190,7 +190,7 @@ struct MedicationPlansView: View {
                 )
             }
 
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 Button {
                     activeSheet = .add
                 } label: {
@@ -208,7 +208,7 @@ struct MedicationPlansView: View {
                 .opacity(vm.supportsMedicationImport ? 1 : 0.55)
             }
 
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 if vm.authorizationStatus == .notDetermined {
                     Button {
                         Task { await vm.requestNotificationAuthorization() }
@@ -285,7 +285,7 @@ struct MedicationPlansView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 Button {
                     activeSheet = .add
                 } label: {
@@ -409,6 +409,18 @@ private enum MedicationPalette {
     static let pink = Color(red: 0.95, green: 0.5, blue: 0.74)
 }
 
+private struct AdaptiveStack<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: spacing, content: content)
+            VStack(alignment: .leading, spacing: spacing, content: content)
+        }
+    }
+}
+
 private struct MedicationPlanCard: View {
     let plan: MedicationPlan
     let nextOccurrence: PlannedDoseOccurrence?
@@ -418,37 +430,21 @@ private struct MedicationPlanCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        StatusBadge(
-                            title: plan.isEnabled ? String(localized: "Active") : String(localized: "Paused"),
-                            systemImage: plan.isEnabled ? "bell.fill" : "pause.fill",
-                            tint: plan.isEnabled ? .green : .orange
-                        )
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    headerContent
 
-                        if plan.sourceMedicationName != nil {
-                            StatusBadge(
-                                title: String(localized: "Imported"),
-                                systemImage: "heart.text.square.fill",
-                                tint: .pink
-                            )
-                        }
-                    }
+                    Spacer(minLength: 12)
 
-                    Text(plan.displayName)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-
-                    Text(templateSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    Toggle("Enabled", isOn: $isEnabled)
+                        .labelsHidden()
                 }
 
-                Spacer(minLength: 12)
+                VStack(alignment: .leading, spacing: 12) {
+                    headerContent
 
-                Toggle("Enabled", isOn: $isEnabled)
-                    .labelsHidden()
+                    Toggle("Enabled", isOn: $isEnabled)
+                }
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -482,7 +478,7 @@ private struct MedicationPlanCard: View {
 
             }
 
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 Button {
                     onEdit()
                 } label: {
@@ -515,6 +511,35 @@ private struct MedicationPlanCard: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color(uiColor: .separator).opacity(0.14), lineWidth: 1)
         )
+    }
+
+    private var headerContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            AdaptiveStack(spacing: 8) {
+                StatusBadge(
+                    title: plan.isEnabled ? String(localized: "Active") : String(localized: "Paused"),
+                    systemImage: plan.isEnabled ? "bell.fill" : "pause.fill",
+                    tint: plan.isEnabled ? .green : .orange
+                )
+
+                if let sourceMedicationName = plan.sourceMedicationName, !sourceMedicationName.isEmpty {
+                    StatusBadge(
+                        title: String(localized: "Imported"),
+                        systemImage: "heart.text.square.fill",
+                        tint: .pink
+                    )
+                }
+            }
+
+            Text(plan.displayName)
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            Text(templateSummary)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var templateSummary: String {
@@ -596,7 +621,7 @@ private struct MedicationImportView: View {
                     if vm.isImporting {
                         StateCard(
                             title: String(localized: "Loading medications"),
-                            message: String(localized: "Reading Apple Health medications and dose events."),
+                            message: "Reading Apple Health medications.",
                             systemImage: "heart.text.square.fill",
                             tint: .pink,
                             showsProgress: true
@@ -615,8 +640,8 @@ private struct MedicationImportView: View {
                         }
                     } else if vm.importSuggestions.isEmpty {
                         StateCard(
-                            title: String(localized: "No suggestions found"),
-                            message: String(localized: "No Apple Health medications matched the current import rules."),
+                            title: "No medications found",
+                            message: "No active Apple Health medications were found.",
                             systemImage: "cross.case.fill",
                             tint: .blue
                         )
@@ -663,7 +688,7 @@ private struct MedicationImportView: View {
 
     private var importHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import supported Apple Health medications into reminder plans.")
+            Text("Import Apple Health medications as reminder plan starting points.")
                 .font(.headline)
 
             Text(vm.importAvailabilityDescription)
@@ -671,7 +696,7 @@ private struct MedicationImportView: View {
                 .foregroundStyle(.secondary)
 
             if vm.supportsMedicationImport {
-                Text("Most fields can be filled automatically. Confirm patch, gel, and other PK-specific details before saving.")
+                Text("This reads medication definitions from Apple Health. It does not import dose history or logged records.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -746,12 +771,20 @@ private struct MedicationPlanEditorView: View {
                 }
 
                 Section("Reminder Schedule") {
-                    Picker("Pattern", selection: $recurrenceKind) {
-                        Text("Daily").tag(MedicationPlanRecurrence.Kind.daily)
-                        Text("Weekly").tag(MedicationPlanRecurrence.Kind.weekly)
-                        Text("Every N Days").tag(MedicationPlanRecurrence.Kind.everyNDays)
+                    ViewThatFits(in: .horizontal) {
+                        Picker("Pattern", selection: $recurrenceKind) {
+                            Text("Daily").tag(MedicationPlanRecurrence.Kind.daily)
+                            Text("Weekly").tag(MedicationPlanRecurrence.Kind.weekly)
+                            Text("Every N Days").tag(MedicationPlanRecurrence.Kind.everyNDays)
+                        }
+                        .pickerStyle(.segmented)
+
+                        Picker("Pattern", selection: $recurrenceKind) {
+                            Text("Daily").tag(MedicationPlanRecurrence.Kind.daily)
+                            Text("Weekly").tag(MedicationPlanRecurrence.Kind.weekly)
+                            Text("Every N Days").tag(MedicationPlanRecurrence.Kind.everyNDays)
+                        }
                     }
-                    .pickerStyle(.segmented)
 
                     switch recurrenceKind {
                     case .daily:
@@ -1387,10 +1420,14 @@ private struct OverviewStatCard: View {
             Text(value)
                 .font(.headline)
                 .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -1460,6 +1497,7 @@ private struct LabeledStatusRow: View {
                 Text(value)
                     .font(.subheadline)
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -1490,6 +1528,7 @@ private struct ActionChip: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(prominent ? .white : .primary)
             .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
             .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -1524,6 +1563,7 @@ private struct PlanActionButton: View {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(foregroundStyle)
             .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
             .padding(.vertical, 14)
             .padding(.horizontal, 14)
             .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -1650,7 +1690,14 @@ private struct MedicationImportSuggestionCard: View {
 
                 Spacer()
 
-                StatusBadge(title: suggestion.generalFormText, systemImage: "capsule.portrait", tint: .blue)
+                AdaptiveStack(spacing: 8) {
+                    StatusBadge(
+                        title: alignmentBadgeTitle,
+                        systemImage: alignmentBadgeIcon,
+                        tint: alignmentBadgeTint
+                    )
+                    StatusBadge(title: suggestion.generalFormText, systemImage: "capsule.portrait", tint: .blue)
+                }
             }
 
             if let suggestedTemplate = suggestion.suggestedTemplate {
@@ -1667,13 +1714,11 @@ private struct MedicationImportSuggestionCard: View {
                 )
             }
 
-            if let latestDoseDescription = suggestion.latestDoseDescription {
-                LabeledStatusRow(
-                    title: String(localized: "Latest Health event"),
-                    value: latestDoseDescription,
-                    systemImage: "clock.arrow.circlepath"
-                )
-            }
+            LabeledStatusRow(
+                title: "Health mapping",
+                value: alignmentSummary,
+                systemImage: alignmentBadgeIcon
+            )
 
             if let note = suggestion.note, !note.isEmpty {
                 Text(note)
@@ -1702,5 +1747,55 @@ private struct MedicationImportSuggestionCard: View {
 
     private func templateSummary(for template: MedicationDoseTemplate) -> String {
         template.planSummaryText
+    }
+
+    private var alignmentSummary: String {
+        switch suggestion.alignmentStatus {
+        case .aligned:
+            if let ruleName = suggestion.alignmentRuleName, !ruleName.isEmpty {
+                return "Aligned via \(ruleName)"
+            }
+            return "Aligned with a Health medication rule."
+        case .needsDoseConfirmation:
+            if let ruleName = suggestion.alignmentRuleName, !ruleName.isEmpty {
+                return "Matched \(ruleName), but dose details still need confirmation."
+            }
+            return "Matched a Health medication rule, but dose details still need confirmation."
+        case .needsRule:
+            return "No alignment rule yet for this Health medication."
+        }
+    }
+
+    private var alignmentBadgeTitle: String {
+        switch suggestion.alignmentStatus {
+        case .aligned:
+            return "Aligned"
+        case .needsDoseConfirmation:
+            return "Check dose"
+        case .needsRule:
+            return "Needs rule"
+        }
+    }
+
+    private var alignmentBadgeIcon: String {
+        switch suggestion.alignmentStatus {
+        case .aligned:
+            return "checkmark.circle.fill"
+        case .needsDoseConfirmation:
+            return "exclamationmark.circle"
+        case .needsRule:
+            return "questionmark.circle"
+        }
+    }
+
+    private var alignmentBadgeTint: Color {
+        switch suggestion.alignmentStatus {
+        case .aligned:
+            return .green
+        case .needsDoseConfirmation:
+            return .orange
+        case .needsRule:
+            return .secondary
+        }
     }
 }

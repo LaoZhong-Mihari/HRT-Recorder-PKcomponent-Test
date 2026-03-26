@@ -335,14 +335,25 @@ struct ResultChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(LocalizedStringKey("chart.title"))
-                    .font(.headline)
-                Spacer()
-                Text(currentConcentrationText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(currentConcentrationText)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(LocalizedStringKey("chart.title"))
+                        .font(.headline)
+                    Spacer()
+                    Text(currentConcentrationText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(currentConcentrationText)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(LocalizedStringKey("chart.title"))
+                        .font(.headline)
+                    Text(currentConcentrationText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(currentConcentrationText)
+                }
             }
             .padding(.horizontal)
 
@@ -505,7 +516,7 @@ struct ResultChartView: View {
 
 private enum ResultChartFormatter {
     static func concentrationLabel(for concentration: Double) -> String {
-        String(format: "%.1f pg/mL", concentration)
+        String(format: "%.1f pg/mL", locale: Locale.current, concentration)
     }
 
     static func yAxisDomain(forMaximum concentration: Double) -> ClosedRange<Double> {
@@ -515,9 +526,9 @@ private enum ResultChartFormatter {
 
     static func yAxisLabel(for concentration: Double) -> String {
         if concentration >= 10 {
-            return String(format: "%.0f pg/mL", concentration)
+            return String(format: "%.0f pg/mL", locale: Locale.current, concentration)
         }
-        return String(format: "%.1f pg/mL", concentration)
+        return String(format: "%.1f pg/mL", locale: Locale.current, concentration)
     }
 
     static func axisStep(for visibleHours: Double, targetLabelCount: Int) -> Double {
@@ -537,9 +548,9 @@ private enum ResultChartFormatter {
         let clockHour = components.hour ?? 0
 
         if visibleHours < 48 {
-            return String(format: "%d/%d\n%02d:00", month, day, clockHour)
+            return String(format: "%d/%d\n%02d:00", locale: Locale.current, month, day, clockHour)
         }
-        return String(format: "%d/%d", month, day)
+        return String(format: "%d/%d", locale: Locale.current, month, day)
     }
 
     static func cursorTimeLabel(for hour: Double) -> String {
@@ -549,6 +560,6 @@ private enum ResultChartFormatter {
         let day = components.day ?? 0
         let clockHour = components.hour ?? 0
         let minute = components.minute ?? 0
-        return String(format: "%d/%d %02d:%02d", month, day, clockHour, minute)
+        return String(format: "%d/%d %02d:%02d", locale: Locale.current, month, day, clockHour, minute)
     }
 }
