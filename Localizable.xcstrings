@@ -312,6 +312,7 @@
       }
     },
     "Apple Health took too long to answer. Close the sheet and try again." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -553,9 +554,6 @@
     "Concentration" : {
 
     },
-    "Configure dose details" : {
-
-    },
     "Configure dose template" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -578,6 +576,7 @@
       }
     },
     "Create a plan for doses or patch changes. The app can fill dose details and schedule reminders." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -586,6 +585,9 @@
           }
         }
       }
+    },
+    "Create a plan for doses or patch changes. The app can fill medication details and schedule reminders." : {
+
     },
     "Create First Plan" : {
       "localizations" : {
@@ -608,6 +610,7 @@
       }
     },
     "Create Plan" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -679,9 +682,6 @@
     "Done" : {
 
     },
-    "Dose Details" : {
-
-    },
     "Dose details still need confirmation." : {
       "localizations" : {
         "zh-Hans" : {
@@ -693,6 +693,7 @@
       }
     },
     "Dose from Health needs confirmation before the plan can be saved." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -731,9 +732,6 @@
           }
         }
       }
-    },
-    "Edit dose details" : {
-
     },
     "Edit dose template" : {
       "extractionState" : "stale",
@@ -982,6 +980,7 @@
       }
     },
     "Gel area is not available from Health. The app will use its default area unless you edit it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -992,6 +991,7 @@
       }
     },
     "Health data isn't available on this device." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1002,6 +1002,7 @@
       }
     },
     "Health marks this medication as taken as needed. Add a reminder plan manually if needed." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1013,6 +1014,118 @@
     },
     "HealthKit" : {
 
+    },
+    "healthkit.error.body_mass_missing" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No body weight record was found in Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 健康中没有体重记录。"
+          }
+        }
+      }
+    },
+    "healthkit.error.body_mass_read_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body weight data isn't available in Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 健康中无法读取体重数据。"
+          }
+        }
+      }
+    },
+    "healthkit.error.body_mass_save_failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saving body weight to Health failed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入 Apple 健康体重失败。"
+          }
+        }
+      }
+    },
+    "healthkit.error.body_mass_subscription_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body weight updates can't be subscribed to in Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法订阅 Apple 健康中的体重更新。"
+          }
+        }
+      }
+    },
+    "healthkit.error.body_mass_write_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body weight data can't be written to Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将体重数据写入 Apple 健康。"
+          }
+        }
+      }
+    },
+    "healthkit.error.medication_authorization_cancelled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health medication access was cancelled."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消 Apple 健康用药访问授权。"
+          }
+        }
+      }
+    },
+    "healthkit.error.unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health data isn't available on this device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备不支持健康数据。"
+          }
+        }
+      }
     },
     "Import from Health" : {
       "localizations" : {
@@ -1035,6 +1148,7 @@
       }
     },
     "Import plans from Apple Health." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1045,6 +1159,7 @@
       }
     },
     "Import supported Apple Health medications into reminder plans." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1150,6 +1265,54 @@
         }
       }
     },
+    "input.medication_type.anti_androgen" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anti-androgen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抗雄"
+          }
+        }
+      }
+    },
+    "input.medication_type.estrogen" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estrogen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌激素"
+          }
+        }
+      }
+    },
+    "input.medication_type.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication Type"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药类型"
+          }
+        }
+      }
+    },
     "input.patchMode" : {
       "localizations" : {
         "en" : {
@@ -1210,6 +1373,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "贴剂总剂量 (mg)"
+          }
+        }
+      }
+    },
+    "input.record_only.dose_mg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose (mg)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剂量 (mg)"
+          }
+        }
+      }
+    },
+    "input.record_only.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anti-androgen entries are saved as oral records and reminder plans. They do not affect estradiol simulation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抗雄药物会按口服记录和提醒计划保存，不会影响雌二醇模拟。"
+          }
+        }
+      }
+    },
+    "input.record_only.medication" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "药物"
+          }
+        }
+      }
+    },
+    "input.record_only.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "药物"
           }
         }
       }
@@ -1440,6 +1667,7 @@
       }
     },
     "Latest Health event" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1450,6 +1678,7 @@
       }
     },
     "Loading medications" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1470,6 +1699,7 @@
       }
     },
     "Medication import needs iOS 26 or later." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1489,7 +1719,808 @@
         }
       }
     },
+    "medimport.availability.health_data_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health data isn't available on this device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备不支持健康数据。"
+          }
+        }
+      }
+    },
+    "medimport.availability.import_plans" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import plans from Apple Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 Apple 健康导入计划。"
+          }
+        }
+      }
+    },
+    "medimport.availability.unsupported_os" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication import needs iOS 26 or later."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药导入需要 iOS 26 或更高版本。"
+          }
+        }
+      }
+    },
+    "medimport.error.query_timed_out" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health took too long to answer. Close the sheet and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 健康响应过慢，请关闭页面后重试。"
+          }
+        }
+      }
+    },
+    "medimport.note.aligned_partial_schedule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matched this Health medication, but only partial schedule details were available. Review before saving."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已匹配此 Health 用药，但只能读取到部分计划信息，保存前请确认。"
+          }
+        }
+      }
+    },
+    "medimport.note.aligned_with_schedule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seeded dose and reminder timing from the Health medication schedule. Review and adjust before saving."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已根据 Apple 健康中的用药计划预填剂量和提醒时间，保存前请再确认。"
+          }
+        }
+      }
+    },
+    "medimport.note.as_needed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health marks this medication as taken as needed. Add or adjust reminders manually if needed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 将此药物标记为按需服用，如有需要请手动添加或调整提醒。"
+          }
+        }
+      }
+    },
+    "medimport.note.mapping_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health mapping: %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 映射：%@。"
+          }
+        }
+      }
+    },
+    "medimport.note.needs_dose_with_schedule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health provided scheduled reminder times, but the app couldn't fully convert the scheduled dose into a usable template. Confirm the dose details before saving."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 提供了计划提醒时间，但应用还无法把计划剂量完整换算成可用模板，保存前请确认剂量。"
+          }
+        }
+      }
+    },
+    "medimport.note.needs_dose_without_schedule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This medication matched a rule, but the app couldn't build a default dose from Health. Confirm the dose manually before saving."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此药物已匹配到规则，但应用还无法从 Health 生成默认剂量，保存前请手动确认。"
+          }
+        }
+      }
+    },
+    "medimport.note.needs_rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No alignment rule yet for this Health medication."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这条 Health 用药目前还没有对齐规则。"
+          }
+        }
+      }
+    },
+    "medimport.note.record_only_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is imported as an oral reminder/record medication only and won't affect estradiol simulation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 会作为仅提醒/记录的口服药物导入，不会影响雌二醇模拟。"
+          }
+        }
+      }
+    },
+    "medimport.note.sublingual_confirmation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sublingual dosing isn't auto-detected. Confirm whether this should stay oral or become sublingual."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用不会自动识别舌下给药，请确认这里应保持口服还是改成舌下。"
+          }
+        }
+      }
+    },
+    "medimport.rule.bicalutamide_oral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bicalutamide oral medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服比卡鲁胺"
+          }
+        }
+      }
+    },
+    "medimport.rule.cyproterone_acetate_oral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cyproterone acetate oral medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服醋酸环丙孕酮"
+          }
+        }
+      }
+    },
+    "medimport.rule.dutasteride_oral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dutasteride oral medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服度他雄胺"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_valerate_oral_tablet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol valerate oral tablet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服雌二醇戊酸酯片剂"
+          }
+        }
+      }
+    },
+    "medimport.rule.finasteride_oral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finasteride oral medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服非那雄胺"
+          }
+        }
+      }
+    },
+    "medimport.rule.spironolactone_oral" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spironolactone oral medication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服螺内酯"
+          }
+        }
+      }
+    },
+    "medimport.summary.as_needed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taken as needed in Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Health 中为按需服用。"
+          }
+        }
+      }
+    },
+    "medimport.summary.daily" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日"
+          }
+        }
+      }
+    },
+    "medimport.summary.daily_times" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily · %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日 · %@"
+          }
+        }
+      }
+    },
+    "medimport.summary.every_n_days" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every %1$lld days · %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 %1$lld 天 · %2$@"
+          }
+        }
+      }
+    },
+    "medimport.summary.schedule_unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled in Health, but exact reminder times weren't available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 中已设置计划，但没有可读取的精确提醒时间。"
+          }
+        }
+      }
+    },
+    "medimport.summary.weekly" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly · %1$@ · %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每周 · %1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "medplan.editor.daily_schedule.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder times are controlled here. Medication details only control the medication and dose."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这里控制的是提醒时间。药物详情只负责药物类型和剂量。"
+          }
+        }
+      }
+    },
+    "medplan.editor.medication_details.configure" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configure medication details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置药物详情"
+          }
+        }
+      }
+    },
+    "medplan.editor.medication_details.edit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit medication details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑药物详情"
+          }
+        }
+      }
+    },
+    "medplan.editor.medication_details.required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You need medication details before saving the plan."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存计划前需要先确认药物详情。"
+          }
+        }
+      }
+    },
+    "medplan.editor.medication_details.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication Details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "药物详情"
+          }
+        }
+      }
+    },
+    "medplan.editor.slot.help" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This editor controls the medication details only. The reminder time comes from the wheel above."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这里编辑的只有药物详情，提醒时间以上方滚轮为准。"
+          }
+        }
+      }
+    },
+    "medplan.editor.slot.required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose medication and dose for this reminder."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请为这条提醒选择药物和剂量。"
+          }
+        }
+      }
+    },
+    "medplan.import.alignment.aligned" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned with a Health medication rule."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过 Health 用药规则对齐。"
+          }
+        }
+      }
+    },
+    "medplan.import.alignment.aligned_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned via %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已通过 %@ 对齐"
+          }
+        }
+      }
+    },
+    "medplan.import.alignment.needs_dose" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matched a Health medication rule, but some dose details still need review."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已匹配到 Health 用药规则，但部分剂量信息仍需确认。"
+          }
+        }
+      }
+    },
+    "medplan.import.alignment.needs_dose_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matched %@, but some dose details still need review."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已匹配 %@，但部分剂量信息仍需确认。"
+          }
+        }
+      }
+    },
+    "medplan.import.alignment.needs_rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No alignment rule yet for this Health medication."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这条 Health 用药目前还没有对齐规则。"
+          }
+        }
+      }
+    },
+    "medplan.import.badge.aligned" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aligned"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已对齐"
+          }
+        }
+      }
+    },
+    "medplan.import.badge.check_dose" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check dose"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查剂量"
+          }
+        }
+      }
+    },
+    "medplan.import.badge.needs_rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs rule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需补规则"
+          }
+        }
+      }
+    },
+    "medplan.import.detected_template.confirmation_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · dose still needs confirmation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 剂量仍需确认。"
+          }
+        }
+      }
+    },
+    "medplan.import.empty.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No active Apple Health medications were found."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有找到启用中的 Apple 健康用药。"
+          }
+        }
+      }
+    },
+    "medplan.import.empty.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No medications found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到药物"
+          }
+        }
+      }
+    },
+    "medplan.import.header.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This reads medication definitions from Apple Health. It does not import dose history or logged records."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这里只会读取 Apple 健康中的用药定义，不会导入服药历史或已记录条目。"
+          }
+        }
+      }
+    },
+    "medplan.import.header.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import Apple Health medications as reminder plan starting points."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 Apple 健康中的用药导入为提醒计划的起点。"
+          }
+        }
+      }
+    },
+    "medplan.import.health_mapping" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health mapping"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 映射"
+          }
+        }
+      }
+    },
+    "medplan.import.health_plan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health 计划"
+          }
+        }
+      }
+    },
+    "medplan.import.loading.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading Apple Health medications."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取 Apple 健康中的用药。"
+          }
+        }
+      }
+    },
+    "medplan.import.loading.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading medications"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取药物"
+          }
+        }
+      }
+    },
+    "medplan.import.review_plan" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查计划"
+          }
+        }
+      }
+    },
     "Most fields can be filled automatically. Confirm patch, gel, and other PK-specific details before saving." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1530,6 +2561,7 @@
       }
     },
     "No Apple Health medications matched the current import rules." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1560,6 +2592,7 @@
       }
     },
     "No suggestions found" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1580,6 +2613,7 @@
       }
     },
     "Not interacted" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1590,6 +2624,7 @@
       }
     },
     "Not logged" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1620,6 +2655,7 @@
       }
     },
     "Notification failed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1730,6 +2766,7 @@
       }
     },
     "Patch release rate is not available from Health. Please confirm the patch model." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1862,6 +2899,7 @@
       }
     },
     "Reading Apple Health medications and dose events." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1881,6 +2919,150 @@
         }
       }
     },
+    "record_medication.bicalutamide.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bicalutamide"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "比卡鲁胺"
+          }
+        }
+      }
+    },
+    "record_medication.cyproterone_acetate.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cyproterone acetate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "醋酸环丙孕酮"
+          }
+        }
+      }
+    },
+    "record_medication.dose_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@mg %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ mg %2$@"
+          }
+        }
+      }
+    },
+    "record_medication.dutasteride.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dutasteride"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "度他雄胺"
+          }
+        }
+      }
+    },
+    "record_medication.finasteride.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finasteride"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非那雄胺"
+          }
+        }
+      }
+    },
+    "record_medication.notification_due_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is due at %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应于 %2$@ 服用：%1$@。"
+          }
+        }
+      }
+    },
+    "record_medication.plan_name_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服用 %@"
+          }
+        }
+      }
+    },
+    "record_medication.reminder_line_format" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "take %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服用 %@"
+          }
+        }
+      }
+    },
+    "record_medication.spironolactone.name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spironolactone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螺内酯"
+          }
+        }
+      }
+    },
     "Reload" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1892,6 +3074,7 @@
       }
     },
     "Reminder pattern is inferred from recent scheduled dose events when possible." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1922,9 +3105,6 @@
       }
     },
     "Reminder Time" : {
-
-    },
-    "Reminder times are controlled here. Dose details only control route, ester, and amount." : {
 
     },
     "Reminders paused" : {
@@ -2300,6 +3480,7 @@
       }
     },
     "Skipped" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2310,6 +3491,7 @@
       }
     },
     "Snoozed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2330,6 +3512,7 @@
       }
     },
     "Sublingual dosing isn't auto-detected. Please confirm if this should stay oral or become sublingual." : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2340,6 +3523,7 @@
       }
     },
     "Taken" : {
+      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2358,9 +3542,6 @@
           }
         }
       }
-    },
-    "This editor controls the medication details only. The reminder time comes from the wheel above." : {
-
     },
     "This only removes the reminder schedule. Logged doses stay." : {
       "localizations" : {

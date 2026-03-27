@@ -114,6 +114,10 @@ final class MedicationPlanVM: ObservableObject {
         plan.nextOccurrence()
     }
 
+    func plan(withID id: UUID) -> MedicationPlan? {
+        plans.first { $0.id == id }
+    }
+
     func nextOverallOccurrence() -> PlannedDoseOccurrence? {
         plans
             .filter(\.isEnabled)

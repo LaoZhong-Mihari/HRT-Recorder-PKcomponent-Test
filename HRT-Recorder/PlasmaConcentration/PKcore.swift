@@ -40,6 +40,13 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     let doseMG: Double
     let ester: Ester
     let extras: [ExtraKey: Double]
+    let recordOnlyOralMedication: RecordOnlyOralMedication?
+}
+
+extension DoseEvent {
+    nonisolated var participatesInSimulation: Bool {
+        recordOnlyOralMedication == nil
+    }
 }
 
 // MARK: – Parameter bundle after resolution ---------------------------------
@@ -409,11 +416,12 @@ func simulateTimelineResult(
     forecastHours: Double = 24.0 * 14.0,
     numberOfSteps: Int = 1000
 ) -> SimulationResult {
-    let startTime = (events.first?.timeH ?? 0) - historyPaddingHours
-    let endTime = (events.last?.timeH ?? startTime) + forecastHours
+    let simulatedEvents = events.filter(\.participatesInSimulation)
+    let startTime = (simulatedEvents.first?.timeH ?? 0) - historyPaddingHours
+    let endTime = (simulatedEvents.last?.timeH ?? startTime) + forecastHours
 
     let engine = SimulationEngine(
-        events: events,
+        events: simulatedEvents,
         bodyWeightKG: bodyWeightKG,
         startTimeH: startTime,
         endTimeH: endTime,

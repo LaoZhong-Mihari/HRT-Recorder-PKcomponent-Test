@@ -519,6 +519,10 @@ struct TimelineRowView: View {
     }
     
     private var title: String {
+        if let recordOnlyOralMedication = event.recordOnlyOralMedication {
+            return recordOnlyOralMedication.displayName
+        }
+
         switch event.route {
         case .injection:
             return String(format: NSLocalizedString("timeline.row.injection", comment: "Timeline row title for injection"), locale: Locale.current, event.ester.abbreviation)

@@ -108,7 +108,7 @@ final class NotificationCoordinator: NSObject, ObservableObject {
         let context = ReminderMessageContext(
             planName: occurrence.planName,
             action: actionVerb(for: template.route),
-            routeLabel: template.route.planLabel,
+            routeLabel: routeLabel(for: template),
             doseText: doseText(for: template),
             doseLine: doseLine(for: template),
             timeText: timeText(for: occurrence.scheduledDate)
@@ -134,6 +134,14 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     }
 
     private func fallbackNotificationBody(for template: MedicationDoseTemplate, scheduledDate: Date) -> String {
+        if template.recordOnlyOralMedication != nil {
+            return String.localizedStringWithFormat(
+                String(localized: "record_medication.notification_due_format"),
+                sentenceCased(template.reminderDoseLine),
+                timeText(for: scheduledDate)
+            )
+        }
+
         switch template.route {
         case .patchRemove:
             return "\(template.route.planLabel) is due at \(timeText(for: scheduledDate))."
@@ -156,6 +164,10 @@ final class NotificationCoordinator: NSObject, ObservableObject {
 
     private func doseLine(for template: MedicationDoseTemplate) -> String {
         template.reminderDoseLine
+    }
+
+    private func routeLabel(for template: MedicationDoseTemplate) -> String {
+        template.recordOnlyOralMedication?.displayName ?? template.route.planLabel
     }
 
     private func actionVerb(for route: DoseEvent.Route) -> String {
@@ -222,6 +234,11 @@ final class NotificationCoordinator: NSObject, ObservableObject {
             hash &*= 1_099_511_628_211
         }
         return hash
+    }
+
+    private func sentenceCased(_ text: String) -> String {
+        guard let first = text.first else { return text }
+        return first.uppercased() + String(text.dropFirst())
     }
 
     private func launchContext(from userInfo: [AnyHashable: Any]) -> ReminderLaunchContext? {

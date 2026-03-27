@@ -32,14 +32,20 @@ struct MedicationAlignmentRule: Sendable {
     let requiredTokens: [String]
     let allowedGeneralFormTokens: [String]
     let route: DoseEvent.Route
-    let ester: Ester
+    let ester: Ester?
+    let recordOnlyOralMedication: RecordOnlyOralMedication?
     let doseParsingMode: MedicationDoseParsingMode
+    let defaultUnitStrengthMG: Double?
     let note: String?
 
     fileprivate func matches(_ snapshot: HealthMedicationSnapshot) -> Bool {
         let searchableText = snapshot.combinedNormalizedText
 
-        if aliases.contains(snapshot.normalizedDisplayName) {
+        let aliasMatched = aliases.contains(snapshot.normalizedDisplayName)
+            || aliases.contains(snapshot.normalizedNickname)
+            || aliases.contains(where: searchableText.contains(_:))
+
+        if aliasMatched {
             return allowedGeneralFormTokens.isEmpty
                 || allowedGeneralFormTokens.contains(where: snapshot.normalizedGeneralFormText.contains(_:))
         }
@@ -59,14 +65,76 @@ struct MedicationAlignmentRule: Sendable {
 enum MedicationImportCatalog {
     static let rules: [MedicationAlignmentRule] = [
         MedicationAlignmentRule(
-            name: "Estradiol valerate oral tablet",
+            name: String(localized: "medimport.rule.estradiol_valerate_oral_tablet"),
             aliases: [],
             requiredTokens: ["estradiol", "valerate", "tablet"],
             allowedGeneralFormTokens: ["tablet", "caplet"],
             route: .oral,
             ester: .EV,
+            recordOnlyOralMedication: nil,
             doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: 2,
             note: "Matched estradiol valerate tablets from Apple Health."
+        ),
+        MedicationAlignmentRule(
+            name: String(localized: "medimport.rule.cyproterone_acetate_oral"),
+            aliases: ["cpa"],
+            requiredTokens: ["cyproterone", "acetate"],
+            allowedGeneralFormTokens: [],
+            route: .oral,
+            ester: nil,
+            recordOnlyOralMedication: .cyproteroneAcetate,
+            doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: nil,
+            note: "Matched cyproterone acetate from Apple Health."
+        ),
+        MedicationAlignmentRule(
+            name: String(localized: "medimport.rule.spironolactone_oral"),
+            aliases: ["spiro"],
+            requiredTokens: ["spironolactone"],
+            allowedGeneralFormTokens: [],
+            route: .oral,
+            ester: nil,
+            recordOnlyOralMedication: .spironolactone,
+            doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: nil,
+            note: "Matched spironolactone from Apple Health."
+        ),
+        MedicationAlignmentRule(
+            name: String(localized: "medimport.rule.bicalutamide_oral"),
+            aliases: ["bica"],
+            requiredTokens: ["bicalutamide"],
+            allowedGeneralFormTokens: [],
+            route: .oral,
+            ester: nil,
+            recordOnlyOralMedication: .bicalutamide,
+            doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: nil,
+            note: "Matched bicalutamide from Apple Health."
+        ),
+        MedicationAlignmentRule(
+            name: String(localized: "medimport.rule.finasteride_oral"),
+            aliases: [],
+            requiredTokens: ["finasteride"],
+            allowedGeneralFormTokens: [],
+            route: .oral,
+            ester: nil,
+            recordOnlyOralMedication: .finasteride,
+            doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: nil,
+            note: "Matched finasteride from Apple Health."
+        ),
+        MedicationAlignmentRule(
+            name: String(localized: "medimport.rule.dutasteride_oral"),
+            aliases: [],
+            requiredTokens: ["dutasteride"],
+            allowedGeneralFormTokens: [],
+            route: .oral,
+            ester: nil,
+            recordOnlyOralMedication: .dutasteride,
+            doseParsingMode: .strengthInName,
+            defaultUnitStrengthMG: nil,
+            note: "Matched dutasteride from Apple Health."
         ),
     ]
 

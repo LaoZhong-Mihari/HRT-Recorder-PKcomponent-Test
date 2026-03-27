@@ -153,8 +153,15 @@ final class DoseTimelineVM: ObservableObject {
             isSimulating = false
             return
         }
-        
-        let sortedEvents = events
+
+        let simulatedEvents = events.filter(\.participatesInSimulation)
+        guard !simulatedEvents.isEmpty else {
+            result = nil
+            isSimulating = false
+            return
+        }
+
+        let sortedEvents = simulatedEvents
         let weight = self.bodyWeightKG
         
         isSimulating = true

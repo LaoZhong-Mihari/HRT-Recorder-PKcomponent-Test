@@ -65,7 +65,8 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
             timeH: bridge.timeH,
             doseMG: bridge.doseMG,
             ester: ester,
-            extras: extras
+            extras: extras,
+            recordOnlyOralMedication: bridge.recordOnlyOralMedicationRawValue.flatMap(RecordOnlyOralMedication.init(rawValue:))
         )
     }
 
@@ -187,14 +188,24 @@ struct WatchDoseBridgeEvent: Codable {
     let doseMG: Double
     let esterRawValue: String
     let extras: [String: Double]
+    let recordOnlyOralMedicationRawValue: String?
 
-    init(id: UUID, routeRawValue: String, timeH: Double, doseMG: Double, esterRawValue: String, extras: [String: Double]) {
+    init(
+        id: UUID,
+        routeRawValue: String,
+        timeH: Double,
+        doseMG: Double,
+        esterRawValue: String,
+        extras: [String: Double],
+        recordOnlyOralMedicationRawValue: String?
+    ) {
         self.id = id
         self.routeRawValue = routeRawValue
         self.timeH = timeH
         self.doseMG = doseMG
         self.esterRawValue = esterRawValue
         self.extras = extras
+        self.recordOnlyOralMedicationRawValue = recordOnlyOralMedicationRawValue
     }
 
     init(event: DoseEvent) {
@@ -206,6 +217,7 @@ struct WatchDoseBridgeEvent: Codable {
         self.extras = event.extras.reduce(into: [:]) { partialResult, pair in
             partialResult[pair.key.rawValue] = pair.value
         }
+        self.recordOnlyOralMedicationRawValue = event.recordOnlyOralMedication?.rawValue
     }
 
     enum CodingKeys: String, CodingKey {
@@ -215,6 +227,7 @@ struct WatchDoseBridgeEvent: Codable {
         case doseMG
         case esterRawValue = "ester"
         case extras
+        case recordOnlyOralMedicationRawValue = "recordOnlyOralMedication"
     }
 }
 

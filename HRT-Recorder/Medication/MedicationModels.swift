@@ -5,18 +5,52 @@ struct MedicationDoseTemplate: Codable, Equatable, Sendable {
     var doseMG: Double
     var ester: Ester
     var extras: [DoseEvent.ExtraKey: Double]
+    var recordOnlyOralMedication: RecordOnlyOralMedication?
 
-    static let empty = MedicationDoseTemplate(route: .oral, doseMG: 0, ester: .E2, extras: [:])
+    static let empty = MedicationDoseTemplate(
+        route: .oral,
+        doseMG: 0,
+        ester: .E2,
+        extras: [:],
+        recordOnlyOralMedication: nil
+    )
 }
 
 extension MedicationDoseTemplate {
+    nonisolated var hasConfiguredDose: Bool {
+        if route == .patchRemove {
+            return true
+        }
+
+        if let releaseRate = extras[.releaseRateUGPerDay] {
+            return releaseRate > 0
+        }
+
+        return doseMG > 0
+    }
+
     nonisolated var rawDoseMG: Double {
+        if recordOnlyOralMedication != nil {
+            return doseMG
+        }
+
         let factor = EsterInfo.by(ester: ester).toE2Factor
         guard doseMG > 0, factor > 0 else { return doseMG }
         return doseMG / factor
     }
 
     nonisolated var reminderDoseText: String {
+        if let recordOnlyOralMedication {
+            guard doseMG > 0 else {
+                return recordOnlyOralMedication.displayName
+            }
+            return String.localizedStringWithFormat(
+                String(localized: "record_medication.dose_format"),
+                Self.formattedNumber(doseMG),
+                recordOnlyOralMedication.displayName
+            )
+        }
+
         if let releaseRate = extras[.releaseRateUGPerDay] {
             return "\(Self.formattedNumber(releaseRate, maximumFractionDigits: 0))ug/day"
         }
@@ -29,6 +63,13 @@ extension MedicationDoseTemplate {
     }
 
     nonisolated var reminderDoseLine: String {
+        if recordOnlyOralMedication != nil {
+            return String.localizedStringWithFormat(
+                String(localized: "record_medication.reminder_line_format"),
+                reminderDoseText
+            )
+        }
+
         switch route {
         case .patchRemove:
             return "patch removal"
@@ -38,6 +79,10 @@ extension MedicationDoseTemplate {
     }
 
     nonisolated var planSummaryText: String {
+        if recordOnlyOralMedication != nil {
+            return reminderDoseText
+        }
+
         switch route {
         case .patchRemove:
             return route.planLabel
@@ -351,6 +396,10 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
     }
 
     nonisolated var defaultPlanName: String {
+        if let recordOnlyOralMedication = primaryTemplate.recordOnlyOralMedication {
+            return recordOnlyOralMedication.defaultPlanName
+        }
+
         switch primaryTemplate.route {
         case .injection:
             return "Inject \(primaryTemplate.ester.abbreviation)"
@@ -472,6 +521,7 @@ struct MedicationImportSuggestion: Identifiable, Equatable, Sendable {
     var latestDoseDescription: String?
     var suggestedTemplate: MedicationDoseTemplate?
     var suggestedRecurrence: MedicationPlanRecurrence
+    var healthPlanSummary: String?
     var note: String?
     var sourceMedicationName: String?
     var alignmentStatus: MedicationImportAlignmentStatus

@@ -15,14 +15,14 @@ final class HealthMedicationImportService {
 
     var availabilityDescription: String {
         guard HKHealthStore.isHealthDataAvailable() else {
-            return String(localized: "Health data isn't available on this device.")
+            return String(localized: "medimport.availability.health_data_unavailable")
         }
 
         if #available(iOS 26.0, *) {
-            return String(localized: "Import plans from Apple Health.")
+            return String(localized: "medimport.availability.import_plans")
         }
 
-        return String(localized: "Medication import needs iOS 26 or later.")
+        return String(localized: "medimport.availability.unsupported_os")
     }
 
     func loadSuggestions() async throws -> [MedicationImportSuggestion] {
@@ -38,8 +38,17 @@ final class HealthMedicationImportService {
         let medications = try await fetchActiveMedications()
         guard !medications.isEmpty else { return [] }
 
+        let identifiers = Set(medications.map { $0.medication.identifier })
+        let doseEvents = (try? await fetchDoseEvents(for: identifiers)) ?? []
+        let groupedDoseEvents = Dictionary(grouping: doseEvents, by: \.medicationConceptIdentifier)
+
         return medications
-            .map(makeSuggestion(from:))
+            .map { medication in
+                makeSuggestion(
+                    from: medication,
+                    doseEvents: groupedDoseEvents[medication.medication.identifier] ?? []
+                )
+            }
             .sorted { $0.sourceName.localizedCaseInsensitiveCompare($1.sourceName) == .orderedAscending }
     }
 
@@ -67,20 +76,55 @@ final class HealthMedicationImportService {
     }
 
     @available(iOS 26.0, *)
+    private func fetchDoseEvents(for identifiers: Set<HKHealthConceptIdentifier>) async throws -> [HKMedicationDoseEvent] {
+        guard !identifiers.isEmpty else { return [] }
+
+        return try await executeQuery(timeout: queryTimeout) { finish in
+            let type = HKObjectType.medicationDoseEventType()
+            let predicate = HKQuery.predicateForMedicationDoseEvent(medicationConceptIdentifiers: identifiers)
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+
+            return HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
+                if let error {
+                    finish(.failure(error))
+                    return
+                }
+
+                let events = (samples as? [HKMedicationDoseEvent]) ?? []
+                finish(.success(events))
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
     private func makeSuggestion(
-        from medication: HKUserAnnotatedMedication
+        from medication: HKUserAnnotatedMedication,
+        doseEvents: [HKMedicationDoseEvent]
     ) -> MedicationImportSuggestion {
         let concept = medication.medication
         let snapshot = makeSnapshot(from: medication)
         let alignmentRule = MedicationImportCatalog.match(snapshot: snapshot)
         let route = alignmentRule?.route ?? inferRoute(generalForm: concept.generalForm, text: snapshot.combinedNormalizedText)
-        let recurrence = defaultRecurrence(for: route, date: Date())
-        let suggestedTemplate = alignmentRule.flatMap { makeTemplate(from: snapshot, rule: $0) }
+        let scheduledDoseEvents = scheduleDoseEvents(from: doseEvents)
+        let recurrence = inferRecurrence(
+            hasSchedule: medication.hasSchedule,
+            route: route,
+            scheduleDoseEvents: scheduledDoseEvents
+        )
+        let suggestedTemplate = alignmentRule.flatMap {
+            makeTemplate(from: snapshot, rule: $0, scheduleDoseEvents: scheduledDoseEvents)
+        }
         let alignmentStatus = alignmentStatus(for: alignmentRule, template: suggestedTemplate)
+        let healthPlanSummary = makeHealthPlanSummary(
+            hasSchedule: medication.hasSchedule,
+            recurrence: recurrence,
+            scheduleDoseEvents: scheduledDoseEvents
+        )
         let note = makeNote(
             for: medication,
             rule: alignmentRule,
-            alignmentStatus: alignmentStatus
+            alignmentStatus: alignmentStatus,
+            usedScheduleSeed: !scheduledDoseEvents.isEmpty
         )
 
         return MedicationImportSuggestion(
@@ -91,6 +135,7 @@ final class HealthMedicationImportService {
             latestDoseDescription: nil,
             suggestedTemplate: suggestedTemplate,
             suggestedRecurrence: recurrence,
+            healthPlanSummary: healthPlanSummary,
             note: note,
             sourceMedicationName: concept.displayText,
             alignmentStatus: alignmentStatus,
@@ -135,21 +180,33 @@ final class HealthMedicationImportService {
     @available(iOS 26.0, *)
     private func makeTemplate(
         from snapshot: HealthMedicationSnapshot,
-        rule: MedicationAlignmentRule
+        rule: MedicationAlignmentRule,
+        scheduleDoseEvents: [HKMedicationDoseEvent]
     ) -> MedicationDoseTemplate? {
-        let rawDoseMG: Double?
-        switch rule.doseParsingMode {
-        case .strengthInName:
-            rawDoseMG = MedicationStrengthParser.parseRawDoseMG(from: snapshot.displayName)
-        }
-        guard let rawDoseMG else { return nil }
+        let rawDoseMG = rawDoseMG(
+            from: scheduleSeedEvent(from: scheduleDoseEvents),
+            snapshot: snapshot,
+            rule: rule
+        ) ?? fallbackRawDoseMG(from: snapshot, rule: rule)
 
-        let convertedDoseMG = rawDoseMG * EsterInfo.by(ester: rule.ester).toE2Factor
+        if let recordOnlyOralMedication = rule.recordOnlyOralMedication {
+            return MedicationDoseTemplate(
+                route: rule.route,
+                doseMG: rawDoseMG ?? 0,
+                ester: .E2,
+                extras: [:],
+                recordOnlyOralMedication: recordOnlyOralMedication
+            )
+        }
+
+        guard let ester = rule.ester else { return nil }
+        let convertedDoseMG = (rawDoseMG ?? 0) * EsterInfo.by(ester: ester).toE2Factor
         return MedicationDoseTemplate(
             route: rule.route,
             doseMG: convertedDoseMG,
-            ester: rule.ester,
-            extras: [:]
+            ester: ester,
+            extras: [:],
+            recordOnlyOralMedication: nil
         )
     }
 
@@ -162,45 +219,172 @@ final class HealthMedicationImportService {
             return .needsRule
         }
 
-        return template == nil ? .needsDoseConfirmation : .aligned
+        guard let template else {
+            return .needsDoseConfirmation
+        }
+
+        return template.hasConfiguredDose ? .aligned : .needsDoseConfirmation
     }
 
     @available(iOS 26.0, *)
     private func makeNote(
         for medication: HKUserAnnotatedMedication,
         rule: MedicationAlignmentRule?,
-        alignmentStatus: MedicationImportAlignmentStatus
+        alignmentStatus: MedicationImportAlignmentStatus,
+        usedScheduleSeed: Bool
     ) -> String {
         var noteParts: [String] = []
 
-        if let ruleName = rule?.name, !ruleName.isEmpty {
-            noteParts.append("Health mapping: \(ruleName).")
-        }
-
-        if let ruleNote = rule?.note, !ruleNote.isEmpty {
-            noteParts.append(ruleNote)
-        }
-
         switch alignmentStatus {
         case .aligned:
-            noteParts.append("Dose uses the strength written in the Health medication name. If you take multiple tablets or capsules at once, adjust the dose before saving.")
+            if usedScheduleSeed {
+                noteParts.append(String(localized: "medimport.note.aligned_with_schedule"))
+            } else {
+                noteParts.append(String(localized: "medimport.note.aligned_partial_schedule"))
+            }
         case .needsDoseConfirmation:
-            noteParts.append("This medication matched a rule, but the app couldn't read a single strength from the Health medication name. Confirm the dose manually before saving.")
+            if usedScheduleSeed {
+                noteParts.append(String(localized: "medimport.note.needs_dose_with_schedule"))
+            } else {
+                noteParts.append(String(localized: "medimport.note.needs_dose_without_schedule"))
+            }
         case .needsRule:
-            noteParts.append("No alignment rule yet for this Health medication.")
+            noteParts.append(String(localized: "medimport.note.needs_rule"))
         }
 
-        if medication.hasSchedule {
-            noteParts.append("Health marks this medication as scheduled, but exact reminder timing isn't available to the app. Confirm the schedule before saving.")
-        } else {
-            noteParts.append("Health marks this medication as taken as needed. Add or adjust reminders manually if needed.")
+        if !medication.hasSchedule {
+            noteParts.append(String(localized: "medimport.note.as_needed"))
+        }
+
+        if let ruleName = rule?.name, !ruleName.isEmpty {
+            noteParts.append(
+                String.localizedStringWithFormat(
+                    String(localized: "medimport.note.mapping_format"),
+                    ruleName
+                )
+            )
+        }
+
+        if let recordOnlyOralMedication = rule?.recordOnlyOralMedication {
+            noteParts.append(
+                String.localizedStringWithFormat(
+                    String(localized: "medimport.note.record_only_format"),
+                    recordOnlyOralMedication.displayName
+                )
+            )
         }
 
         if rule?.route == .sublingual {
-            noteParts.append("Sublingual dosing isn't auto-detected. Confirm whether this should stay oral or become sublingual.")
+            noteParts.append(String(localized: "medimport.note.sublingual_confirmation"))
         }
 
         return noteParts.joined(separator: " ")
+    }
+
+    @available(iOS 26.0, *)
+    private func scheduleDoseEvents(from doseEvents: [HKMedicationDoseEvent]) -> [HKMedicationDoseEvent] {
+        doseEvents
+            .filter { $0.scheduleType == .schedule && $0.scheduledDate != nil }
+            .sorted { ($0.scheduledDate ?? .distantPast) < ($1.scheduledDate ?? .distantPast) }
+    }
+
+    @available(iOS 26.0, *)
+    private func scheduleSeedEvent(from scheduleDoseEvents: [HKMedicationDoseEvent]) -> HKMedicationDoseEvent? {
+        let now = Date()
+        if let upcoming = scheduleDoseEvents.first(where: { ($0.scheduledDate ?? .distantPast) >= now }) {
+            return upcoming
+        }
+        return scheduleDoseEvents.last
+    }
+
+    @available(iOS 26.0, *)
+    private func rawDoseMG(
+        from scheduleSeedEvent: HKMedicationDoseEvent?,
+        snapshot: HealthMedicationSnapshot,
+        rule: MedicationAlignmentRule
+    ) -> Double? {
+        guard let scheduleSeedEvent,
+              let scheduledQuantity = scheduleSeedEvent.scheduledDoseQuantity else {
+            return nil
+        }
+
+        let unit = scheduleSeedEvent.unit.unitString.lowercased()
+        switch unit {
+        case "mg", "milligram", "milligrams":
+            return scheduledQuantity
+        case "g", "gram", "grams":
+            return scheduledQuantity * 1000
+        case "mcg", "ug", "μg", "µg":
+            return scheduledQuantity / 1000
+        case "tablet", "tablets", "capsule", "capsules", "caplet", "caplets":
+            guard let singleUnitStrength = fallbackRawDoseMG(from: snapshot, rule: rule) else {
+                return nil
+            }
+            return scheduledQuantity * singleUnitStrength
+        default:
+            return nil
+        }
+    }
+
+    private func fallbackRawDoseMG(from snapshot: HealthMedicationSnapshot, rule: MedicationAlignmentRule) -> Double? {
+        switch rule.doseParsingMode {
+        case .strengthInName:
+            if let parsedFromName = MedicationStrengthParser.parseRawDoseMG(from: snapshot.displayName) {
+                return parsedFromName
+            }
+
+            if let parsedFromNickname = MedicationStrengthParser.parseRawDoseMG(from: snapshot.nickname ?? "") {
+                return parsedFromNickname
+            }
+
+            return rule.defaultUnitStrengthMG
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func inferRecurrence(
+        hasSchedule: Bool,
+        route: DoseEvent.Route,
+        scheduleDoseEvents: [HKMedicationDoseEvent]
+    ) -> MedicationPlanRecurrence {
+        let scheduledDates = scheduleDoseEvents.compactMap(\.scheduledDate)
+
+        guard hasSchedule, !scheduledDates.isEmpty else {
+            return defaultRecurrence(for: route, date: Date())
+        }
+
+        let times = uniqueTimes(from: scheduledDates)
+        let primaryTime = times.first ?? .defaultMorning
+
+        switch route {
+        case .oral, .gel, .sublingual:
+            return .daily(times: times.isEmpty ? [primaryTime] : times)
+        case .injection, .patchApply, .patchRemove:
+            let interval = inferredIntervalDays(from: scheduledDates)
+            let roundedInterval = max(1, interval ?? 7)
+            return .everyNDays(
+                intervalDays: roundedInterval,
+                startDate: scheduledDates.last ?? Date(),
+                time: primaryTime
+            )
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func makeHealthPlanSummary(
+        hasSchedule: Bool,
+        recurrence: MedicationPlanRecurrence,
+        scheduleDoseEvents: [HKMedicationDoseEvent]
+    ) -> String {
+        guard hasSchedule else {
+            return String(localized: "medimport.summary.as_needed")
+        }
+
+        guard !scheduleDoseEvents.isEmpty else {
+            return String(localized: "medimport.summary.schedule_unavailable")
+        }
+
+        return recurrenceSummary(recurrence)
     }
 
     private func defaultRecurrence(for route: DoseEvent.Route, date: Date) -> MedicationPlanRecurrence {
@@ -209,6 +393,68 @@ final class HealthMedicationImportService {
             return .daily(times: [clockTime(from: date)])
         case .injection, .patchApply, .patchRemove:
             return .everyNDays(intervalDays: 7, startDate: date, time: clockTime(from: date))
+        }
+    }
+
+    private func uniqueTimes(from dates: [Date]) -> [ReminderClockTime] {
+        var seen = Set<String>()
+        var unique: [ReminderClockTime] = []
+
+        for date in dates {
+            let time = clockTime(from: date)
+            let key = "\(time.hour):\(time.minute)"
+            guard seen.insert(key).inserted else { continue }
+            unique.append(time)
+        }
+
+        return unique.sorted {
+            if $0.hour == $1.hour {
+                return $0.minute < $1.minute
+            }
+            return $0.hour < $1.hour
+        }
+    }
+
+    private func inferredIntervalDays(from dates: [Date]) -> Int? {
+        let calendar = Calendar.autoupdatingCurrent
+        let intervals = zip(dates, dates.dropFirst()).compactMap { lhs, rhs in
+            calendar.dateComponents([.day], from: lhs, to: rhs).day
+        }
+
+        guard !intervals.isEmpty else { return nil }
+        return Int((Double(intervals.reduce(0, +)) / Double(intervals.count)).rounded())
+    }
+
+    private func recurrenceSummary(_ recurrence: MedicationPlanRecurrence) -> String {
+        switch recurrence.kind {
+        case .daily:
+            let times = recurrence.times.map(\.formattedText).joined(separator: ", ")
+            if times.isEmpty {
+                return String(localized: "medimport.summary.daily")
+            }
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.summary.daily_times"),
+                times
+            )
+        case .weekly:
+            let weekdaySymbols = Calendar.autoupdatingCurrent.shortStandaloneWeekdaySymbols
+            let weekdays = recurrence.weekdays
+                .compactMap { weekday -> String? in
+                    guard (1...7).contains(weekday) else { return nil }
+                    return weekdaySymbols[weekday - 1]
+                }
+                .joined(separator: ", ")
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.summary.weekly"),
+                weekdays,
+                recurrence.primaryTime.formattedText
+            )
+        case .everyNDays:
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.summary.every_n_days"),
+                recurrence.intervalDays,
+                recurrence.primaryTime.formattedText
+            )
         }
     }
 
@@ -265,11 +511,11 @@ private enum HealthMedicationImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .healthDataUnavailable:
-            return String(localized: "Health data isn't available on this device.")
+            return String(localized: "medimport.availability.health_data_unavailable")
         case .unsupportedOS:
-            return String(localized: "Medication import needs iOS 26 or later.")
+            return String(localized: "medimport.availability.unsupported_os")
         case .queryTimedOut:
-            return String(localized: "Apple Health took too long to answer. Close the sheet and try again.")
+            return String(localized: "medimport.error.query_timed_out")
         }
     }
 }

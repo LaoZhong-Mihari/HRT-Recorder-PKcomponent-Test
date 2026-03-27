@@ -9,6 +9,7 @@ final class HealthKitService {
     private var bodyMassObserverQuery: HKObserverQuery?
     private var bodyMassUpdateHandler: ((Double, Date) -> Void)?
     private let bodyMassAnchorKey = "healthkit.bodyMass.anchor"
+    private let medicationAuthorizationRequestedKey = "healthkit.medication.authorization.requested"
 
     private init() {}
 
@@ -36,19 +37,30 @@ final class HealthKitService {
         return types
     }
 
+    @available(iOS 26.0, *)
+    private var medicationReadTypes: Set<HKObjectType> {
+        [HKObjectType.userAnnotatedMedicationType()]
+    }
+
     func requestBodyMassAuthorizationIfNeeded() async throws {
         try await requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes)
     }
 
     func requestMedicationAuthorizationIfNeeded() async throws {
         guard #available(iOS 26.0, *) else { return }
+        guard !UserDefaults.standard.bool(forKey: medicationAuthorizationRequestedKey) else {
+            return
+        }
 
-        // HealthKit medication-tracking objects are queryable through their
-        // dedicated APIs, but requesting them through the generic authorization
-        // sheet currently raises an exception:
-        // "Authorization to read the following types is disallowed..."
-        // Keep medication import on the query path only so tapping Import from
-        // Apple Health degrades through normal query errors instead of crashing.
+        let medicationType = HKObjectType.userAnnotatedMedicationType()
+        if medicationType.requiresPerObjectAuthorization() {
+            let predicate = HKQuery.predicateForUserAnnotatedMedications(isArchived: false)
+            try await requestPerObjectReadAuthorization(for: medicationType, predicate: predicate)
+        } else {
+            try await requestAuthorization(toShare: [], read: medicationReadTypes)
+        }
+
+        UserDefaults.standard.set(true, forKey: medicationAuthorizationRequestedKey)
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
@@ -56,11 +68,33 @@ final class HealthKitService {
             throw NSError(
                 domain: "HealthKitService",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "HealthKit 不可用"]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.unavailable")]
             )
         }
 
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
+    }
+
+    @available(iOS 26.0, *)
+    private func requestPerObjectReadAuthorization(for objectType: HKObjectType, predicate: NSPredicate?) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            store.requestPerObjectReadAuthorization(for: objectType, predicate: predicate) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "HealthKitService",
+                        code: 8,
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.medication_authorization_cancelled")]
+                    ))
+                }
+            }
+        }
     }
 
     func fetchLatestBodyMassKG() async throws -> Double {
@@ -72,7 +106,7 @@ final class HealthKitService {
             throw NSError(
                 domain: "HealthKitService",
                 code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "无法读取体重类型"]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_read_unavailable")]
             )
         }
 
@@ -88,7 +122,7 @@ final class HealthKitService {
                     continuation.resume(throwing: NSError(
                         domain: "HealthKitService",
                         code: 4,
-                        userInfo: [NSLocalizedDescriptionKey: "HealthKit 中没有体重记录"]
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_missing")]
                     ))
                     return
                 }
@@ -105,7 +139,7 @@ final class HealthKitService {
             throw NSError(
                 domain: "HealthKitService",
                 code: 5,
-                userInfo: [NSLocalizedDescriptionKey: "无法写入体重类型"]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_write_unavailable")]
             )
         }
 
@@ -125,7 +159,7 @@ final class HealthKitService {
                     continuation.resume(throwing: NSError(
                         domain: "HealthKitService",
                         code: 6,
-                        userInfo: [NSLocalizedDescriptionKey: "写入 HealthKit 体重失败"]
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_save_failed")]
                     ))
                 }
             }
@@ -137,7 +171,7 @@ final class HealthKitService {
             throw NSError(
                 domain: "HealthKitService",
                 code: 7,
-                userInfo: [NSLocalizedDescriptionKey: "无法订阅体重类型"]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_subscription_unavailable")]
             )
         }
 

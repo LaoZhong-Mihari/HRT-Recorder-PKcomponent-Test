@@ -36,8 +36,11 @@ struct MedicationPlansView: View {
                                 plan: plan,
                                 nextOccurrence: vm.nextOccurrence(for: plan),
                                 isEnabled: Binding(
-                                    get: { plan.isEnabled },
-                                    set: { vm.setEnabled($0, for: plan) }
+                                    get: { vm.plan(withID: plan.id)?.isEnabled ?? plan.isEnabled },
+                                    set: { newValue in
+                                        let currentPlan = vm.plan(withID: plan.id) ?? plan
+                                        vm.setEnabled(newValue, for: currentPlan)
+                                    }
                                 ),
                                 onEdit: { activeSheet = .edit(plan) },
                                 onDelete: { planPendingDeletion = plan }
@@ -56,8 +59,11 @@ struct MedicationPlansView: View {
                                 plan: plan,
                                 nextOccurrence: vm.nextOccurrence(for: plan),
                                 isEnabled: Binding(
-                                    get: { plan.isEnabled },
-                                    set: { vm.setEnabled($0, for: plan) }
+                                    get: { vm.plan(withID: plan.id)?.isEnabled ?? plan.isEnabled },
+                                    set: { newValue in
+                                        let currentPlan = vm.plan(withID: plan.id) ?? plan
+                                        vm.setEnabled(newValue, for: currentPlan)
+                                    }
                                 ),
                                 onEdit: { activeSheet = .edit(plan) },
                                 onDelete: { planPendingDeletion = plan }
@@ -281,7 +287,7 @@ struct MedicationPlansView: View {
             Label("No medication plans yet", systemImage: "capsule.portrait")
                 .font(.headline)
 
-            Text("Create a plan for doses or patch changes. The app can fill dose details and schedule reminders.")
+            Text("Create a plan for doses or patch changes. The app can fill medication details and schedule reminders.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -517,9 +523,9 @@ private struct MedicationPlanCard: View {
         VStack(alignment: .leading, spacing: 8) {
             AdaptiveStack(spacing: 8) {
                 StatusBadge(
-                    title: plan.isEnabled ? String(localized: "Active") : String(localized: "Paused"),
-                    systemImage: plan.isEnabled ? "bell.fill" : "pause.fill",
-                    tint: plan.isEnabled ? .green : .orange
+                    title: isEnabled ? String(localized: "Active") : String(localized: "Paused"),
+                    systemImage: isEnabled ? "bell.fill" : "pause.fill",
+                    tint: isEnabled ? .green : .orange
                 )
 
                 if let sourceMedicationName = plan.sourceMedicationName, !sourceMedicationName.isEmpty {
@@ -620,8 +626,8 @@ private struct MedicationImportView: View {
 
                     if vm.isImporting {
                         StateCard(
-                            title: String(localized: "Loading medications"),
-                            message: "Reading Apple Health medications.",
+                            title: String(localized: "medplan.import.loading.title"),
+                            message: String(localized: "medplan.import.loading.message"),
                             systemImage: "heart.text.square.fill",
                             tint: .pink,
                             showsProgress: true
@@ -640,8 +646,8 @@ private struct MedicationImportView: View {
                         }
                     } else if vm.importSuggestions.isEmpty {
                         StateCard(
-                            title: "No medications found",
-                            message: "No active Apple Health medications were found.",
+                            title: String(localized: "medplan.import.empty.title"),
+                            message: String(localized: "medplan.import.empty.message"),
                             systemImage: "cross.case.fill",
                             tint: .blue
                         )
@@ -688,7 +694,7 @@ private struct MedicationImportView: View {
 
     private var importHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import Apple Health medications as reminder plan starting points.")
+            Text("medplan.import.header.title")
                 .font(.headline)
 
             Text(vm.importAvailabilityDescription)
@@ -696,7 +702,7 @@ private struct MedicationImportView: View {
                 .foregroundStyle(.secondary)
 
             if vm.supportsMedicationImport {
-                Text("This reads medication definitions from Apple Health. It does not import dose history or logged records.")
+                Text("medplan.import.header.message")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -853,22 +859,22 @@ private struct MedicationPlanEditorView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Text("Reminder times are controlled here. Dose details only control route, ester, and amount.")
+                        Text("medplan.editor.daily_schedule.help")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Section("Dose Details") {
+                    Section("medplan.editor.medication_details.title") {
                         Button {
                             isSharedDoseEditorPresented = true
                         } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(sharedTemplate == nil ? "Configure dose details" : "Edit dose details")
+                                    Text(sharedTemplate?.hasConfiguredDose == true ? String(localized: "medplan.editor.medication_details.edit") : String(localized: "medplan.editor.medication_details.configure"))
                                         .font(.body.weight(.semibold))
                                         .foregroundStyle(.primary)
 
-                                    Text(sharedTemplate.map { templateSummary(for: $0) } ?? "You need dose details before saving the plan.")
+                                    Text(sharedTemplate.map { templateSummary(for: $0) } ?? String(localized: "medplan.editor.medication_details.required"))
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
                                         .multilineTextAlignment(.leading)
@@ -933,7 +939,8 @@ private struct MedicationPlanEditorView: View {
                             route: event.route,
                             doseMG: event.doseMG,
                             ester: event.ester,
-                            extras: event.extras
+                            extras: event.extras,
+                            recordOnlyOralMedication: event.recordOnlyOralMedication
                         )
                     },
                     onCancel: nil
@@ -973,9 +980,9 @@ private struct MedicationPlanEditorView: View {
 
         switch recurrenceKind {
         case .daily:
-            return !dailyDoseSlots.isEmpty && dailyDoseSlots.allSatisfy { $0.template != nil }
+            return !dailyDoseSlots.isEmpty && dailyDoseSlots.allSatisfy { $0.template?.hasConfiguredDose == true }
         case .weekly, .everyNDays:
-            return sharedTemplate != nil
+            return sharedTemplate?.hasConfiguredDose == true
         }
     }
 
@@ -1232,9 +1239,9 @@ private struct DailyDoseSlotCard: View {
                             .font(.headline)
                             .foregroundStyle(.primary)
 
-                        Text(slot.template?.planSummaryText ?? "Configure dose details")
+                        Text(slot.template?.planSummaryText ?? String(localized: "medplan.editor.medication_details.configure"))
                             .font(.subheadline)
-                            .foregroundStyle(slot.template == nil ? .primary : .secondary)
+                            .foregroundStyle(slot.template?.hasConfiguredDose == true ? .secondary : .primary)
                             .multilineTextAlignment(.leading)
                     }
 
@@ -1306,17 +1313,17 @@ private struct DailyDoseSlotEditorView: View {
                         .frame(maxWidth: .infinity)
                 }
 
-                Section("Dose Details") {
+                Section("medplan.editor.medication_details.title") {
                     Button {
                         isDoseEditorPresented = true
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(template == nil ? "Configure dose details" : "Edit dose details")
+                                Text(template?.hasConfiguredDose == true ? String(localized: "medplan.editor.medication_details.edit") : String(localized: "medplan.editor.medication_details.configure"))
                                     .font(.body.weight(.semibold))
                                     .foregroundStyle(.primary)
 
-                                Text(template?.planSummaryText ?? "Choose route, ester, and dose for this reminder.")
+                                Text(template?.planSummaryText ?? String(localized: "medplan.editor.slot.required"))
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.leading)
@@ -1332,7 +1339,7 @@ private struct DailyDoseSlotEditorView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("This editor controls the medication details only. The reminder time comes from the wheel above.")
+                    Text("medplan.editor.slot.help")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -1359,7 +1366,7 @@ private struct DailyDoseSlotEditorView: View {
                     Button("Done") {
                         saveSlot()
                     }
-                    .disabled(template == nil)
+                    .disabled(template?.hasConfiguredDose != true)
                 }
             }
         }
@@ -1374,7 +1381,8 @@ private struct DailyDoseSlotEditorView: View {
                             route: event.route,
                             doseMG: event.doseMG,
                             ester: event.ester,
-                            extras: event.extras
+                            extras: event.extras,
+                            recordOnlyOralMedication: event.recordOnlyOralMedication
                         )
                     },
                     onCancel: nil
@@ -1390,7 +1398,7 @@ private struct DailyDoseSlotEditorView: View {
     }
 
     private func saveSlot() {
-        guard let template else { return }
+        guard let template, template.hasConfiguredDose else { return }
         onSave(
             EditableDailyDoseSlot(
                 id: slot.id,
@@ -1700,11 +1708,20 @@ private struct MedicationImportSuggestionCard: View {
                 }
             }
 
-            if let suggestedTemplate = suggestion.suggestedTemplate {
+            if let suggestedTemplate = suggestion.suggestedTemplate, suggestedTemplate.hasConfiguredDose {
                 LabeledStatusRow(
                     title: String(localized: "Detected template"),
                     value: templateSummary(for: suggestedTemplate),
                     systemImage: "wand.and.stars"
+                )
+            } else if let suggestedTemplate = suggestion.suggestedTemplate {
+                LabeledStatusRow(
+                    title: String(localized: "Detected template"),
+                    value: String.localizedStringWithFormat(
+                        String(localized: "medplan.import.detected_template.confirmation_format"),
+                        templateSummary(for: suggestedTemplate)
+                    ),
+                    systemImage: "exclamationmark.circle"
                 )
             } else {
                 LabeledStatusRow(
@@ -1714,8 +1731,16 @@ private struct MedicationImportSuggestionCard: View {
                 )
             }
 
+            if let healthPlanSummary = suggestion.healthPlanSummary, !healthPlanSummary.isEmpty {
+                LabeledStatusRow(
+                    title: String(localized: "medplan.import.health_plan"),
+                    value: healthPlanSummary,
+                    systemImage: "calendar"
+                )
+            }
+
             LabeledStatusRow(
-                title: "Health mapping",
+                title: String(localized: "medplan.import.health_mapping"),
                 value: alignmentSummary,
                 systemImage: alignmentBadgeIcon
             )
@@ -1729,10 +1754,13 @@ private struct MedicationImportSuggestionCard: View {
             Button {
                 onCreatePlan()
             } label: {
-                Label("Create Plan", systemImage: "plus.circle.fill")
-                    .frame(maxWidth: .infinity)
+                PlanActionButton(
+                    title: String(localized: "medplan.import.review_plan"),
+                    systemImage: "slider.horizontal.3",
+                    style: .primary
+                )
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
         }
         .padding(18)
         .background(
@@ -1753,27 +1781,33 @@ private struct MedicationImportSuggestionCard: View {
         switch suggestion.alignmentStatus {
         case .aligned:
             if let ruleName = suggestion.alignmentRuleName, !ruleName.isEmpty {
-                return "Aligned via \(ruleName)"
+                return String.localizedStringWithFormat(
+                    String(localized: "medplan.import.alignment.aligned_format"),
+                    ruleName
+                )
             }
-            return "Aligned with a Health medication rule."
+            return String(localized: "medplan.import.alignment.aligned")
         case .needsDoseConfirmation:
             if let ruleName = suggestion.alignmentRuleName, !ruleName.isEmpty {
-                return "Matched \(ruleName), but dose details still need confirmation."
+                return String.localizedStringWithFormat(
+                    String(localized: "medplan.import.alignment.needs_dose_format"),
+                    ruleName
+                )
             }
-            return "Matched a Health medication rule, but dose details still need confirmation."
+            return String(localized: "medplan.import.alignment.needs_dose")
         case .needsRule:
-            return "No alignment rule yet for this Health medication."
+            return String(localized: "medplan.import.alignment.needs_rule")
         }
     }
 
     private var alignmentBadgeTitle: String {
         switch suggestion.alignmentStatus {
         case .aligned:
-            return "Aligned"
+            return String(localized: "medplan.import.badge.aligned")
         case .needsDoseConfirmation:
-            return "Check dose"
+            return String(localized: "medplan.import.badge.check_dose")
         case .needsRule:
-            return "Needs rule"
+            return String(localized: "medplan.import.badge.needs_rule")
         }
     }
 
