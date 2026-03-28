@@ -207,6 +207,7 @@ struct ResultChartView: View {
     let sim: SimulationResult
     private let chartPoints: [ResultChartPoint]
     private let chartMaxConcentration: Double
+    private let preferredChartHeight: CGFloat?
 
     @State private var visibleDomainLength: Double = 48
     @State private var now: Date = Date()
@@ -218,8 +219,9 @@ struct ResultChartView: View {
 
     private let timer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common).autoconnect()
 
-    init(sim: SimulationResult) {
+    init(sim: SimulationResult, preferredChartHeight: CGFloat? = nil) {
         self.sim = sim
+        self.preferredChartHeight = preferredChartHeight
 
         let points = Array(zip(sim.timeH, sim.concPGmL)).map { hour, concentration in
             ResultChartPoint(hour: hour, concentration: concentration)
@@ -356,6 +358,10 @@ struct ResultChartView: View {
     }
 
     private var chartHeight: CGFloat {
+        if let preferredChartHeight {
+            return preferredChartHeight
+        }
+
         if dynamicTypeSize.isAccessibilitySize {
             return isPad ? 380 : 340
         }

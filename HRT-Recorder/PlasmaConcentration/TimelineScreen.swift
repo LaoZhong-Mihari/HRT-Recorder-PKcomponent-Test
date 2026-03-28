@@ -45,6 +45,11 @@ struct TimelineScreen: View {
     @State private var healthMessage: String?
     @State private var isHealthActionRunning = false
     @State private var isChartCollapsed = false
+    @State private var isChartFullscreenPresented = false
+
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
 
     private var hasVisibleChart: Bool {
         guard let sim = vm.result else { return false }
@@ -55,9 +60,23 @@ struct TimelineScreen: View {
         vm.dayGroups.isEmpty && !vm.isSimulating && !hasVisibleChart
     }
 
+    private var chartDockedPlotHeight: CGFloat {
+        if dynamicTypeSize.isAccessibilitySize {
+            return isPad ? 360 : 300
+        }
+        return isPad ? 300 : 240
+    }
+
+    private var chartDockedCardHeight: CGFloat {
+        chartDockedPlotHeight + (dynamicTypeSize.isAccessibilitySize ? 150 : 118)
+    }
+
     private var chartOverlayReserveHeight: CGFloat {
         guard hasVisibleChart else { return 0 }
-        return isChartCollapsed ? 92 : (dynamicTypeSize.isAccessibilitySize ? 470 : 360)
+        if isChartCollapsed {
+            return dynamicTypeSize.isAccessibilitySize ? 108 : 92
+        }
+        return chartDockedCardHeight + 32
     }
 
     @ViewBuilder
@@ -108,11 +127,21 @@ struct TimelineScreen: View {
             }
             .overlay(alignment: .bottomLeading) {
                 if let sim = vm.result, hasVisibleChart {
-                    TimelineChartOverlay(
-                        sim: sim,
-                        isCollapsed: isChartCollapsed,
-                        onToggleCollapse: toggleChartCollapse
-                    )
+                    Group {
+                        if isChartCollapsed {
+                            TimelineChartCollapsedButton {
+                                toggleChartCollapse()
+                            }
+                        } else {
+                            TimelineChartOverlay(
+                                sim: sim,
+                                chartHeight: chartDockedPlotHeight,
+                                onCollapse: { toggleChartCollapse() },
+                                onExpand: { isChartFullscreenPresented = true }
+                            )
+                            .frame(height: chartDockedCardHeight)
+                        }
+                    }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -210,6 +239,21 @@ struct TimelineScreen: View {
                 guard let newSeed else { return }
                 activeSheet = .scheduledDose(newSeed)
             }
+            .fullScreenCover(isPresented: $isChartFullscreenPresented) {
+                Group {
+                    if let sim = vm.result, hasVisibleChart {
+                        TimelineChartFullscreen(
+                            sim: sim,
+                            isPresented: $isChartFullscreenPresented
+                        )
+                    } else {
+                        Color.clear
+                            .onAppear {
+                                isChartFullscreenPresented = false
+                            }
+                    }
+                }
+            }
         }
     }
 
@@ -273,10 +317,11 @@ private struct TimelineChartOverlay: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let sim: SimulationResult
-    let isCollapsed: Bool
-    let onToggleCollapse: () -> Void
+    let chartHeight: CGFloat
+    let onCollapse: () -> Void
+    let onExpand: () -> Void
 
-    private var toggleButtonSize: CGFloat {
+    private var controlButtonSize: CGFloat {
         dynamicTypeSize.isAccessibilitySize ? 48 : 40
     }
 
@@ -285,27 +330,17 @@ private struct TimelineChartOverlay: View {
     }
 
     var body: some View {
-        Group {
-            if isCollapsed {
-                collapsedButton
-            } else {
-                expandedCard
-            }
-        }
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isCollapsed)
-    }
-
-    private var expandedCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 collapseButton
                 Spacer(minLength: 0)
+                expandButton
             }
 
-            ResultChartView(sim: sim)
+            ResultChartView(sim: sim, preferredChartHeight: chartHeight)
         }
         .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
@@ -315,10 +350,10 @@ private struct TimelineChartOverlay: View {
     }
 
     private var collapseButton: some View {
-        Button(action: onToggleCollapse) {
+        Button(action: onCollapse) {
             Image(systemName: "chevron.down")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 19 : 16, weight: .semibold))
-                .frame(width: toggleButtonSize, height: toggleButtonSize)
+                .frame(width: controlButtonSize, height: controlButtonSize)
                 .foregroundStyle(.white)
                 .background(Circle().fill(Color.black.opacity(0.78)))
         }
@@ -326,17 +361,109 @@ private struct TimelineChartOverlay: View {
         .accessibilityLabel(Text("timeline.chart.collapse.accessibility"))
     }
 
-    private var collapsedButton: some View {
-        Button(action: onToggleCollapse) {
+    private var expandButton: some View {
+        Button(action: onExpand) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 19 : 16, weight: .semibold))
+                .frame(width: controlButtonSize, height: controlButtonSize)
+                .foregroundStyle(.white)
+                .background(Circle().fill(Color.black.opacity(0.78)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("timeline.chart.expand.accessibility"))
+    }
+}
+
+private struct TimelineChartCollapsedButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let onExpand: () -> Void
+
+    private var controlButtonSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 48 : 40
+    }
+
+    var body: some View {
+        Button(action: onExpand) {
             Image(systemName: "chart.xyaxis.line")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 21 : 18, weight: .semibold))
-                .frame(width: toggleButtonSize, height: toggleButtonSize)
+                .frame(width: controlButtonSize, height: controlButtonSize)
                 .foregroundStyle(.white)
                 .background(Circle().fill(Color.black.opacity(0.82)))
                 .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("timeline.chart.expand.accessibility"))
+    }
+}
+
+private struct TimelineChartFullscreen: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let sim: SimulationResult
+    @Binding var isPresented: Bool
+
+    private var controlButtonSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 52 : 44
+    }
+
+    private var cardCornerRadius: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 34 : 30
+    }
+
+    private var outerPadding: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 12 : 10
+    }
+
+    private var cardPadding: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 18 : 16
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let controlRowHeight = controlButtonSize
+            let plotHeight = max(
+                geometry.size.height - (outerPadding * 2) - (cardPadding * 2) - controlRowHeight - 96,
+                320
+            )
+
+            ZStack {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        dismissButton
+                    }
+
+                    ResultChartView(sim: sim, preferredChartHeight: plotHeight)
+                }
+                .padding(cardPadding)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
+                .shadow(color: Color.black.opacity(0.16), radius: 28, x: 0, y: 18)
+                .padding(outerPadding)
+            }
+        }
+    }
+
+    private var dismissButton: some View {
+        Button {
+            isPresented = false
+        } label: {
+            Image(systemName: "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 20 : 17, weight: .semibold))
+                .frame(width: controlButtonSize, height: controlButtonSize)
+                .foregroundStyle(.white)
+                .background(Circle().fill(Color.black.opacity(0.78)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("timeline.chart.collapse.accessibility"))
     }
 }
 
