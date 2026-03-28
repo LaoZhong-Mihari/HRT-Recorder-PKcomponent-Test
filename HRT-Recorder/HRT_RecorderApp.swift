@@ -10,7 +10,6 @@ import SwiftUI
 @main
 struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
-    @AppStorage("healthkit.weight.authorization.requested") private var didRequestHealthKitWeightAuthorization = false
     @StateObject private var store: PersistedStore<[DoseEvent]>
     @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
     @StateObject private var notificationCoordinator: NotificationCoordinator
@@ -108,10 +107,6 @@ struct HRTRecorderApp: App {
         .onChange(of: phase) { _, newPhase in
             if newPhase == .active {
                 Task {
-                    if !didRequestHealthKitWeightAuthorization {
-                        try? await timelineVM.requestHealthKitAuthorization()
-                        didRequestHealthKitWeightAuthorization = true
-                    }
                     await timelineVM.beginBodyWeightHealthKitSync()
                     await timelineVM.refreshLatestBodyWeightSilently()
                     await medicationVM.refreshSystemState()

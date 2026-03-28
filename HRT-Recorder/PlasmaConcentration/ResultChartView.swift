@@ -37,6 +37,7 @@ private struct ResultChartWindow {
 }
 
 struct ResultChartView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
     private let chartPoints: [ResultChartPoint]
     private let chartMaxConcentration: Double
@@ -190,7 +191,10 @@ struct ResultChartView: View {
     }
 
     private var chartHeight: CGFloat {
-        isPad ? 320 : 260
+        if dynamicTypeSize.isAccessibilitySize {
+            return isPad ? 380 : 340
+        }
+        return isPad ? 320 : 260
     }
 
     private var concentrationChart: some View {
@@ -225,11 +229,14 @@ struct ResultChartView: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: isPad ? 6 : 5)) { value in
+            AxisMarks(position: .leading, values: .automatic(desiredCount: dynamicTypeSize.isAccessibilitySize ? (isPad ? 5 : 4) : (isPad ? 6 : 5))) { value in
                 AxisGridLine()
                 AxisValueLabel {
                     if let concentration = value.as(Double.self) {
                         Text(ResultChartFormatter.yAxisLabel(for: concentration))
+                            .font(dynamicTypeSize.isAccessibilitySize ? .caption2 : .caption)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     } else {
                         EmptyView()
                     }
@@ -335,17 +342,7 @@ struct ResultChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(LocalizedStringKey("chart.title"))
-                        .font(.headline)
-                    Spacer()
-                    Text(currentConcentrationText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(currentConcentrationText)
-                }
-
+            if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LocalizedStringKey("chart.title"))
                         .font(.headline)
@@ -354,8 +351,30 @@ struct ResultChartView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(currentConcentrationText)
                 }
+                .padding(.horizontal)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(LocalizedStringKey("chart.title"))
+                            .font(.headline)
+                        Spacer()
+                        Text(currentConcentrationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel(currentConcentrationText)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(LocalizedStringKey("chart.title"))
+                            .font(.headline)
+                        Text(currentConcentrationText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel(currentConcentrationText)
+                    }
+                }
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
 
             concentrationChart
                 .accessibilityElement(children: .combine)

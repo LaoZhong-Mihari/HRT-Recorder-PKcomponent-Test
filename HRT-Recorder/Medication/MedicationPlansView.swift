@@ -3,6 +3,7 @@ import UIKit
 
 struct MedicationPlansView: View {
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var vm: MedicationPlanVM
     @State private var activeSheet: MedicationPlansSheet?
     @State private var planPendingDeletion: MedicationPlan?
@@ -76,7 +77,8 @@ struct MedicationPlansView: View {
             .padding(.vertical, 20)
         }
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-        .navigationTitle("Medication & Reminders")
+        .navigationTitle(dynamicTypeSize.isAccessibilitySize ? String(localized: "Medication Plans") : String(localized: "Medication & Reminders"))
+        .navigationBarTitleDisplayMode(dynamicTypeSize.isAccessibilitySize ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -133,30 +135,17 @@ struct MedicationPlansView: View {
 
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Reminder status")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.primary)
-
-                    Text(overviewDescription)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top) {
+                    overviewHeaderText
+                    Spacer(minLength: 12)
+                    overviewHeaderIcon
                 }
 
-                Spacer(minLength: 12)
-
-                Image(systemName: "cross.case.fill")
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [MedicationPalette.blue, MedicationPalette.pink],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .padding(12)
-                    .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .leading, spacing: 12) {
+                    overviewHeaderText
+                    overviewHeaderIcon
+                }
             }
 
             AdaptiveStack(spacing: 12) {
@@ -331,6 +320,33 @@ struct MedicationPlansView: View {
         }
     }
 
+    private var overviewHeaderText: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Reminder status")
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
+
+            Text(overviewDescription)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var overviewHeaderIcon: some View {
+        Image(systemName: "cross.case.fill")
+            .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 24 : 28, weight: .semibold))
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [MedicationPalette.blue, MedicationPalette.pink],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .padding(12)
+            .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     private var overviewDescription: String {
         switch vm.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
@@ -416,13 +432,18 @@ private enum MedicationPalette {
 }
 
 private struct AdaptiveStack<Content: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let spacing: CGFloat
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: spacing, content: content)
+        if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: spacing, content: content)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: spacing, content: content)
+                VStack(alignment: .leading, spacing: spacing, content: content)
+            }
         }
     }
 }
@@ -730,6 +751,7 @@ private struct MedicationPlanEditorView: View {
     @State private var isEnabled: Bool
     @State private var sharedTemplate: MedicationDoseTemplate?
     @State private var recurrenceKind: MedicationPlanRecurrence.Kind
+    @State private var previousRecurrenceKind: MedicationPlanRecurrence.Kind
     @State private var dailyDoseSlots: [EditableDailyDoseSlot]
     @State private var weeklyWeekdays: [Int]
     @State private var weeklyTime: Date
@@ -761,6 +783,7 @@ private struct MedicationPlanEditorView: View {
         _isEnabled = State(initialValue: initialPlan?.isEnabled ?? true)
         _sharedTemplate = State(initialValue: initialTemplate ?? initialDailyDoseSlots.first?.template)
         _recurrenceKind = State(initialValue: initialRecurrence.kind)
+        _previousRecurrenceKind = State(initialValue: initialRecurrence.kind)
         _dailyDoseSlots = State(initialValue: initialDailyDoseSlots)
         _weeklyWeekdays = State(initialValue: initialRecurrence.weekdays.isEmpty ? [Calendar.autoupdatingCurrent.component(.weekday, from: Date())] : initialRecurrence.weekdays)
         _weeklyTime = State(initialValue: Self.date(for: initialRecurrence.primaryTime))
@@ -929,32 +952,31 @@ private struct MedicationPlanEditorView: View {
             )
         }
         .sheet(isPresented: $isSharedDoseEditorPresented) {
-            NavigationStack {
-                InputEventView(
-                    eventToEdit: nil,
-                    seed: sharedDoseSeed,
-                    showsDatePicker: false,
-                    onSave: { event in
-                        sharedTemplate = MedicationDoseTemplate(
-                            route: event.route,
-                            doseMG: event.doseMG,
-                            ester: event.ester,
-                            extras: event.extras,
-                            recordOnlyOralMedication: event.recordOnlyOralMedication
-                        )
-                    },
-                    onCancel: nil
-                )
-                .padding()
-            }
+            InputEventView(
+                eventToEdit: nil,
+                seed: sharedDoseSeed,
+                showsDatePicker: false,
+                onSave: { event in
+                    sharedTemplate = MedicationDoseTemplate(
+                        route: event.route,
+                        doseMG: event.doseMG,
+                        ester: event.ester,
+                        extras: event.extras,
+                        recordOnlyOralMedication: event.recordOnlyOralMedication
+                    )
+                },
+                onCancel: nil
+            )
         }
 #if swift(>=5.9)
-        .onChange(of: recurrenceKind) { _, _ in
-            syncEditorStateForSelectedPattern()
+        .onChange(of: recurrenceKind) { _, newValue in
+            syncEditorStateForSelectedPattern(from: previousRecurrenceKind, to: newValue)
+            previousRecurrenceKind = newValue
         }
 #else
-        .onChange(of: recurrenceKind) { _ in
-            syncEditorStateForSelectedPattern()
+        .onChange(of: recurrenceKind) { newValue in
+            syncEditorStateForSelectedPattern(from: previousRecurrenceKind, to: newValue)
+            previousRecurrenceKind = newValue
         }
 #endif
     }
@@ -1110,15 +1132,18 @@ private struct MedicationPlanEditorView: View {
         return symbols[index]
     }
 
-    private func syncEditorStateForSelectedPattern() {
-        switch recurrenceKind {
+    private func syncEditorStateForSelectedPattern(from previousKind: MedicationPlanRecurrence.Kind, to newKind: MedicationPlanRecurrence.Kind) {
+        switch newKind {
         case .daily:
             if dailyDoseSlots.isEmpty {
                 let seedTime: ReminderClockTime
-                if intervalDays > 0 {
-                    seedTime = clockTime(from: intervalStartDate)
-                } else {
+                switch previousKind {
+                case .weekly:
                     seedTime = clockTime(from: weeklyTime)
+                case .everyNDays:
+                    seedTime = clockTime(from: intervalStartDate)
+                case .daily:
+                    seedTime = sortedDailyDoseSlots.first?.time ?? .defaultMorning
                 }
                 dailyDoseSlots = [
                     EditableDailyDoseSlot(
@@ -1371,24 +1396,21 @@ private struct DailyDoseSlotEditorView: View {
             }
         }
         .sheet(isPresented: $isDoseEditorPresented) {
-            NavigationStack {
-                InputEventView(
-                    eventToEdit: nil,
-                    seed: currentDoseSeed,
-                    showsDatePicker: false,
-                    onSave: { event in
-                        template = MedicationDoseTemplate(
-                            route: event.route,
-                            doseMG: event.doseMG,
-                            ester: event.ester,
-                            extras: event.extras,
-                            recordOnlyOralMedication: event.recordOnlyOralMedication
-                        )
-                    },
-                    onCancel: nil
-                )
-                .padding()
-            }
+            InputEventView(
+                eventToEdit: nil,
+                seed: currentDoseSeed,
+                showsDatePicker: false,
+                onSave: { event in
+                    template = MedicationDoseTemplate(
+                        route: event.route,
+                        doseMG: event.doseMG,
+                        ester: event.ester,
+                        extras: event.extras,
+                        recordOnlyOralMedication: event.recordOnlyOralMedication
+                    )
+                },
+                onCancel: nil
+            )
         }
     }
 

@@ -31,6 +31,7 @@ private enum TimelineSheet: Identifiable {
 }
 
 struct TimelineScreen: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject var vm: DoseTimelineVM
     @ObservedObject var medicationVM: MedicationPlanVM
 
@@ -43,6 +44,7 @@ struct TimelineScreen: View {
     @State private var activeSheet: TimelineSheet?
     @State private var healthMessage: String?
     @State private var isHealthActionRunning = false
+    @State private var isChartCollapsed = false
 
     private var hasVisibleChart: Bool {
         guard let sim = vm.result else { return false }
@@ -53,42 +55,68 @@ struct TimelineScreen: View {
         vm.dayGroups.isEmpty && !vm.isSimulating && !hasVisibleChart
     }
 
+    private var chartOverlayReserveHeight: CGFloat {
+        guard hasVisibleChart else { return 0 }
+        return isChartCollapsed ? 92 : (dynamicTypeSize.isAccessibilitySize ? 470 : 360)
+    }
+
+    @ViewBuilder
+    private var timelineSections: some View {
+        ForEach(vm.dayGroups, id: \.day) { dayGroup in
+            Section(header: Text(dayGroup.day)) {
+                ForEach(dayGroup.events) { event in
+                    Button(action: {
+                        activeSheet = .edit(event)
+                    }) {
+                        TimelineRowView(event: event)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .onDelete { indexSet in
+                    let originalIndices = findOriginalIndices(for: indexSet, in: dayGroup, from: vm.events)
+                    vm.remove(at: originalIndices)
+                }
+            }
+        }
+    }
+
+    private var timelineList: some View {
+        List {
+            timelineSections
+        }
+        .listStyle(InsetGroupedListStyle())
+    }
+
     var body: some View {
         NavigationStack {
-            VStack {
-                ZStack {
-                    List {
-                        ForEach(vm.dayGroups, id: \.day) { dayGroup in
-                            Section(header: Text(dayGroup.day)) {
-                                ForEach(dayGroup.events) { event in
-                                    Button(action: {
-                                        activeSheet = .edit(event)
-                                    }) {
-                                        TimelineRowView(event: event)
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                                .onDelete { indexSet in
-                                    let originalIndices = findOriginalIndices(for: indexSet, in: dayGroup, from: vm.events)
-                                    vm.remove(at: originalIndices)
-                                }
-                            }
-                        }
-                    }
-                    .listStyle(InsetGroupedListStyle())
+            ZStack {
+                timelineList
 
-                    if shouldShowEmptyState {
-                        TimelineEmptyStateView {
-                            activeSheet = .add(UUID())
-                        }
-                        .padding(.horizontal, 20)
+                if shouldShowEmptyState {
+                    TimelineEmptyStateView {
+                        activeSheet = .add(UUID())
                     }
+                    .padding(.horizontal, 20)
                 }
-
+            }
+            .safeAreaInset(edge: .bottom) {
+                if hasVisibleChart {
+                    Color.clear
+                        .frame(height: chartOverlayReserveHeight)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
                 if let sim = vm.result, hasVisibleChart {
-                    ResultChartView(sim: sim)
-                        .frame(height: 280)
-                        .padding([.horizontal, .bottom])
+                    TimelineChartOverlay(
+                        sim: sim,
+                        isCollapsed: isChartCollapsed,
+                        onToggleCollapse: toggleChartCollapse
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .navigationTitle("timeline.title")
@@ -123,31 +151,23 @@ struct TimelineScreen: View {
             .sheet(item: $activeSheet) { mode in
                 switch mode {
                 case .add(_):
-                    // Dosing info sheet: only the event input view
-                    NavigationStack {
-                        InputEventView(eventToEdit: nil) { event in
-                            vm.save(event)
-                        }
-                        .padding()
-                        .navigationTitle("timeline.add.title")
+                    InputEventView(eventToEdit: nil) { event in
+                        vm.save(event)
                     }
 
                 case .scheduledDose(let seed):
-                    NavigationStack {
-                        InputEventView(
-                            eventToEdit: nil,
-                            seed: seed,
-                            onSave: { event in
-                                vm.save(event)
-                                medicationVM.consumePendingDoseSeed()
-                            },
-                            onCancel: {
-                                medicationVM.consumePendingDoseSeed()
-                            }
-                        )
-                        .padding()
-                        .navigationTitle(seed.title ?? "Confirm Dose")
-                    }
+                    InputEventView(
+                        eventToEdit: nil,
+                        seed: seed,
+                        navigationTitleOverride: seed.title,
+                        onSave: { event in
+                            vm.save(event)
+                            medicationVM.consumePendingDoseSeed()
+                        },
+                        onCancel: {
+                            medicationVM.consumePendingDoseSeed()
+                        }
+                    )
 
                 case .weight:
                     // Present a dedicated WeightEditorView which keeps a temporary value until saved.
@@ -173,12 +193,8 @@ struct TimelineScreen: View {
                     }
 
                 case .edit(let event):
-                    // Edit event sheet: same as before
-                    NavigationStack {
-                        InputEventView(eventToEdit: event) { updated in
-                            vm.save(updated)
-                        }
-                        .padding()
+                    InputEventView(eventToEdit: event) { updated in
+                        vm.save(updated)
                     }
                 }
             }
@@ -194,6 +210,12 @@ struct TimelineScreen: View {
                 guard let newSeed else { return }
                 activeSheet = .scheduledDose(newSeed)
             }
+        }
+    }
+
+    private func toggleChartCollapse() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+            isChartCollapsed.toggle()
         }
     }
 
@@ -247,6 +269,77 @@ struct TimelineScreen: View {
 
 }
 
+private struct TimelineChartOverlay: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    let sim: SimulationResult
+    let isCollapsed: Bool
+    let onToggleCollapse: () -> Void
+
+    private var toggleButtonSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 48 : 40
+    }
+
+    private var cardCornerRadius: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 30 : 26
+    }
+
+    var body: some View {
+        Group {
+            if isCollapsed {
+                collapsedButton
+            } else {
+                expandedCard
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: isCollapsed)
+    }
+
+    private var expandedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                collapseButton
+                Spacer(minLength: 0)
+            }
+
+            ResultChartView(sim: sim)
+        }
+        .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.12), radius: 22, x: 0, y: 14)
+    }
+
+    private var collapseButton: some View {
+        Button(action: onToggleCollapse) {
+            Image(systemName: "chevron.down")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 19 : 16, weight: .semibold))
+                .frame(width: toggleButtonSize, height: toggleButtonSize)
+                .foregroundStyle(.white)
+                .background(Circle().fill(Color.black.opacity(0.78)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("timeline.chart.collapse.accessibility"))
+    }
+
+    private var collapsedButton: some View {
+        Button(action: onToggleCollapse) {
+            Image(systemName: "chart.xyaxis.line")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 21 : 18, weight: .semibold))
+                .frame(width: toggleButtonSize, height: toggleButtonSize)
+                .foregroundStyle(.white)
+                .background(Circle().fill(Color.black.opacity(0.82)))
+                .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("timeline.chart.expand.accessibility"))
+    }
+}
+
 private struct TimelineEmptyStateView: View {
     let onAdd: () -> Void
 
@@ -294,7 +387,7 @@ private struct HealthSettingsView: View {
 
                 Button(action: onImportWeight) {
                     DynamicSettingsRow(
-                        title: "HealthKit weight sync",
+                        title: "settings.weight.import.title",
                         subtitle: weightStatusText
                     )
                 }
@@ -345,7 +438,7 @@ private struct SettingsRow: View {
 }
 
 private struct DynamicSettingsRow: View {
-    let title: String
+    let title: LocalizedStringKey
     let subtitle: String
 
     var body: some View {
@@ -504,6 +597,7 @@ private struct ExternalLinkRow: View {
 
 // MARK: - Timeline Row View
 struct TimelineRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let event: DoseEvent
     
     // ... (icon, title, doseText computed properties remain the same)
@@ -558,29 +652,55 @@ struct TimelineRowView: View {
     }
     
     var body: some View {
-        HStack(spacing: 15) {
-            Image(systemName: icon.name)
-                .font(.title2).foregroundColor(.white)
-                .frame(width: 40, height: 40).background(icon.color)
-                .clipShape(Circle())
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                // **FIXED**: Now displays both date and time correctly.
-                Text(event.date, style: .time).font(.subheadline).foregroundColor(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 15) {
+                rowIcon
+                rowTextContent
+                Spacer()
+                doseBadge
             }
-            
-            Spacer()
-            
-            if let doseText = doseText {
-                Text(doseText)
-                    .font(.headline.weight(.semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color(uiColor: .systemGray6))
-                    .clipShape(Capsule())
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 15) {
+                    rowIcon
+                    rowTextContent
+                }
+                doseBadge
             }
         }
         .padding(.vertical, 8)
+    }
+
+    private var rowIcon: some View {
+        Image(systemName: icon.name)
+            .font(dynamicTypeSize.isAccessibilitySize ? .title3 : .title2)
+            .foregroundColor(.white)
+            .frame(width: 40, height: 40)
+            .background(icon.color)
+            .clipShape(Circle())
+    }
+
+    private var rowTextContent: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(event.date, style: .time)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var doseBadge: some View {
+        if let doseText = doseText {
+            Text(doseText)
+                .font(.headline.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color(uiColor: .systemGray6))
+                .clipShape(Capsule())
+        }
     }
 }
 

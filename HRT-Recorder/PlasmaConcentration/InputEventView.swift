@@ -73,19 +73,25 @@ struct InputEventView: View {
     @State private var draft: DraftDoseEvent
     @FocusState private var focusedField: FocusedDoseField?
 
-    var showsDatePicker: Bool
-    var onSave: (DoseEvent) -> Void
-    var onCancel: (() -> Void)?
+    private let showsDatePicker: Bool
+    private let navigationTitleOverride: String?
+    private let autoFocusOnAppear: Bool
+    private let onSave: (DoseEvent) -> Void
+    private let onCancel: (() -> Void)?
     
     // **NEW**: Initializer for both creating a new event and editing an existing one.
     init(
         eventToEdit: DoseEvent? = nil,
         seed: DoseEntrySeed? = nil,
         showsDatePicker: Bool = true,
+        navigationTitleOverride: String? = nil,
+        autoFocusOnAppear: Bool = false,
         onSave: @escaping (DoseEvent) -> Void,
         onCancel: (() -> Void)? = nil
     ) {
         self.showsDatePicker = showsDatePicker
+        self.navigationTitleOverride = navigationTitleOverride
+        self.autoFocusOnAppear = autoFocusOnAppear
         self.onSave = onSave
         self.onCancel = onCancel
         if let event = eventToEdit {
@@ -202,6 +208,57 @@ struct InputEventView: View {
         // Use Foundation to resolve localization with a **default value** so English shows even when the key is missing for the current locale.
         let resolved = NSLocalizedString(key, tableName: nil, bundle: .main, value: esterDefaultName(e), comment: "Localized ester name")
         return Text(resolved)
+    }
+
+    private var navigationTitleText: String {
+        if let navigationTitleOverride, !navigationTitleOverride.isEmpty {
+            return navigationTitleOverride
+        }
+
+        return draft.id == nil ? String(localized: "input.title.add") : String(localized: "input.title.edit")
+    }
+
+    private var resolvedDoseMG: Double? {
+        if draft.isRecordOnlyOralMedication {
+            return parsedDouble(draft.recordOnlyDoseText)
+        }
+
+        if let e2Dose = parsedDouble(draft.e2EquivalentDoseText) {
+            return e2Dose
+        }
+
+        guard draft.ester != .E2,
+              let rawDose = parsedDouble(draft.rawEsterDoseText) else {
+            return nil
+        }
+
+        let factor = EsterInfo.by(ester: draft.ester).toE2Factor
+        return rawDose * factor
+    }
+
+    private var canSaveEvent: Bool {
+        if draft.route == .patchRemove {
+            return true
+        }
+
+        if draft.route == .sublingual && draft.useCustomTheta {
+            guard let theta = parsedDouble(draft.customThetaText), (0...1).contains(theta) else {
+                return false
+            }
+        }
+
+        if !draft.isRecordOnlyOralMedication && draft.route == .patchApply && draft.patchMode == .releaseRate {
+            guard let releaseRate = parsedDouble(draft.releaseRateText) else {
+                return false
+            }
+            return releaseRate > 0
+        }
+
+        guard let dose = resolvedDoseMG else {
+            return false
+        }
+
+        return dose > 0
     }
 
     var body: some View {
@@ -403,7 +460,7 @@ struct InputEventView: View {
                     }
                 }
             }
-            .navigationTitle(draft.id == nil ? Text("input.title.add") : Text("input.title.edit"))
+            .navigationTitle(Text(navigationTitleText))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -412,7 +469,10 @@ struct InputEventView: View {
                         dismiss()
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) { Button("common.save") { save() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("common.save") { save() }
+                        .disabled(!canSaveEvent)
+                }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
                     Button("common.done") {
@@ -426,7 +486,7 @@ struct InputEventView: View {
         // When the sheet/view appears, set focus to the most relevant field so the keyboard shows automatically.
         .onAppear {
             // Only auto-focus when creating a new event (draft.id == nil). When editing, avoid forcing focus.
-            guard draft.id == nil else { return }
+            guard draft.id == nil, autoFocusOnAppear else { return }
             DispatchQueue.main.async {
                 if draft.isRecordOnlyOralMedication {
                     focusedField = .recordOnlyDose
@@ -510,9 +570,11 @@ struct InputEventView: View {
     }
 
     private func save() {
+        guard canSaveEvent else { return }
+
         var dose = draft.isRecordOnlyOralMedication
             ? (parsedDouble(draft.recordOnlyDoseText) ?? 0)
-            : (parsedDouble(draft.e2EquivalentDoseText) ?? 0)
+            : (resolvedDoseMG ?? 0)
         var extras: [DoseEvent.ExtraKey: Double] = [:]
 
         // zero‑order patch: rate stored separately

@@ -429,6 +429,38 @@
         }
       }
     },
+    "timeline.chart.collapse.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse chart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "折叠图表"
+          }
+        }
+      }
+    },
+    "timeline.chart.expand.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand chart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开图表"
+          }
+        }
+      }
+    },
     "Close" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1711,6 +1743,22 @@
     },
     "Medication Plan" : {
       "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用药计划"
+          }
+        }
+      }
+    },
+    "Medication Plans" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medication Plans"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3463,7 +3511,6 @@
       }
     },
     "settings.weight.import.title" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3475,6 +3522,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "从 HealthKit 导入体重"
+          }
+        }
+      }
+    },
+    "settings.weight.status.current" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 %@"
+          }
+        }
+      }
+    },
+    "settings.weight.status.health" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current %@ · synced from Health %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 %@ · %@ 已从健康同步"
+          }
+        }
+      }
+    },
+    "settings.weight.status.manual" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current %@ · manually updated %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 %@ · %@ 手动更新"
           }
         }
       }
@@ -3582,9 +3677,6 @@
           }
         }
       }
-    },
-    "timeline.add.title" : {
-      "shouldTranslate" : false
     },
     "timeline.bodyWeight.accessibility.value" : {
       "shouldTranslate" : false

@@ -228,7 +228,10 @@ final class DoseTimelineVM: ObservableObject {
     var bodyWeightHealthStatusText: String {
         let weightText = String(format: "%.1f kg", locale: Locale.current, bodyWeightKG)
         guard let lastBodyWeightSyncDate, let bodyWeightSyncSource else {
-            return "Current \(weightText)"
+            return String.localizedStringWithFormat(
+                String(localized: "settings.weight.status.current"),
+                weightText
+            )
         }
 
         let formatter = RelativeDateTimeFormatter()
@@ -237,9 +240,17 @@ final class DoseTimelineVM: ObservableObject {
 
         switch bodyWeightSyncSource {
         case .healthKit:
-            return "Current \(weightText) · synced from Health \(relative)"
+            return String.localizedStringWithFormat(
+                String(localized: "settings.weight.status.health"),
+                weightText,
+                relative
+            )
         case .manual:
-            return "Current \(weightText) · manually updated \(relative)"
+            return String.localizedStringWithFormat(
+                String(localized: "settings.weight.status.manual"),
+                weightText,
+                relative
+            )
         }
     }
 
