@@ -36,6 +36,172 @@ private struct ResultChartWindow {
     let yAxisDomain: ClosedRange<Double>
 }
 
+private struct ResultChartZoomAnchor {
+    let hour: Double
+    let relativePosition: Double
+}
+
+private struct ResultChartInteractionSurface: UIViewRepresentable {
+    let plotFrame: CGRect
+    let isHoverEnabled: Bool
+    let onTap: (CGPoint) -> Void
+    let onHover: (CGPoint?) -> Void
+    let onPanBegan: (CGPoint) -> Void
+    let onPanChanged: (CGSize) -> Void
+    let onPanEnded: () -> Void
+    let onMagnifyBegan: (CGPoint) -> Void
+    let onMagnifyChanged: (CGFloat, CGPoint) -> Void
+    let onMagnifyEnded: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> InteractionView {
+        let view = InteractionView()
+        view.backgroundColor = .clear
+        view.plotFrame = plotFrame
+        view.isMultipleTouchEnabled = true
+
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
+        view.addGestureRecognizer(tapGesture)
+
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        panGesture.allowedScrollTypesMask = .continuous
+        panGesture.cancelsTouchesInView = false
+        panGesture.delegate = context.coordinator
+        view.addGestureRecognizer(panGesture)
+
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
+        pinchGesture.cancelsTouchesInView = false
+        pinchGesture.delegate = context.coordinator
+        view.addGestureRecognizer(pinchGesture)
+
+        if isHoverEnabled {
+            let hoverGesture = UIHoverGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleHover(_:)))
+            hoverGesture.delegate = context.coordinator
+            view.addGestureRecognizer(hoverGesture)
+        }
+
+        return view
+    }
+
+    func updateUIView(_ uiView: InteractionView, context: Context) {
+        uiView.plotFrame = plotFrame
+        context.coordinator.parent = self
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: ResultChartInteractionSurface
+        private var isPanning = false
+        private var isMagnifying = false
+
+        init(parent: ResultChartInteractionSurface) {
+            self.parent = parent
+        }
+
+        @objc
+        func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+            guard parent.plotFrame.contains(location) else { return }
+            parent.onTap(location)
+        }
+
+        @objc
+        func handleHover(_ gesture: UIHoverGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+
+            switch gesture.state {
+            case .began, .changed:
+                parent.onHover(parent.plotFrame.contains(location) ? location : nil)
+            default:
+                parent.onHover(nil)
+            }
+        }
+
+        @objc
+        func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+
+            switch gesture.state {
+            case .began:
+                guard parent.plotFrame.contains(location) else { return }
+                isPanning = true
+                parent.onPanBegan(location)
+                parent.onPanChanged(size(from: gesture.translation(in: view)))
+            case .changed:
+                guard isPanning else { return }
+                parent.onPanChanged(size(from: gesture.translation(in: view)))
+            default:
+                guard isPanning else { return }
+                isPanning = false
+                parent.onPanEnded()
+            }
+        }
+
+        @objc
+        func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let location = gesture.location(in: view)
+
+            switch gesture.state {
+            case .began:
+                guard parent.plotFrame.contains(location) else { return }
+                isMagnifying = true
+                parent.onMagnifyBegan(location)
+                parent.onMagnifyChanged(gesture.scale, location)
+            case .changed:
+                guard isMagnifying else { return }
+                parent.onMagnifyChanged(gesture.scale, location)
+            default:
+                guard isMagnifying else { return }
+                isMagnifying = false
+                parent.onMagnifyEnded()
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let view = gestureRecognizer.view else { return false }
+            let location = gestureRecognizer.location(in: view)
+            guard parent.plotFrame.contains(location) else { return false }
+
+            if let panGesture = gestureRecognizer as? UIPanGestureRecognizer {
+                let velocity = panGesture.velocity(in: view)
+                if velocity == .zero {
+                    return true
+                }
+                return abs(velocity.x) >= abs(velocity.y)
+            }
+
+            return true
+        }
+
+        private func size(from point: CGPoint) -> CGSize {
+            CGSize(width: point.x, height: point.y)
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            gestureRecognizer is UIHoverGestureRecognizer || otherGestureRecognizer is UIHoverGestureRecognizer
+        }
+    }
+
+    final class InteractionView: UIView {
+        var plotFrame: CGRect = .zero
+
+        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+            plotFrame.contains(point)
+        }
+    }
+}
+
 struct ResultChartView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
@@ -49,7 +215,6 @@ struct ResultChartView: View {
     @State private var hoveredHour: Double?
     @State private var magnifyBaseline: Double?
     @State private var panBaselineScrollPosition: Double?
-    @State private var frozenYAxisDomain: ClosedRange<Double>?
 
     private let timer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common).autoconnect()
 
@@ -199,7 +364,6 @@ struct ResultChartView: View {
 
     private var concentrationChart: some View {
         let window = visibleChartWindow
-        let displayedYAxisDomain = frozenYAxisDomain ?? window.yAxisDomain
 
         return Chart {
             areaMarks(points: window.points)
@@ -207,7 +371,7 @@ struct ResultChartView: View {
             focusMarks
         }
         .chartXScale(domain: visibleDomain)
-        .chartYScale(domain: displayedYAxisDomain)
+        .chartYScale(domain: window.yAxisDomain)
         .chartXAxis {
             AxisMarks(values: xAxisValues) { value in
                 AxisGridLine()
@@ -249,26 +413,40 @@ struct ResultChartView: View {
                     let plotFrame = geometry[plotFrameAnchor]
 
                     ZStack(alignment: .topLeading) {
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .highPriorityGesture(panGesture(plotFrame: plotFrame))
-                            .simultaneousGesture(selectionTapGesture(proxy: proxy, plotFrame: plotFrame))
-                            .onContinuousHover(coordinateSpace: .local) { phase in
-                                guard isPad else { return }
-                                switch phase {
-                                case .active(let location):
-                                    hoveredHour = chartHour(at: location, plotFrame: plotFrame, proxy: proxy)
-                                case .ended:
-                                    hoveredHour = nil
-                                }
+                        ResultChartInteractionSurface(
+                            plotFrame: plotFrame,
+                            isHoverEnabled: isPad,
+                            onTap: { location in
+                                selectedHour = hour(at: location, in: plotFrame)
+                            },
+                            onHover: { location in
+                                hoveredHour = location.flatMap { hour(at: $0, in: plotFrame) }
+                            },
+                            onPanBegan: { _ in
+                                beginPanInteraction()
+                            },
+                            onPanChanged: { translation in
+                                updatePanInteraction(with: translation, plotFrame: plotFrame)
+                            },
+                            onPanEnded: {
+                                endPanInteraction()
+                            },
+                            onMagnifyBegan: { location in
+                                beginMagnifyInteraction(at: location)
+                            },
+                            onMagnifyChanged: { magnification, location in
+                                updateMagnifyInteraction(magnification: magnification, anchorLocation: location, plotFrame: plotFrame)
+                            },
+                            onMagnifyEnded: {
+                                endMagnifyInteraction()
                             }
+                        )
+                            .frame(width: geometry.size.width, height: geometry.size.height)
 
                         if let visibleInteractiveHour {
                             ResultChartBadge(text: ResultChartFormatter.cursorTimeLabel(for: visibleInteractiveHour))
                                 .position(
-                                    x: plotFrame.minX + xPosition(for: visibleInteractiveHour, proxy: proxy),
+                                    x: plotFrame.minX + xPosition(for: visibleInteractiveHour, plotFrame: plotFrame),
                                     y: plotFrame.maxY + 16
                                 )
                         }
@@ -276,7 +454,6 @@ struct ResultChartView: View {
                 }
             }
         }
-        .simultaneousGesture(magnifyGesture)
         .frame(minHeight: chartHeight)
     }
 
@@ -440,90 +617,97 @@ struct ResultChartView: View {
         return low
     }
 
-    private func beginChartInteraction() {
-        if frozenYAxisDomain == nil {
-            frozenYAxisDomain = visibleChartWindow.yAxisDomain
-        }
-    }
-
-    private func endChartInteractionIfNeeded() {
-        if panBaselineScrollPosition == nil && magnifyBaseline == nil {
-            frozenYAxisDomain = nil
-        }
-    }
-
-    private func chartHour(at location: CGPoint, plotFrame: CGRect, proxy: ChartProxy) -> Double? {
-        guard plotFrame.contains(location) else {
+    private func hour(at location: CGPoint, in plotFrame: CGRect) -> Double? {
+        guard plotFrame.contains(location), plotFrame.width > 0 else {
             return nil
         }
 
         let plotX = location.x - plotFrame.minX
-        let clampedX = min(max(plotX, 0), proxy.plotSize.width)
-        guard let hour = proxy.value(atX: clampedX, as: Double.self) else {
-            return nil
-        }
+        let clampedX = min(max(plotX, 0), plotFrame.width)
+        let progress = Double(clampedX / plotFrame.width)
+        let hour = visibleDomain.lowerBound + progress * visibleDomainLength
         return min(max(hour, totalDomain.lowerBound), totalDomain.upperBound)
     }
 
-    private func xPosition(for hour: Double, proxy: ChartProxy) -> CGFloat {
-        proxy.position(forX: hour) ?? 0
+    private func xPosition(for hour: Double, plotFrame: CGRect) -> CGFloat {
+        guard visibleDomainLength > 0 else { return 0 }
+        let progress = (hour - visibleDomain.lowerBound) / visibleDomainLength
+        return CGFloat(min(max(progress, 0), 1)) * plotFrame.width
     }
 
-    private func selectionTapGesture(proxy: ChartProxy, plotFrame: CGRect) -> some Gesture {
-        SpatialTapGesture()
-            .onEnded { value in
-                if let hour = chartHour(at: value.location, plotFrame: plotFrame, proxy: proxy) {
-                    selectedHour = hour
-                }
-            }
+    private func zoomAnchor(at location: CGPoint?, in plotFrame: CGRect) -> ResultChartZoomAnchor {
+        if let location,
+           let hour = hour(at: location, in: plotFrame),
+           plotFrame.width > 0 {
+            let plotX = min(max(location.x - plotFrame.minX, 0), plotFrame.width)
+            let relativePosition = Double(plotX / plotFrame.width)
+            return ResultChartZoomAnchor(hour: hour, relativePosition: relativePosition)
+        }
+
+        if let interactiveHour {
+            let relativePosition = (interactiveHour - visibleDomain.lowerBound) / visibleDomainLength
+            return ResultChartZoomAnchor(
+                hour: interactiveHour,
+                relativePosition: min(max(relativePosition, 0), 1)
+            )
+        }
+
+        return ResultChartZoomAnchor(
+            hour: visibleDomain.lowerBound + visibleDomainLength / 2,
+            relativePosition: 0.5
+        )
     }
 
-    private func panGesture(plotFrame: CGRect) -> some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                guard plotFrame.contains(value.startLocation) else { return }
-                hoveredHour = nil
-                let baseline = panBaselineScrollPosition ?? clampedLeadingHour(scrollPosition, visibleLength: visibleDomainLength)
-                if panBaselineScrollPosition == nil {
-                    panBaselineScrollPosition = baseline
-                    beginChartInteraction()
-                }
-
-                let deltaHours = Double(value.translation.width / plotFrame.width) * visibleDomainLength
-                scrollPosition = clampedLeadingHour(baseline - deltaHours, visibleLength: visibleDomainLength)
-            }
-            .onEnded { _ in
-                panBaselineScrollPosition = nil
-                endChartInteractionIfNeeded()
-            }
+    private func beginPanInteraction() {
+        hoveredHour = nil
+        if panBaselineScrollPosition == nil {
+            panBaselineScrollPosition = clampedLeadingHour(scrollPosition, visibleLength: visibleDomainLength)
+        }
     }
 
-    private var magnifyGesture: some Gesture {
-        MagnifyGesture()
-            .onChanged { value in
-                let baseline = magnifyBaseline ?? visibleDomainLength
-                if magnifyBaseline == nil {
-                    magnifyBaseline = visibleDomainLength
-                    beginChartInteraction()
-                }
-
-                let nextLength = min(
-                    max(baseline / Double(value.magnification), minVisibleDomainLength),
-                    maxVisibleDomainLength
-                )
-                updateVisibleDomainLength(to: nextLength)
-            }
-            .onEnded { _ in
-                magnifyBaseline = nil
-                endChartInteractionIfNeeded()
-            }
+    private func updatePanInteraction(with translation: CGSize, plotFrame: CGRect) {
+        guard plotFrame.width > 0 else { return }
+        let baseline = panBaselineScrollPosition ?? clampedLeadingHour(scrollPosition, visibleLength: visibleDomainLength)
+        let deltaHours = Double(translation.width / plotFrame.width) * visibleDomainLength
+        scrollPosition = clampedLeadingHour(baseline - deltaHours, visibleLength: visibleDomainLength)
     }
 
-    private func updateVisibleDomainLength(to newValue: Double) {
+    private func endPanInteraction() {
+        panBaselineScrollPosition = nil
+    }
+
+    private func beginMagnifyInteraction(at _: CGPoint) {
+        hoveredHour = nil
+        if magnifyBaseline == nil {
+            magnifyBaseline = visibleDomainLength
+        }
+    }
+
+    private func updateMagnifyInteraction(magnification: CGFloat, anchorLocation: CGPoint, plotFrame: CGRect) {
+        let baseline = magnifyBaseline ?? visibleDomainLength
+        let nextLength = min(
+            max(baseline / Double(magnification), minVisibleDomainLength),
+            maxVisibleDomainLength
+        )
+        let anchor = zoomAnchor(at: anchorLocation, in: plotFrame)
+        updateVisibleDomainLength(to: nextLength, anchor: anchor)
+    }
+
+    private func endMagnifyInteraction() {
+        magnifyBaseline = nil
+    }
+
+    private func updateVisibleDomainLength(to newValue: Double, anchor: ResultChartZoomAnchor? = nil) {
         let clampedLength = min(max(newValue, minVisibleDomainLength), maxVisibleDomainLength)
-        let center = visibleInteractiveHour ?? (visibleDomain.lowerBound + visibleDomainLength / 2)
+        let anchor = anchor ?? ResultChartZoomAnchor(
+            hour: visibleDomain.lowerBound + visibleDomainLength / 2,
+            relativePosition: 0.5
+        )
         visibleDomainLength = clampedLength
-        scrollPosition = clampedLeadingHour(center - clampedLength / 2, visibleLength: clampedLength)
+        scrollPosition = clampedLeadingHour(
+            anchor.hour - anchor.relativePosition * clampedLength,
+            visibleLength: clampedLength
+        )
     }
 
     private func clampedLeadingHour(_ candidate: Double, visibleLength: Double) -> Double {
