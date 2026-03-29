@@ -161,6 +161,8 @@ private struct WatchInlineConcentrationChart: View {
     @FocusState private var isFocused: Bool
     @State private var scrollPosition: Double = 0
     @State private var crownSelection: Double = 0
+    @State private var crownDetentPosition: Double = 0
+    @State private var crownAcceleration = WatchCrownAccelerationState()
     @State private var isCursorActive = false
 
     private let visibleHours = 72.0
@@ -211,6 +213,10 @@ private struct WatchInlineConcentrationChart: View {
             guard isCursorActive else { return }
             scrollSelectionIntoView()
         }
+        .onChange(of: crownDetentPosition) { oldValue, newValue in
+            guard isCursorActive else { return }
+            applyAdaptiveCrownDelta(newValue - oldValue)
+        }
         .onChange(of: isFocused) { _, focused in
             if !focused {
                 deactivateCursor()
@@ -236,7 +242,7 @@ private struct WatchInlineConcentrationChart: View {
             .focusable()
             .focused($isFocused)
             .digitalCrownRotation(
-                $crownSelection,
+                $crownDetentPosition,
                 from: 0,
                 through: maxSelectionValue,
                 by: 1,
@@ -287,6 +293,8 @@ private struct WatchInlineConcentrationChart: View {
         guard !sortedPoints.isEmpty else { return }
         isInlineChartActive = true
         crownSelection = Double(nearestIndex(to: scrollPosition + visibleHours / 2))
+        crownDetentPosition = crownSelection
+        crownAcceleration.reset()
         isCursorActive = true
         scrollSelectionIntoView()
         requestChartFocus()
@@ -301,6 +309,8 @@ private struct WatchInlineConcentrationChart: View {
         isCursorActive = false
         isFocused = false
         isInlineChartActive = false
+        crownDetentPosition = crownSelection
+        crownAcceleration.reset()
     }
 
     private func requestChartFocus() {
@@ -313,7 +323,23 @@ private struct WatchInlineConcentrationChart: View {
         guard let bounds = timeBounds else { return }
         let seedHour = selectedPoint?.timeH ?? clamp(Date().timeIntervalSince1970 / 3600.0, within: bounds)
         crownSelection = Double(nearestIndex(to: seedHour))
+        crownDetentPosition = crownSelection
+        crownAcceleration.reset()
         scrollPosition = clampedLeadingHour(centeredOn: seedHour, visibleHours: visibleHours)
+    }
+
+    private func applyAdaptiveCrownDelta(_ rawDelta: Double) {
+        guard rawDelta != 0 else { return }
+
+        let adjustedDelta = crownAcceleration.adjustedDelta(
+            for: rawDelta,
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+        crownSelection = clampSelection(crownSelection + adjustedDelta)
+    }
+
+    private func clampSelection(_ candidate: Double) -> Double {
+        min(max(candidate, 0), maxSelectionValue)
     }
 
     private func scrollSelectionIntoView() {
@@ -388,6 +414,8 @@ private struct WatchFullscreenConcentrationChart: View {
     @State private var scrollPosition: Double = 0
     @State private var visibleHours: Double = 72
     @State private var crownSelection: Double = 0
+    @State private var crownDetentPosition: Double = 0
+    @State private var crownAcceleration = WatchCrownAccelerationState()
     @State private var isCursorActive = false
 
     private var sortedPoints: [WatchChartPoint] {
@@ -461,6 +489,10 @@ private struct WatchFullscreenConcentrationChart: View {
             guard isCursorActive else { return }
             scrollSelectionIntoView()
         }
+        .onChange(of: crownDetentPosition) { oldValue, newValue in
+            guard isCursorActive else { return }
+            applyAdaptiveCrownDelta(newValue - oldValue)
+        }
         .onChange(of: visibleHours) { oldValue, newValue in
             guard !isCursorActive else { return }
             let center = scrollPosition + oldValue / 2
@@ -491,7 +523,7 @@ private struct WatchFullscreenConcentrationChart: View {
 #if os(watchOS)
         if isCursorActive {
             baseChart.digitalCrownRotation(
-                $crownSelection,
+                $crownDetentPosition,
                 from: 0,
                 through: maxSelectionValue,
                 by: 1,
@@ -519,11 +551,15 @@ private struct WatchFullscreenConcentrationChart: View {
         guard !sortedPoints.isEmpty else { return }
         if isCursorActive {
             isCursorActive = false
+            crownDetentPosition = crownSelection
+            crownAcceleration.reset()
             isFocused = true
             return
         }
 
         crownSelection = Double(nearestIndex(to: scrollPosition + visibleHours / 2))
+        crownDetentPosition = crownSelection
+        crownAcceleration.reset()
         isCursorActive = true
         scrollSelectionIntoView()
         isFocused = true
@@ -536,7 +572,23 @@ private struct WatchFullscreenConcentrationChart: View {
 
         let seedHour = selectedPoint?.timeH ?? clamp(Date().timeIntervalSince1970 / 3600.0, within: bounds)
         crownSelection = Double(nearestIndex(to: seedHour))
+        crownDetentPosition = crownSelection
+        crownAcceleration.reset()
         scrollPosition = clampedLeadingHour(centeredOn: seedHour, visibleHours: visibleHours)
+    }
+
+    private func applyAdaptiveCrownDelta(_ rawDelta: Double) {
+        guard rawDelta != 0 else { return }
+
+        let adjustedDelta = crownAcceleration.adjustedDelta(
+            for: rawDelta,
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+        crownSelection = clampSelection(crownSelection + adjustedDelta)
+    }
+
+    private func clampSelection(_ candidate: Double) -> Double {
+        min(max(candidate, 0), maxSelectionValue)
     }
 
     private func scrollSelectionIntoView() {
@@ -622,7 +674,7 @@ private struct WatchConcentrationChartSurface: View {
         let visiblePoints = points.filter { visibleRange.contains($0.timeH) }
         let sourcePoints = visiblePoints.isEmpty ? points : visiblePoints
         let maxConcentration = sourcePoints.map(\.concentration).max() ?? 0
-        let topBoundary = max(maxConcentration, 10) * 1.1
+        let topBoundary = max(maxConcentration, 10) * 1.15
         return 0...topBoundary
     }
 
@@ -661,7 +713,7 @@ private struct WatchConcentrationChartSurface: View {
                         x: .value("Time", point.timeH),
                         y: .value("Concentration", point.concentration)
                     )
-                    .interpolationMethod(.catmullRom)
+                    .interpolationMethod(.monotone)
                     .foregroundStyle(.pink)
                 }
 
@@ -691,17 +743,9 @@ private struct WatchConcentrationChartSurface: View {
                 )
             )
             .chartYScale(domain: yAxisDomain)
-            .chartOverlay { proxy in
-                GeometryReader { geometry in
-                    if let selectedPoint,
-                       let xPosition = proxy.position(forX: selectedPoint.timeH),
-                       let plotFrameAnchor = proxy.plotFrame {
-                        let plotFrame = geometry[plotFrameAnchor]
-                        WatchChartBadge(text: WatchChartFormatter.cursorTimeLabel(for: selectedPoint.timeH))
-                            .position(x: plotFrame.origin.x + xPosition, y: plotFrame.maxY + 14)
-                    }
-                }
-                .allowsHitTesting(false)
+            .chartPlotStyle { plotArea in
+                plotArea
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
             .chartXAxis {
                 AxisMarks(values: xAxisValues) { value in
@@ -736,7 +780,10 @@ private struct WatchConcentrationChartSurface: View {
             }
             .frame(height: frameHeight)
 
-            if !footerText.isEmpty {
+            if let selectedPoint {
+                WatchChartBadge(text: WatchChartFormatter.cursorTimeLabel(for: selectedPoint.timeH))
+                    .frame(maxWidth: .infinity, alignment: footerAlignment)
+            } else if !footerText.isEmpty {
                 Text(footerText)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
@@ -863,6 +910,53 @@ private struct WatchChartBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(Capsule().fill(Color.black))
+    }
+}
+
+private struct WatchCrownAccelerationState {
+    private static let idleResetThreshold = 0.18
+    private static let minimumSampleInterval = 0.016
+    private static let gainStartSpeed = 6.0
+    private static let gainFullSpeed = 20.0
+
+    private(set) var lastTimestamp: TimeInterval?
+    private(set) var filteredDetentsPerSecond: Double = 0
+
+    mutating func reset() {
+        lastTimestamp = nil
+        filteredDetentsPerSecond = 0
+    }
+
+    mutating func adjustedDelta(for rawDelta: Double, timestamp: TimeInterval) -> Double {
+        defer { lastTimestamp = timestamp }
+
+        guard rawDelta != 0 else { return 0 }
+        guard let lastTimestamp else { return rawDelta }
+
+        let elapsed = timestamp - lastTimestamp
+        guard elapsed > 0, elapsed < Self.idleResetThreshold else {
+            filteredDetentsPerSecond = 0
+            return rawDelta
+        }
+
+        let detentsPerSecond = abs(rawDelta) / max(elapsed, Self.minimumSampleInterval)
+        filteredDetentsPerSecond = filteredDetentsPerSecond == 0
+            ? detentsPerSecond
+            : (filteredDetentsPerSecond * 0.6) + (detentsPerSecond * 0.4)
+
+        // Keep fine-grained 1:1 control at low speed, then ramp up travel for fast spins.
+        let normalizedSpeed = min(
+            max(
+                (filteredDetentsPerSecond - Self.gainStartSpeed)
+                    / (Self.gainFullSpeed - Self.gainStartSpeed),
+                0
+            ),
+            1
+        )
+        let easedSpeed = normalizedSpeed * normalizedSpeed
+        let multiplier = 1 + (easedSpeed * 1.8)
+
+        return rawDelta * multiplier
     }
 }
 
