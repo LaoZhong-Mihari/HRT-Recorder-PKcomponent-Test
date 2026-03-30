@@ -248,7 +248,7 @@ struct TimelineScreen: View {
             } message: {
                 Text(healthMessage ?? "")
             }
-            .onChange(of: medicationVM.pendingDoseSeed) { _, newSeed in
+            .onChange(of: medicationVM.pendingDoseSeed) { newSeed in
                 guard let newSeed else { return }
                 activeSheet = .scheduledDose(newSeed)
             }
@@ -911,7 +911,7 @@ struct WeightEditorView: View {
                             .submitLabel(.done)
                             .focused($fieldFocused)
                             .onSubmit { fieldFocused = false }
-                            .onChange(of: weightText) { _old, newValue in
+                            .onChange(of: weightText) { newValue in
                                 let sanitized = newValue.replacingOccurrences(of: ",", with: ".")
                                 if sanitized.isEmpty {
                                     tempWeight = 0.0
@@ -952,7 +952,13 @@ struct WeightEditorView: View {
         .toolbar {
             // Cancel in navigation bar leading
             ToolbarItem(placement: .navigationBarLeading) {
-                Button("common.cancel") { onCancel() }
+                Button(action: {
+                    onCancel()
+                }) {
+                    Text("common.cancel")
+                        .fontWeight(.medium)
+                        .foregroundStyle(.pink)
+                }
             }
 
             // Save in navigation bar trailing
@@ -988,13 +994,13 @@ struct WeightEditorView: View {
             .background(Color(UIColor.systemBackground))
         }
         // Sync textual representation when not editing
-        .onChange(of: tempWeight) { _old, _new in
+        .onChange(of: tempWeight) { _ in
             if !fieldFocused {
                 weightText = String(format: "%.1f", locale: Locale.current, roundedTemp)
             }
         }
         // When editing finishes, clamp and format
-        .onChange(of: fieldFocused) { _old, focused in
+        .onChange(of: fieldFocused) { focused in
             if !focused {
                 let clamped = min(max(tempWeight, 30.0), 200.0)
                 tempWeight = clamped

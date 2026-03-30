@@ -415,8 +415,7 @@ struct ResultChartView: View {
         }
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                if let plotFrameAnchor = proxy.plotFrame {
-                    let plotFrame = geometry[plotFrameAnchor]
+                if let plotFrame = plotFrame(for: proxy, in: geometry) {
 
                     ZStack(alignment: .topLeading) {
                         ResultChartInteractionSurface(
@@ -461,6 +460,14 @@ struct ResultChartView: View {
             }
         }
         .frame(minHeight: chartHeight)
+    }
+
+    private func plotFrame(for proxy: ChartProxy, in geometry: GeometryProxy) -> CGRect? {
+        if #available(iOS 17.0, *) {
+            return proxy.plotFrame.map { geometry[$0] }
+        }
+
+        return geometry[proxy.plotAreaFrame]
     }
 
     @ChartContentBuilder
@@ -576,7 +583,7 @@ struct ResultChartView: View {
         .onReceive(timer) { date in
             now = date
         }
-        .onChange(of: sim.timeH.first) {
+        .onChange(of: sim.timeH.first) { _ in
             visibleDomainLength = min(max(visibleDomainLength, minVisibleDomainLength), maxVisibleDomainLength)
             scrollPosition = clampedLeadingHour(currentHour - visibleDomainLength / 2, visibleLength: visibleDomainLength)
         }

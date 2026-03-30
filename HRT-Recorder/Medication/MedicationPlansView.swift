@@ -687,8 +687,12 @@ private struct MedicationImportView: View {
             .navigationTitle("Import from Health")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Text("Close")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.pink)
                     }
                 }
 
@@ -926,8 +930,12 @@ private struct MedicationPlanEditorView: View {
             .navigationTitle(existingPlan == nil ? String(localized: "Medication Plan") : String(localized: "Edit Plan"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Text("Cancel")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.pink)
                     }
                 }
 
@@ -972,17 +980,10 @@ private struct MedicationPlanEditorView: View {
                 onCancel: nil
             )
         }
-#if swift(>=5.9)
-        .onChange(of: recurrenceKind) { _, newValue in
-            syncEditorStateForSelectedPattern(from: previousRecurrenceKind, to: newValue)
-            previousRecurrenceKind = newValue
-        }
-#else
         .onChange(of: recurrenceKind) { newValue in
             syncEditorStateForSelectedPattern(from: previousRecurrenceKind, to: newValue)
             previousRecurrenceKind = newValue
         }
-#endif
     }
 
     private var sharedDoseSeed: DoseEntrySeed {
@@ -1386,8 +1387,12 @@ private struct DailyDoseSlotEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Text("Cancel")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.pink)
                     }
                 }
 

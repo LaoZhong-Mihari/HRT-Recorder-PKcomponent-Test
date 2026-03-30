@@ -104,7 +104,7 @@ struct HRTRecorderApp: App {
                     )
                 }
         }
-        .onChange(of: phase) { _, newPhase in
+        .onChange(of: phase) { newPhase in
             if newPhase == .active {
                 Task {
                     await timelineVM.beginBodyWeightHealthKitSync()

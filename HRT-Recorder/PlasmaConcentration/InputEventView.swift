@@ -274,15 +274,9 @@ struct InputEventView: View {
                         Text("input.medication_type.anti_androgen").tag(DraftMedicationCategory.antiAndrogen)
                     }
                     .pickerStyle(.segmented)
-                    #if swift(>=5.9)
-                    .onChange(of: draft.medicationCategory) { _, _ in
-                        applyMedicationCategoryChange()
-                    }
-                    #else
                     .onChange(of: draft.medicationCategory) { _ in
                         applyMedicationCategoryChange()
                     }
-                    #endif
 
                     if !draft.isRecordOnlyOralMedication {
                         Picker("input.route", selection: $draft.route) {
@@ -293,20 +287,6 @@ struct InputEventView: View {
                             Text("route.oral").tag(DoseEvent.Route.oral)
                             Text("route.sublingual").tag(DoseEvent.Route.sublingual)
                         }
-                        #if swift(>=5.9)
-                        .onChange(of: draft.route) { _, _ in
-                            if let firstValidEster = availableEsters.first {
-                                draft.ester = firstValidEster
-                            }
-                            draft.rawEsterDoseText = ""
-                            draft.e2EquivalentDoseText = ""
-                            draft.patchMode = .totalDose
-                            draft.releaseRateText = ""
-                            draft.slTierIndex = 2
-                            draft.useCustomTheta = false
-                            draft.customThetaText = ""
-                        }
-                        #else
                         .onChange(of: draft.route) { _ in
                             if let firstValidEster = availableEsters.first {
                                 draft.ester = firstValidEster
@@ -319,7 +299,6 @@ struct InputEventView: View {
                             draft.useCustomTheta = false
                             draft.customThetaText = ""
                         }
-                        #endif
                     } else {
                         Text("input.record_only.help")
                             .font(.footnote)
@@ -343,15 +322,9 @@ struct InputEventView: View {
                                 }
                             }
                         }
-#if swift(>=5.9)
-                        .onChange(of: draft.patchMode) { _, newValue in
-                            focusedField = newValue == .totalDose ? .patchTotal : .patchRelease
-                        }
-#else
                         .onChange(of: draft.patchMode) { newValue in
                             focusedField = newValue == .totalDose ? .patchTotal : .patchRelease
                         }
-#endif
                     }
                 }
                 
@@ -376,15 +349,9 @@ struct InputEventView: View {
                                         esterNameText(e).tag(e)
                                     }
                                 }
-    #if swift(>=5.9)
-                                .onChange(of: draft.ester) { _, _ in
-                                    syncDoseTextsAfterEsterChange()
-                                }
-    #else
                                 .onChange(of: draft.ester) { _ in
                                     syncDoseTextsAfterEsterChange()
                                 }
-    #endif
                             }
 
                             if draft.route == .patchApply {
@@ -464,9 +431,13 @@ struct InputEventView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("common.cancel") {
+                    Button {
                         onCancel?()
                         dismiss()
+                    } label: {
+                        Text("common.cancel")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.pink)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
