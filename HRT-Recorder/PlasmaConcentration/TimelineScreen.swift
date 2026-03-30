@@ -158,12 +158,20 @@ struct TimelineScreen: View {
                         if isHealthActionRunning {
                             ProgressView()
                                 .controlSize(.small)
+                                .frame(width: 36, height: 36)
+                                .background(toolbarButtonBackground)
+                                .overlay(toolbarButtonOutline)
                         } else {
-                            Label("settings.title", systemImage: "ellipsis.circle.fill")
-                                .font(.body)
+                            Image(systemName: "ellipsis.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Color(uiColor: .label))
                                 .accessibilityLabel(Text("settings.toolbar.accessibility"))
+                                .frame(width: 36, height: 36)
+                                .background(toolbarButtonBackground)
+                                .overlay(toolbarButtonOutline)
                         }
                     }
+                    .buttonStyle(.plain)
                 }
 
                 // Right: explicit trailing item for adding events
@@ -172,9 +180,14 @@ struct TimelineScreen: View {
                         activeSheet = .add(UUID())
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .font(.title2)
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(.pink)
+                            .frame(width: 36, height: 36)
+                            .background(toolbarButtonBackground)
+                            .overlay(toolbarButtonOutline)
                             .accessibilityLabel(Text("timeline.toolbar.add"))
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .sheet(item: $activeSheet) { mode in
@@ -261,6 +274,17 @@ struct TimelineScreen: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             isChartCollapsed.toggle()
         }
+    }
+
+    private var toolbarButtonBackground: some View {
+        Circle()
+            .fill(Color(uiColor: .secondarySystemBackground))
+            .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+    }
+
+    private var toolbarButtonOutline: some View {
+        Circle()
+            .stroke(Color.black.opacity(0.08), lineWidth: 1)
     }
 
     private func importBodyWeight() async {

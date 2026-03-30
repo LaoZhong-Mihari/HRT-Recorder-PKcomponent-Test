@@ -2,35 +2,48 @@ import Foundation
 import HealthKit
 
 @MainActor
-final class HealthMedicationImportService {
-    private let store = HKHealthStore()
-    private let queryTimeout: Duration = .seconds(12)
+protocol MedicationImportServicing {
+    var isSupported: Bool { get }
+    var availabilityDescription: String { get }
 
-    var isSupported: Bool {
-        if #available(iOS 26.0, *) {
-            return true
-        }
-        return false
-    }
+    func loadSuggestions() async throws -> [MedicationImportSuggestion]
+}
+
+struct UnsupportedMedicationImportService: MedicationImportServicing {
+    var isSupported: Bool { false }
 
     var availabilityDescription: String {
         guard HKHealthStore.isHealthDataAvailable() else {
             return String(localized: "medimport.availability.health_data_unavailable")
         }
 
-        if #available(iOS 26.0, *) {
-            return String(localized: "medimport.availability.import_plans")
+        return String(localized: "medimport.availability.unsupported_os")
+    }
+
+    func loadSuggestions() async throws -> [MedicationImportSuggestion] {
+        throw HealthMedicationImportError.unsupportedOS
+    }
+}
+
+@MainActor
+@available(iOS 26.0, *)
+final class HealthMedicationImportService: MedicationImportServicing {
+    private let store = HKHealthStore()
+    private let queryTimeout: Duration = .seconds(12)
+
+    var isSupported: Bool { true }
+
+    var availabilityDescription: String {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return String(localized: "medimport.availability.health_data_unavailable")
         }
 
-        return String(localized: "medimport.availability.unsupported_os")
+        return String(localized: "medimport.availability.import_plans")
     }
 
     func loadSuggestions() async throws -> [MedicationImportSuggestion] {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HealthMedicationImportError.healthDataUnavailable
-        }
-        guard #available(iOS 26.0, *) else {
-            throw HealthMedicationImportError.unsupportedOS
         }
 
         try await HealthKitService.shared.requestMedicationAuthorizationIfNeeded()
@@ -104,7 +117,10 @@ final class HealthMedicationImportService {
         let concept = medication.medication
         let snapshot = makeSnapshot(from: medication)
         let alignmentRule = MedicationImportCatalog.match(snapshot: snapshot)
-        let route = alignmentRule?.route ?? inferRoute(generalForm: concept.generalForm, text: snapshot.combinedNormalizedText)
+        let route = alignmentRule?.route ?? inferRoute(
+            generalFormRawValue: concept.generalForm.rawValue,
+            text: snapshot.combinedNormalizedText
+        )
         let scheduledDoseEvents = scheduleDoseEvents(from: doseEvents)
         let recurrence = inferRecurrence(
             hasSchedule: medication.hasSchedule,
@@ -144,18 +160,22 @@ final class HealthMedicationImportService {
     }
 
     @available(iOS 26.0, *)
-    private func inferRoute(generalForm: HKMedicationGeneralForm, text: String) -> DoseEvent.Route {
-        if generalForm == .injection || text.contains("inject") || text.contains("intramuscular") {
+    private func inferRoute(generalFormRawValue: String, text: String) -> DoseEvent.Route {
+        let normalizedGeneralForm = generalFormRawValue
+            .replacingOccurrences(of: "_", with: " ")
+            .lowercased()
+
+        if normalizedGeneralForm.contains("inject") || text.contains("inject") || text.contains("intramuscular") {
             return .injection
         }
-        if generalForm == .patch || text.contains("patch") {
+        if normalizedGeneralForm.contains("patch") || text.contains("patch") {
             return .patchApply
         }
-        if generalForm == .gel
-            || generalForm == .cream
-            || generalForm == .lotion
-            || generalForm == .ointment
-            || generalForm == .topical
+        if normalizedGeneralForm.contains("gel")
+            || normalizedGeneralForm.contains("cream")
+            || normalizedGeneralForm.contains("lotion")
+            || normalizedGeneralForm.contains("ointment")
+            || normalizedGeneralForm.contains("topical")
             || text.contains("gel")
             || text.contains("topical") {
             return .gel
@@ -165,7 +185,7 @@ final class HealthMedicationImportService {
 
     @available(iOS 26.0, *)
     private func makeSnapshot(from medication: HKUserAnnotatedMedication) -> HealthMedicationSnapshot {
-        let generalFormText = formattedGeneralForm(medication.medication.generalForm)
+        let generalFormText = formattedGeneralForm(medication.medication.generalForm.rawValue)
 
         return HealthMedicationSnapshot(
             displayName: medication.medication.displayText,
@@ -458,9 +478,8 @@ final class HealthMedicationImportService {
         }
     }
 
-    private func formattedGeneralForm(_ generalForm: HKMedicationGeneralForm) -> String {
-        generalForm
-            .rawValue
+    private func formattedGeneralForm(_ generalFormRawValue: String) -> String {
+        generalFormRawValue
             .replacingOccurrences(of: "_", with: " ")
             .localizedCapitalized
     }

@@ -13,7 +13,7 @@ final class MedicationPlanVM: ObservableObject {
     @Published private(set) var pendingDoseSeed: DoseEntrySeed?
 
     private let notificationCoordinator: NotificationCoordinator
-    private let importService = HealthMedicationImportService()
+    private let importService: any MedicationImportServicing
     private let onChange: (([MedicationPlan]) -> Void)?
     private var cancellables = Set<AnyCancellable>()
 
@@ -24,6 +24,7 @@ final class MedicationPlanVM: ObservableObject {
     ) {
         self.plans = Self.sortedPlans(initialPlans)
         self.notificationCoordinator = notificationCoordinator
+        self.importService = Self.makeImportService()
         self.onChange = onChange
 
         notificationCoordinator.$authorizationStatus
@@ -190,6 +191,14 @@ final class MedicationPlanVM: ObservableObject {
 
     var importAvailabilityDescription: String {
         importService.availabilityDescription
+    }
+
+    private static func makeImportService() -> any MedicationImportServicing {
+        if #available(iOS 26.0, *) {
+            return HealthMedicationImportService()
+        }
+
+        return UnsupportedMedicationImportService()
     }
 
     func makeSeed(for plan: MedicationPlan, at date: Date) -> DoseEntrySeed {

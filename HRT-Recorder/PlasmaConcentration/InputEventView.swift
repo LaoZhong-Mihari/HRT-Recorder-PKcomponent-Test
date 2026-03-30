@@ -470,7 +470,13 @@ struct InputEventView: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("common.save") { save() }
+                    Button {
+                        save()
+                    } label: {
+                        Text("common.save")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(canSaveEvent ? .pink : .secondary)
+                    }
                         .disabled(!canSaveEvent)
                 }
                 ToolbarItemGroup(placement: .keyboard) {

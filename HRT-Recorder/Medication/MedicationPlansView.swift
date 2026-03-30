@@ -932,8 +932,12 @@ private struct MedicationPlanEditorView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         savePlan()
+                    } label: {
+                        Text("Save")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(canSavePlan ? .pink : .secondary)
                     }
                     .disabled(!canSavePlan)
                 }
@@ -1388,8 +1392,12 @@ private struct DailyDoseSlotEditorView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
+                    Button {
                         saveSlot()
+                    } label: {
+                        Text("Done")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(template?.hasConfiguredDose == true ? .pink : .secondary)
                     }
                     .disabled(template?.hasConfiguredDose != true)
                 }

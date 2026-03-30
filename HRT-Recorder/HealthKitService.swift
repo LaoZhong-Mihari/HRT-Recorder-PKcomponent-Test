@@ -37,30 +37,16 @@ final class HealthKitService {
         return types
     }
 
-    @available(iOS 26.0, *)
-    private var medicationReadTypes: Set<HKObjectType> {
-        [HKObjectType.userAnnotatedMedicationType()]
-    }
-
     func requestBodyMassAuthorizationIfNeeded() async throws {
         try await requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes)
     }
 
     func requestMedicationAuthorizationIfNeeded() async throws {
         guard #available(iOS 26.0, *) else { return }
-        guard !UserDefaults.standard.bool(forKey: medicationAuthorizationRequestedKey) else {
-            return
-        }
-
-        let medicationType = HKObjectType.userAnnotatedMedicationType()
-        if medicationType.requiresPerObjectAuthorization() {
-            let predicate = HKQuery.predicateForUserAnnotatedMedications(isArchived: false)
-            try await requestPerObjectReadAuthorization(for: medicationType, predicate: predicate)
-        } else {
-            try await requestAuthorization(toShare: [], read: medicationReadTypes)
-        }
-
-        UserDefaults.standard.set(true, forKey: medicationAuthorizationRequestedKey)
+        try await MedicationAuthorizationCoordinator.requestIfNeeded(
+            using: store,
+            requestedKey: medicationAuthorizationRequestedKey
+        )
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
@@ -73,28 +59,6 @@ final class HealthKitService {
         }
 
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
-    }
-
-    @available(iOS 26.0, *)
-    private func requestPerObjectReadAuthorization(for objectType: HKObjectType, predicate: NSPredicate?) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            store.requestPerObjectReadAuthorization(for: objectType, predicate: predicate) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: NSError(
-                        domain: "HealthKitService",
-                        code: 8,
-                        userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.medication_authorization_cancelled")]
-                    ))
-                }
-            }
-        }
     }
 
     func fetchLatestBodyMassKG() async throws -> Double {
@@ -249,5 +213,65 @@ final class HealthKitService {
         }
 
         UserDefaults.standard.set(data, forKey: bodyMassAnchorKey)
+    }
+}
+
+@MainActor
+@available(iOS 26.0, *)
+private enum MedicationAuthorizationCoordinator {
+    static func requestIfNeeded(using store: HKHealthStore, requestedKey: String) async throws {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw NSError(
+                domain: "HealthKitService",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.unavailable")]
+            )
+        }
+
+        guard !UserDefaults.standard.bool(forKey: requestedKey) else {
+            return
+        }
+
+        let medicationType = HKObjectType.userAnnotatedMedicationType()
+        if medicationType.requiresPerObjectAuthorization() {
+            let predicate = HKQuery.predicateForUserAnnotatedMedications(isArchived: false)
+            try await requestPerObjectReadAuthorization(
+                using: store,
+                for: medicationType,
+                predicate: predicate
+            )
+        } else {
+            try await store.requestAuthorization(
+                toShare: Set<HKSampleType>(),
+                read: Set([medicationType])
+            )
+        }
+
+        UserDefaults.standard.set(true, forKey: requestedKey)
+    }
+
+    private static func requestPerObjectReadAuthorization(
+        using store: HKHealthStore,
+        for objectType: HKObjectType,
+        predicate: NSPredicate?
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            store.requestPerObjectReadAuthorization(for: objectType, predicate: predicate) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: NSError(
+                        domain: "HealthKitService",
+                        code: 8,
+                        userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.medication_authorization_cancelled")]
+                    ))
+                }
+            }
+        }
     }
 }

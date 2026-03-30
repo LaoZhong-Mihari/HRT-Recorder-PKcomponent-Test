@@ -1,5 +1,4 @@
 import Foundation
-import HealthKit
 
 enum MedicationImportAlignmentStatus: String, Equatable, Sendable {
     case aligned
