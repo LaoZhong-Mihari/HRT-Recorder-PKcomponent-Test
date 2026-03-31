@@ -11,6 +11,8 @@
 		550EBB5F2ECEE3B500D3C38A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */; };
 		550EBB602ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
+		550EBB632ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
+		550EBB642ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
 		557D83D22F5D33B300CDF791 /* HRT-Recorder Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 557D83C82F5D33B100CDF791 /* HRT-Recorder Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -42,6 +44,7 @@
 		550EBB4C2ECEE3B500D3C38A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = PKSharedCatalog.json; sourceTree = "<group>"; };
 		557D83C82F5D33B100CDF791 /* HRT-Recorder Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HRT-Recorder Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC8CFC772E89683D009EE2B1 /* HRT-Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HRT-Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -86,6 +89,7 @@
 				550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */,
 				550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */,
 				550EBB4C2ECEE3B500D3C38A /* README.md */,
+				550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */,
 			);
 			sourceTree = "<group>";
 		};
@@ -192,6 +196,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */,
+				550EBB642ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -202,6 +207,7 @@
 				550EBB5E2ECEE3B500D3C38A /* README.md in Resources */,
 				550EBB5F2ECEE3B500D3C38A /* Assets.xcassets in Resources */,
 				550EBB602ECEE3B500D3C38A /* Localizable.xcstrings in Resources */,
+				550EBB632ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -37,16 +37,24 @@ enum BodyWeightSyncSource: String {
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
         didSet {
-            dayGroups = makeTimelineDayGroups(from: events)
+            refreshDayGroups()
             onChange?(events)
         }
     }
     @Published var result: SimulationResult? = nil
     @Published private(set) var dayGroups: [TimelineDayGroup] = []
+    @Published var selectedHormone: SimulatedHormone = .estradiol {
+        didSet {
+            UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
+            refreshDayGroups()
+            runSimulation()
+        }
+    }
     private let weightKey = "user.weightKg"
     private let eventsModifiedKey = "dose.events.modifiedAt"
     private let weightSyncDateKey = "user.weight.syncDate"
     private let weightSyncSourceKey = "user.weight.syncSource"
+    private let selectedHormoneKey = "timeline.selectedHormone"
 
     @Published private(set) var eventsModifiedAt: TimeInterval {
         didSet {
@@ -73,6 +81,10 @@ final class DoseTimelineVM: ObservableObject {
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
+           let hormone = SimulatedHormone(rawValue: raw) {
+            self.selectedHormone = hormone
+        }
         let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
         self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
         if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
@@ -93,6 +105,10 @@ final class DoseTimelineVM: ObservableObject {
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
+           let hormone = SimulatedHormone(rawValue: raw) {
+            self.selectedHormone = hormone
+        }
         let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
         self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
         if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
@@ -100,7 +116,8 @@ final class DoseTimelineVM: ObservableObject {
         } else {
             self.bodyWeightSyncSource = nil
         }
-        self.dayGroups = makeTimelineDayGroups(from: initialEvents)
+        self.dayGroups = []
+        refreshDayGroups()
         setupSubscriptions()
         if !initialEvents.isEmpty {
             runSimulation()
@@ -119,6 +136,11 @@ final class DoseTimelineVM: ObservableObject {
             return modifiedAt
         }
         return Date().timeIntervalSince1970
+    }
+
+    private func refreshDayGroups() {
+        let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
+        dayGroups = makeTimelineDayGroups(from: visibleEvents)
     }
 
     // **NEW**: A single function to handle both adding and updating events.
@@ -154,7 +176,9 @@ final class DoseTimelineVM: ObservableObject {
             return
         }
 
+        let selectedHormone = self.selectedHormone
         let simulatedEvents = events.filter(\.participatesInSimulation)
+            .filter { $0.simulatedHormone == selectedHormone }
         guard !simulatedEvents.isEmpty else {
             result = nil
             isSimulating = false
@@ -169,7 +193,7 @@ final class DoseTimelineVM: ObservableObject {
         let generation = simulationGeneration
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let simulationResult = simulateTimelineResult(events: sortedEvents, bodyWeightKG: weight)
+            let simulationResult = simulateTimelineResult(events: sortedEvents, hormone: selectedHormone, bodyWeightKG: weight)
 
             DispatchQueue.main.async {
                 guard generation == self.simulationGeneration else { return }

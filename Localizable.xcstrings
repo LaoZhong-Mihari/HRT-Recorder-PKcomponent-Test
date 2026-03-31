@@ -311,6 +311,9 @@
         }
       }
     },
+    "Anti-androgen" : {
+
+    },
     "Apple Health took too long to answer. Close the sheet and try again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -342,11 +345,15 @@
         }
       }
     },
+    "Category" : {
+
+    },
     "chart.accessibility" : {
 
     },
     "chart.axis.conc" : {
       "comment" : "Y-axis label",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -398,6 +405,7 @@
     },
     "chart.currentConc.value" : {
       "comment" : "Current concentration label",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -425,38 +433,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雌二醇浓度 (pg/mL)"
-          }
-        }
-      }
-    },
-    "timeline.chart.collapse.accessibility" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Collapse chart"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "折叠图表"
-          }
-        }
-      }
-    },
-    "timeline.chart.expand.accessibility" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Expand chart"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "展开图表"
           }
         }
       }
@@ -582,6 +558,12 @@
           }
         }
       }
+    },
+    "Compound" : {
+
+    },
+    "compound.%@.name" : {
+
     },
     "Concentration" : {
 
@@ -796,9 +778,6 @@
         }
       }
     },
-    "ester.%@.name" : {
-      "shouldTranslate" : false
-    },
     "ester.E2.abbr" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -968,6 +947,9 @@
           }
         }
       }
+    },
+    "Estradiol" : {
+
     },
     "Every %lld day%@" : {
       "localizations" : {
@@ -1159,6 +1141,9 @@
         }
       }
     },
+    "Hormone" : {
+
+    },
     "Import from Health" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1233,6 +1218,7 @@
     },
     "input.dose.e2" : {
       "comment" : "E2-equivalent dose placeholder",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1298,6 +1284,7 @@
       }
     },
     "input.medication_type.anti_androgen" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1314,6 +1301,7 @@
       }
     },
     "input.medication_type.estrogen" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1394,6 +1382,7 @@
       }
     },
     "input.patchMode.totalDose" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1719,6 +1708,9 @@
           }
         }
       }
+    },
+    "Medication" : {
+
     },
     "Medication & Reminders" : {
       "localizations" : {
@@ -2968,6 +2960,7 @@
       }
     },
     "record_medication.bicalutamide.name" : {
+      "comment" : "Bicalutamide",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2984,6 +2977,7 @@
       }
     },
     "record_medication.cyproterone_acetate.name" : {
+      "comment" : "Cyproterone acetate",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3016,6 +3010,7 @@
       }
     },
     "record_medication.dutasteride.name" : {
+      "comment" : "Dutasteride",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3032,6 +3027,7 @@
       }
     },
     "record_medication.finasteride.name" : {
+      "comment" : "Finasteride",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3096,6 +3092,7 @@
       }
     },
     "record_medication.spironolactone.name" : {
+      "comment" : "Spironolactone",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3169,6 +3166,7 @@
 
     },
     "route.gel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3185,6 +3183,7 @@
       }
     },
     "route.injection" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3201,6 +3200,7 @@
       }
     },
     "route.oral" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3217,6 +3217,7 @@
       }
     },
     "route.patchApply" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3233,6 +3234,7 @@
       }
     },
     "route.patchRemove" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3249,6 +3251,7 @@
       }
     },
     "route.sublingual" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3638,6 +3641,9 @@
         }
       }
     },
+    "Testosterone" : {
+
+    },
     "This only removes the reminder schedule. Logged doses stay." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3713,6 +3719,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "千克"
+          }
+        }
+      }
+    },
+    "timeline.chart.collapse.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse chart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "折叠图表"
+          }
+        }
+      }
+    },
+    "timeline.chart.expand.accessibility" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand chart"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展开图表"
           }
         }
       }
@@ -3976,6 +4014,7 @@
     },
     "watch.input.e2EquivalentPreview" : {
       "comment" : "E2-equivalent preview",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

@@ -1,0 +1,157 @@
+{
+  "hormones": {
+    "estradiol": {
+      "displayName": "Estradiol",
+      "concentrationUnit": "pgPerML",
+      "vdPerKG": 2.0,
+      "kClear": 0.41,
+      "kClearInjection": 0.041,
+      "depotK1Corr": 1.0,
+      "patchFallbackK1": 0.0075,
+      "gelK1": 0.022,
+      "gelFmax": 0.05
+    },
+    "testosterone": {
+      "displayName": "Testosterone",
+      "concentrationUnit": "ngPerDL",
+      "vdPerKG": 2.0,
+      "kClear": 0.6,
+      "kClearInjection": 0.03,
+      "depotK1Corr": 1.0,
+      "patchFallbackK1": 0.05,
+      "gelK1": 0.03,
+      "gelFmax": 0.12
+    }
+  },
+  "compounds": {
+    "E2": {
+      "fullName": "Estradiol",
+      "hormone": "estradiol",
+      "molecularWeight": 272.38,
+      "activeMolecularWeight": 272.38,
+      "isProdrug": false
+    },
+    "EB": {
+      "fullName": "Estradiol Benzoate",
+      "hormone": "estradiol",
+      "molecularWeight": 376.5,
+      "activeMolecularWeight": 272.38,
+      "isProdrug": true
+    },
+    "EV": {
+      "fullName": "Estradiol Valerate",
+      "hormone": "estradiol",
+      "molecularWeight": 356.5,
+      "activeMolecularWeight": 272.38,
+      "isProdrug": true
+    },
+    "EC": {
+      "fullName": "Estradiol Cypionate",
+      "hormone": "estradiol",
+      "molecularWeight": 396.58,
+      "activeMolecularWeight": 272.38,
+      "isProdrug": true
+    },
+    "EN": {
+      "fullName": "Estradiol Enanthate",
+      "hormone": "estradiol",
+      "molecularWeight": 384.56,
+      "activeMolecularWeight": 272.38,
+      "isProdrug": true
+    },
+    "T": {
+      "fullName": "Testosterone",
+      "hormone": "testosterone",
+      "molecularWeight": 288.42,
+      "activeMolecularWeight": 288.42,
+      "isProdrug": false
+    },
+    "TC": {
+      "fullName": "Testosterone Cypionate",
+      "hormone": "testosterone",
+      "molecularWeight": 412.61,
+      "activeMolecularWeight": 288.42,
+      "isProdrug": true
+    },
+    "TE": {
+      "fullName": "Testosterone Enanthate",
+      "hormone": "testosterone",
+      "molecularWeight": 400.59,
+      "activeMolecularWeight": 288.42,
+      "isProdrug": true
+    },
+    "TU": {
+      "fullName": "Testosterone Undecanoate",
+      "hormone": "testosterone",
+      "molecularWeight": 456.7,
+      "activeMolecularWeight": 288.42,
+      "isProdrug": true
+    }
+  },
+  "twoPartDepot": {
+    "EB": { "fracFast": 0.9, "k1Fast": 0.144, "k1Slow": 0.114 },
+    "EV": { "fracFast": 0.4, "k1Fast": 0.0216, "k1Slow": 0.0138 },
+    "EC": { "fracFast": 0.229164549, "k1Fast": 0.005035046, "k1Slow": 0.004510574 },
+    "EN": { "fracFast": 0.05, "k1Fast": 0.001, "k1Slow": 0.005 },
+    "TC": { "fracFast": 0.4, "k1Fast": 0.018, "k1Slow": 0.0036 },
+    "TE": { "fracFast": 0.45, "k1Fast": 0.02, "k1Slow": 0.0069 },
+    "TU": { "fracFast": 0.25, "k1Fast": 0.008, "k1Slow": 0.00145 }
+  },
+  "formationFraction": {
+    "EB": 0.10922376473734707,
+    "EV": 0.062258288229969413,
+    "EC": 0.117255838,
+    "EN": 0.12,
+    "TC": 1.0,
+    "TE": 1.0,
+    "TU": 1.0
+  },
+  "hydrolysisK2": {
+    "EB": 0.09,
+    "EV": 0.07,
+    "EC": 0.045,
+    "EN": 0.015,
+    "TC": 0.09,
+    "TE": 0.12,
+    "TU": 0.03
+  },
+  "oral": {
+    "kAbs": {
+      "E2": 0.32,
+      "EV": 0.05,
+      "TU": 0.04
+    },
+    "bioavailability": {
+      "E2": 0.03,
+      "EV": 0.03,
+      "TU": 0.03
+    },
+    "kAbsSL": 1.8
+  },
+  "sublingual": {
+    "recommendedTheta": {
+      "quick": 0.01,
+      "casual": 0.04,
+      "standard": 0.11,
+      "strict": 0.18
+    },
+    "holdMinutes": {
+      "quick": 2.0,
+      "casual": 5.0,
+      "standard": 10.0,
+      "strict": 15.0
+    },
+    "thetaRangeLow": {
+      "quick": 0.004,
+      "casual": 0.021,
+      "standard": 0.064,
+      "strict": 0.115
+    },
+    "thetaRangeHigh": {
+      "quick": 0.012,
+      "casual": 0.057,
+      "standard": 0.156,
+      "strict": 0.253
+    }
+  }
+}

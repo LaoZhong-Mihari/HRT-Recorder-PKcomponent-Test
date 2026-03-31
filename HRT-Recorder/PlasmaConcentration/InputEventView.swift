@@ -25,7 +25,7 @@ private enum PatchInputMode: String, CaseIterable, Identifiable {
 
 private enum FocusedDoseField: Hashable {
     case raw
-    case e2
+    case activeEquivalent
     case recordOnlyDose
     case patchTotal
     case patchRelease
@@ -33,17 +33,34 @@ private enum FocusedDoseField: Hashable {
 }
 
 private enum DraftMedicationCategory: String, CaseIterable, Identifiable {
-    case estrogen
+    case estradiol
+    case testosterone
     case antiAndrogen
 
     var id: Self { self }
+
+    var category: MedicationCategory {
+        switch self {
+        case .estradiol: return .estradiol
+        case .testosterone: return .testosterone
+        case .antiAndrogen: return .antiAndrogen
+        }
+    }
+
+    init(category: MedicationCategory) {
+        switch category {
+        case .estradiol: self = .estradiol
+        case .testosterone: self = .testosterone
+        case .antiAndrogen: self = .antiAndrogen
+        }
+    }
 }
 
 // MARK: - Draft model (for UI binding)
 private struct DraftDoseEvent {
     var id: UUID? // For editing existing events
     var date = Date()
-    var medicationCategory: DraftMedicationCategory = .estrogen
+    var medicationCategory: DraftMedicationCategory = .estradiol
     var route: DoseEvent.Route = .injection
     var ester: Ester = .EV
     var recordOnlyOralMedication: RecordOnlyOralMedication = .cyproteroneAcetate
@@ -83,6 +100,7 @@ struct InputEventView: View {
     init(
         eventToEdit: DoseEvent? = nil,
         seed: DoseEntrySeed? = nil,
+        preferredCategory: MedicationCategory = .estradiol,
         showsDatePicker: Bool = true,
         navigationTitleOverride: String? = nil,
         autoFocusOnAppear: Bool = false,
@@ -96,18 +114,18 @@ struct InputEventView: View {
         self.onCancel = onCancel
         if let event = eventToEdit {
             let recordOnlyOralMedication = event.recordOnlyOralMedication
-            let esterInfo = EsterInfo.by(ester: event.ester)
-            let rawDose = event.doseMG / esterInfo.toE2Factor
+            let compoundInfo = CompoundInfo.by(compound: event.compound)
+            let rawDose = event.doseMG / compoundInfo.toActiveFactor
 
             var initialDraft = DraftDoseEvent(
                 id: event.id,
                 date: event.date,
-                medicationCategory: recordOnlyOralMedication == nil ? .estrogen : .antiAndrogen,
+                medicationCategory: DraftMedicationCategory(category: event.category),
                 route: event.route,
-                ester: event.ester,
+                ester: event.compound,
                 recordOnlyOralMedication: recordOnlyOralMedication ?? .cyproteroneAcetate,
                 recordOnlyDoseText: recordOnlyOralMedication == nil ? "" : String(format: "%.2f", locale: Locale.current, event.doseMG),
-                rawEsterDoseText: recordOnlyOralMedication == nil && event.ester != .E2 ? String(format: "%.2f", locale: Locale.current, rawDose) : "",
+                rawEsterDoseText: recordOnlyOralMedication == nil && event.compound != .E2 && event.compound != .T ? String(format: "%.2f", locale: Locale.current, rawDose) : "",
                 e2EquivalentDoseText: recordOnlyOralMedication == nil ? String(format: "%.2f", locale: Locale.current, event.doseMG) : ""
             )
 
@@ -138,19 +156,19 @@ struct InputEventView: View {
             var initialDraft = DraftDoseEvent(
                 id: nil,
                 date: seed.date,
-                medicationCategory: recordOnlyOralMedication == nil ? .estrogen : .antiAndrogen,
+                medicationCategory: DraftMedicationCategory(category: seed.template.category),
                 route: seed.template.route,
-                ester: seed.template.ester,
+                ester: seed.template.compound,
                 recordOnlyOralMedication: recordOnlyOralMedication ?? .cyproteroneAcetate,
                 recordOnlyDoseText: recordOnlyOralMedication == nil ? "" : String(
                     format: "%.2f",
                     locale: Locale.current,
                     seed.template.doseMG
                 ),
-                rawEsterDoseText: recordOnlyOralMedication == nil && seed.template.ester != .E2 ? String(
+                rawEsterDoseText: recordOnlyOralMedication == nil && seed.template.compound != .E2 && seed.template.compound != .T ? String(
                     format: "%.2f",
                     locale: Locale.current,
-                    seed.template.doseMG / EsterInfo.by(ester: seed.template.ester).toE2Factor
+                    seed.template.doseMG / CompoundInfo.by(compound: seed.template.compound).toActiveFactor
                 ) : "",
                 e2EquivalentDoseText: recordOnlyOralMedication == nil && seed.template.doseMG > 0
                     ? String(format: "%.2f", locale: Locale.current, seed.template.doseMG)
@@ -177,30 +195,37 @@ struct InputEventView: View {
 
             _draft = State(initialValue: initialDraft)
         } else {
-            _draft = State(initialValue: DraftDoseEvent())
+            let initialCategory = DraftMedicationCategory(category: preferredCategory)
+            var initialDraft = DraftDoseEvent(medicationCategory: initialCategory)
+            let routes = Self.routes(for: initialCategory)
+            initialDraft.route = routes.first ?? .oral
+            initialDraft.ester = CompoundSupport.availableCompounds(for: preferredCategory, route: initialDraft.route).first ?? .EV
+            _draft = State(initialValue: initialDraft)
         }
     }
     
-    // ... (availableEsters logic updated for sublingual)
-    private var availableEsters: [Ester] {
-        switch draft.route {
-        case .injection: return [.EB, .EV, .EC, .EN]
-        case .patchApply, .patchRemove, .gel: return [.E2]
-        case .oral: return [.E2, .EV]
-        case .sublingual: return [.E2, .EV]
+    private static func routes(for category: DraftMedicationCategory) -> [DoseEvent.Route] {
+        switch category {
+        case .estradiol:
+            return [.injection, .patchApply, .patchRemove, .gel, .oral, .sublingual]
+        case .testosterone:
+            return [.injection, .patchApply, .patchRemove, .gel, .oral]
+        case .antiAndrogen:
+            return [.oral]
         }
+    }
+
+    private var availableRoutes: [DoseEvent.Route] {
+        Self.routes(for: draft.medicationCategory)
+    }
+
+    private var availableEsters: [Ester] {
+        CompoundSupport.availableCompounds(for: draft.medicationCategory.category, route: draft.route)
     }
 
     // MARK: - Localization helpers for ester names (with English fallback)
     private func esterDefaultName(_ e: Ester) -> String {
-        switch e {
-        case .E2: return "Estradiol"
-        case .EV: return "Estradiol valerate"
-        case .EB: return "Estradiol benzoate"
-        case .EC: return "Estradiol cypionate"
-        case .EN: return "Estradiol enanthate"
-        @unknown default: return "Estradiol"
-        }
+        CompoundInfo.by(compound: e).fullName
     }
     private func esterNameText(_ e: Ester) -> Text {
         // Dynamic key: "ester.<abbr>.name", e.g. "ester.EV.name"
@@ -227,13 +252,33 @@ struct InputEventView: View {
             return e2Dose
         }
 
-        guard draft.ester != .E2,
+        guard showsRawCompoundDose,
               let rawDose = parsedDouble(draft.rawEsterDoseText) else {
             return nil
         }
 
-        let factor = EsterInfo.by(ester: draft.ester).toE2Factor
+        let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
         return rawDose * factor
+    }
+
+    private var activeEquivalentDosePlaceholder: String {
+        switch draft.medicationCategory {
+        case .estradiol:
+            return "Estradiol-equivalent dose (mg)"
+        case .testosterone:
+            return "Testosterone-equivalent dose (mg)"
+        case .antiAndrogen:
+            return "Dose (mg)"
+        }
+    }
+
+    private var showsRawCompoundDose: Bool {
+        switch draft.ester {
+        case .E2, .T:
+            return false
+        default:
+            return true
+        }
     }
 
     private var canSaveEvent: Bool {
@@ -270,8 +315,9 @@ struct InputEventView: View {
                         DatePicker("input.time", selection: $draft.date, displayedComponents: [.date, .hourAndMinute])
                     }
                     Picker("input.medication_type.title", selection: $draft.medicationCategory) {
-                        Text("input.medication_type.estrogen").tag(DraftMedicationCategory.estrogen)
-                        Text("input.medication_type.anti_androgen").tag(DraftMedicationCategory.antiAndrogen)
+                        Text("Estradiol").tag(DraftMedicationCategory.estradiol)
+                        Text("Testosterone").tag(DraftMedicationCategory.testosterone)
+                        Text("Anti-androgen").tag(DraftMedicationCategory.antiAndrogen)
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: draft.medicationCategory) { _ in
@@ -280,12 +326,9 @@ struct InputEventView: View {
 
                     if !draft.isRecordOnlyOralMedication {
                         Picker("input.route", selection: $draft.route) {
-                            Text("route.injection").tag(DoseEvent.Route.injection)
-                            Text("route.patchApply").tag(DoseEvent.Route.patchApply)
-                            Text("route.patchRemove").tag(DoseEvent.Route.patchRemove)
-                            Text("route.gel").tag(DoseEvent.Route.gel)
-                            Text("route.oral").tag(DoseEvent.Route.oral)
-                            Text("route.sublingual").tag(DoseEvent.Route.sublingual)
+                            ForEach(availableRoutes, id: \.self) { route in
+                                Text(routeLabel(route)).tag(route)
+                            }
                         }
                         .onChange(of: draft.route) { _ in
                             if let firstValidEster = availableEsters.first {
@@ -356,7 +399,7 @@ struct InputEventView: View {
 
                             if draft.route == .patchApply {
                                 if draft.patchMode == .totalDose {
-                                    TextField("input.patchMode.totalDose", text: $draft.e2EquivalentDoseText)
+                                    TextField(activeEquivalentDosePlaceholder, text: $draft.e2EquivalentDoseText)
                                         .keyboardType(.decimalPad)
                                         .submitLabel(.done)
                                         .focused($focusedField, equals: .patchTotal)
@@ -369,7 +412,7 @@ struct InputEventView: View {
                                         .onSubmit { handleSubmit(for: .patchRelease) }
                                 }
                             } else {
-                                if draft.ester != .E2 {
+                                if showsRawCompoundDose {
                                     TextField(
                                         String(
                                             format: NSLocalizedString("input.dose.raw", comment: "Dose input placeholder"),
@@ -383,18 +426,18 @@ struct InputEventView: View {
                                     .focused($focusedField, equals: .raw)
                                     .onSubmit { handleSubmit(for: .raw) }
                                 }
-                                TextField("input.dose.e2", text: $draft.e2EquivalentDoseText)
+                                TextField(activeEquivalentDosePlaceholder, text: $draft.e2EquivalentDoseText)
                                     .keyboardType(.decimalPad)
                                     .submitLabel(.done)
-                                    .focused($focusedField, equals: .e2)
-                                    .onSubmit { handleSubmit(for: .e2) }
+                                    .focused($focusedField, equals: .activeEquivalent)
+                                    .onSubmit { handleSubmit(for: .activeEquivalent) }
                             }
                         }
                     }
                 }
 
                 // MARK: Sublingual behavior (θ)
-                if !draft.isRecordOnlyOralMedication && draft.route == .sublingual {
+                if !draft.isRecordOnlyOralMedication && draft.medicationCategory == .estradiol && draft.route == .sublingual {
                     Section("input.sublingual") {
                         let tier = [SublingualTier.quick, .casual, .standard, .strict][min(max(draft.slTierIndex, 0), 3)]
                         let hold = SublingualTheta.holdMinutes[tier] ?? 0
@@ -469,11 +512,11 @@ struct InputEventView: View {
                     focusedField = .recordOnlyDose
                 } else if draft.route == .patchApply {
                     focusedField = (draft.patchMode == .totalDose) ? .patchTotal : .patchRelease
-                } else if draft.ester != .E2 {
+                } else if showsRawCompoundDose {
                     // Prefer focusing raw ester input when it's available
                     focusedField = .raw
                 } else {
-                    focusedField = .e2
+                    focusedField = .activeEquivalent
                 }
             }
         }
@@ -484,7 +527,7 @@ struct InputEventView: View {
         switch field {
         case .raw:
             convertToE2Equivalent()
-        case .e2, .patchTotal:
+        case .activeEquivalent, .patchTotal:
             convertToRawEster()
         case .recordOnlyDose:
             break
@@ -496,20 +539,20 @@ struct InputEventView: View {
     private func convertToE2Equivalent() {
         guard !draft.isRecordOnlyOralMedication else { return }
         guard let rawDose = parsedDouble(draft.rawEsterDoseText) else { return }
-        let factor = EsterInfo.by(ester: draft.ester).toE2Factor
+        let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
         draft.e2EquivalentDoseText = String(format: "%.2f", locale: Locale.current, rawDose * factor)
     }
 
     private func convertToRawEster() {
         guard !draft.isRecordOnlyOralMedication else { return }
-        guard draft.ester != .E2, let e2Dose = parsedDouble(draft.e2EquivalentDoseText) else { return }
-        let factor = EsterInfo.by(ester: draft.ester).toE2Factor
+        guard showsRawCompoundDose, let e2Dose = parsedDouble(draft.e2EquivalentDoseText) else { return }
+        let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
         draft.rawEsterDoseText = String(format: "%.2f", locale: Locale.current, e2Dose / factor)
     }
 
     private func syncDoseTextsAfterEsterChange() {
         guard !draft.isRecordOnlyOralMedication else { return }
-        if draft.ester == .E2 {
+        if !showsRawCompoundDose {
             draft.rawEsterDoseText = ""
             return
         }
@@ -528,8 +571,9 @@ struct InputEventView: View {
 
     private func applyMedicationCategoryChange() {
         switch draft.medicationCategory {
-        case .estrogen:
+        case .estradiol, .testosterone:
             draft.recordOnlyDoseText = ""
+            draft.route = availableRoutes.first ?? .oral
             if let firstValidEster = availableEsters.first {
                 draft.ester = firstValidEster
             }
@@ -575,15 +619,27 @@ struct InputEventView: View {
         
         let event = DoseEvent(
             id: draft.id ?? UUID(), // Use existing ID or create a new one
+            category: draft.medicationCategory.category,
             route: draft.isRecordOnlyOralMedication ? .oral : draft.route,
             // store absolute UTC hours (since 1970) – avoids 2001/01/01 offset
             timeH: draft.date.timeIntervalSince1970 / 3600.0,
             doseMG: dose,
-            ester: draft.isRecordOnlyOralMedication ? .E2 : draft.ester,
+            compound: draft.isRecordOnlyOralMedication ? .E2 : draft.ester,
             extras: extras,
             recordOnlyOralMedication: draft.isRecordOnlyOralMedication ? draft.recordOnlyOralMedication : nil
         )
         onSave(event)
         dismiss()
+    }
+
+    private func routeLabel(_ route: DoseEvent.Route) -> String {
+        switch route {
+        case .injection: return "Injection"
+        case .patchApply: return "Patch apply"
+        case .patchRemove: return "Patch remove"
+        case .gel: return "Gel"
+        case .oral: return "Oral"
+        case .sublingual: return "Sublingual"
+        }
     }
 }

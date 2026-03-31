@@ -1,6 +1,12 @@
 import Foundation
 import HealthKit
 
+private struct ImportedDoseDetails: Sendable {
+    let rawDoseMG: Double?
+    let extras: [DoseEvent.ExtraKey: Double]
+    let description: String?
+}
+
 @MainActor
 protocol MedicationImportServicing {
     var isSupported: Bool { get }
@@ -122,19 +128,30 @@ final class HealthMedicationImportService: MedicationImportServicing {
             text: snapshot.combinedNormalizedText
         )
         let scheduledDoseEvents = scheduleDoseEvents(from: doseEvents)
+        let timingDates = timingDates(hasSchedule: medication.hasSchedule, doseEvents: doseEvents)
+        let doseSeedEvent = preferredDoseSeedEvent(
+            scheduleDoseEvents: scheduledDoseEvents,
+            allDoseEvents: doseEvents
+        )
+        let doseDetails = alignmentRule.map {
+            resolveDoseDetails(from: doseSeedEvent, snapshot: snapshot, rule: $0)
+        }
         let recurrence = inferRecurrence(
             hasSchedule: medication.hasSchedule,
             route: route,
-            scheduleDoseEvents: scheduledDoseEvents
+            timingDates: timingDates
         )
-        let suggestedTemplate = alignmentRule.flatMap {
-            makeTemplate(from: snapshot, rule: $0, scheduleDoseEvents: scheduledDoseEvents)
+        let suggestedTemplate: MedicationDoseTemplate?
+        if let alignmentRule, let doseDetails {
+            suggestedTemplate = makeTemplate(from: snapshot, rule: alignmentRule, doseDetails: doseDetails)
+        } else {
+            suggestedTemplate = nil
         }
         let alignmentStatus = alignmentStatus(for: alignmentRule, template: suggestedTemplate)
         let healthPlanSummary = makeHealthPlanSummary(
             hasSchedule: medication.hasSchedule,
             recurrence: recurrence,
-            scheduleDoseEvents: scheduledDoseEvents
+            timingDates: timingDates
         )
         let note = makeNote(
             for: medication,
@@ -148,7 +165,7 @@ final class HealthMedicationImportService: MedicationImportServicing {
             sourceName: concept.displayText,
             nickname: medication.nickname,
             generalFormText: snapshot.generalFormText,
-            latestDoseDescription: nil,
+            latestDoseDescription: doseDetails?.description ?? fallbackDoseDescription(from: doseSeedEvent),
             suggestedTemplate: suggestedTemplate,
             suggestedRecurrence: recurrence,
             healthPlanSummary: healthPlanSummary,
@@ -165,7 +182,11 @@ final class HealthMedicationImportService: MedicationImportServicing {
             .replacingOccurrences(of: "_", with: " ")
             .lowercased()
 
-        if normalizedGeneralForm.contains("inject") || text.contains("inject") || text.contains("intramuscular") {
+        if normalizedGeneralForm.contains("inject")
+            || normalizedGeneralForm.contains("device")
+            || text.contains("inject")
+            || text.contains("injector")
+            || text.contains("intramuscular") {
             return .injection
         }
         if normalizedGeneralForm.contains("patch") || text.contains("patch") {
@@ -175,8 +196,11 @@ final class HealthMedicationImportService: MedicationImportServicing {
             || normalizedGeneralForm.contains("cream")
             || normalizedGeneralForm.contains("lotion")
             || normalizedGeneralForm.contains("ointment")
+            || normalizedGeneralForm.contains("foam")
+            || normalizedGeneralForm.contains("spray")
             || normalizedGeneralForm.contains("topical")
             || text.contains("gel")
+            || text.contains("foam")
             || text.contains("topical") {
             return .gel
         }
@@ -201,31 +225,27 @@ final class HealthMedicationImportService: MedicationImportServicing {
     private func makeTemplate(
         from snapshot: HealthMedicationSnapshot,
         rule: MedicationAlignmentRule,
-        scheduleDoseEvents: [HKMedicationDoseEvent]
+        doseDetails: ImportedDoseDetails
     ) -> MedicationDoseTemplate? {
-        let rawDoseMG = rawDoseMG(
-            from: scheduleSeedEvent(from: scheduleDoseEvents),
-            snapshot: snapshot,
-            rule: rule
-        ) ?? fallbackRawDoseMG(from: snapshot, rule: rule)
+        let rawDoseMG = doseDetails.rawDoseMG
 
         if let recordOnlyOralMedication = rule.recordOnlyOralMedication {
             return MedicationDoseTemplate(
                 route: rule.route,
                 doseMG: rawDoseMG ?? 0,
                 ester: .E2,
-                extras: [:],
+                extras: doseDetails.extras,
                 recordOnlyOralMedication: recordOnlyOralMedication
             )
         }
 
-        guard let ester = rule.ester else { return nil }
-        let convertedDoseMG = (rawDoseMG ?? 0) * EsterInfo.by(ester: ester).toE2Factor
+        guard let compound = rule.ester else { return nil }
+        let convertedDoseMG = (rawDoseMG ?? 0) * CompoundInfo.by(compound: compound).toActiveFactor
         return MedicationDoseTemplate(
             route: rule.route,
             doseMG: convertedDoseMG,
-            ester: ester,
-            extras: [:],
+            compound: compound,
+            extras: doseDetails.extras,
             recordOnlyOralMedication: nil
         )
     }
@@ -304,46 +324,102 @@ final class HealthMedicationImportService: MedicationImportServicing {
     @available(iOS 26.0, *)
     private func scheduleDoseEvents(from doseEvents: [HKMedicationDoseEvent]) -> [HKMedicationDoseEvent] {
         doseEvents
-            .filter { $0.scheduleType == .schedule && $0.scheduledDate != nil }
-            .sorted { ($0.scheduledDate ?? .distantPast) < ($1.scheduledDate ?? .distantPast) }
+            .filter { $0.scheduleType == .schedule }
+            .sorted { eventDate(for: $0) < eventDate(for: $1) }
     }
 
     @available(iOS 26.0, *)
     private func scheduleSeedEvent(from scheduleDoseEvents: [HKMedicationDoseEvent]) -> HKMedicationDoseEvent? {
         let now = Date()
-        if let upcoming = scheduleDoseEvents.first(where: { ($0.scheduledDate ?? .distantPast) >= now }) {
+        if let upcoming = scheduleDoseEvents.first(where: { eventDate(for: $0) >= now }) {
             return upcoming
         }
         return scheduleDoseEvents.last
     }
 
     @available(iOS 26.0, *)
-    private func rawDoseMG(
-        from scheduleSeedEvent: HKMedicationDoseEvent?,
-        snapshot: HealthMedicationSnapshot,
-        rule: MedicationAlignmentRule
-    ) -> Double? {
-        guard let scheduleSeedEvent,
-              let scheduledQuantity = scheduleSeedEvent.scheduledDoseQuantity else {
-            return nil
+    private func preferredDoseSeedEvent(
+        scheduleDoseEvents: [HKMedicationDoseEvent],
+        allDoseEvents: [HKMedicationDoseEvent]
+    ) -> HKMedicationDoseEvent? {
+        if let scheduled = scheduleSeedEvent(from: scheduleDoseEvents),
+           scheduled.scheduledDoseQuantity != nil || scheduled.doseQuantity != nil {
+            return scheduled
         }
 
-        let unit = scheduleSeedEvent.unit.unitString.lowercased()
-        switch unit {
-        case "mg", "milligram", "milligrams":
-            return scheduledQuantity
-        case "g", "gram", "grams":
-            return scheduledQuantity * 1000
-        case "mcg", "ug", "μg", "µg":
-            return scheduledQuantity / 1000
-        case "tablet", "tablets", "capsule", "capsules", "caplet", "caplets":
-            guard let singleUnitStrength = fallbackRawDoseMG(from: snapshot, rule: rule) else {
-                return nil
-            }
-            return scheduledQuantity * singleUnitStrength
-        default:
-            return nil
+        return allDoseEvents
+            .filter { $0.scheduledDoseQuantity != nil || $0.doseQuantity != nil }
+            .max { eventDate(for: $0) < eventDate(for: $1) }
+    }
+
+    @available(iOS 26.0, *)
+    private func resolveDoseDetails(
+        from doseSeedEvent: HKMedicationDoseEvent?,
+        snapshot: HealthMedicationSnapshot,
+        rule: MedicationAlignmentRule
+    ) -> ImportedDoseDetails {
+        let parsedStrengths = parsedStrengths(from: snapshot)
+        let parsedConcentrationMGPerML = parsedStrengths
+            .first(where: { $0.denominatorUnit == "ml" && $0.denominatorQuantity > 0 })
+            .map { $0.massMG / $0.denominatorQuantity }
+        let parsedPatchReleaseUGPerDay = (rule.route == .patchApply)
+            ? parsedReleaseRateUGPerDay(from: snapshot)
+            : nil
+
+        var extras: [DoseEvent.ExtraKey: Double] = [:]
+        if let concentration = parsedConcentrationMGPerML {
+            extras[.concentrationMGmL] = concentration
         }
+        if let releaseRate = parsedPatchReleaseUGPerDay {
+            extras[.releaseRateUGPerDay] = releaseRate
+        }
+
+        let quantity = doseSeedEvent?.scheduledDoseQuantity ?? doseSeedEvent?.doseQuantity
+        let normalizedUnit = doseSeedEvent.map { normalizedDoseUnit($0.unit.unitString) } ?? ""
+
+        let resolvedRawDoseMG: Double? = {
+            guard let quantity else {
+                return fallbackRawDoseMG(from: snapshot, rule: rule)
+            }
+
+            switch normalizedUnit {
+            case "mg":
+                return quantity
+            case "g":
+                return quantity * 1000
+            case "mcg", "ug", "μg", "µg":
+                return quantity / 1000
+            case "ml":
+                guard let concentration = parsedConcentrationMGPerML else { return nil }
+                return quantity * concentration
+            case "l":
+                guard let concentration = parsedConcentrationMGPerML else { return nil }
+                return quantity * 1000 * concentration
+            case "tablet", "capsule", "caplet", "softgel", "patch", "pump", "actuation", "application", "packet", "sachet", "dose", "vial":
+                if let perUnitStrength = parsedStrength(for: normalizedUnit, in: parsedStrengths) {
+                    return quantity * perUnitStrength.massMG / max(perUnitStrength.denominatorQuantity, 1)
+                }
+                if let singleUnitStrength = fallbackRawDoseMG(from: snapshot, rule: rule) {
+                    return quantity * singleUnitStrength
+                }
+                return nil
+            default:
+                if let perUnitStrength = parsedStrength(for: normalizedUnit, in: parsedStrengths) {
+                    return quantity * perUnitStrength.massMG / max(perUnitStrength.denominatorQuantity, 1)
+                }
+                return fallbackRawDoseMG(from: snapshot, rule: rule)
+            }
+        }()
+
+        return ImportedDoseDetails(
+            rawDoseMG: resolvedRawDoseMG,
+            extras: extras,
+            description: makeDoseDescription(
+                from: doseSeedEvent,
+                rawDoseMG: resolvedRawDoseMG,
+                extras: extras
+            )
+        )
     }
 
     private func fallbackRawDoseMG(from snapshot: HealthMedicationSnapshot, rule: MedicationAlignmentRule) -> Double? {
@@ -365,26 +441,24 @@ final class HealthMedicationImportService: MedicationImportServicing {
     private func inferRecurrence(
         hasSchedule: Bool,
         route: DoseEvent.Route,
-        scheduleDoseEvents: [HKMedicationDoseEvent]
+        timingDates: [Date]
     ) -> MedicationPlanRecurrence {
-        let scheduledDates = scheduleDoseEvents.compactMap(\.scheduledDate)
-
-        guard hasSchedule, !scheduledDates.isEmpty else {
+        guard hasSchedule, !timingDates.isEmpty else {
             return defaultRecurrence(for: route, date: Date())
         }
 
-        let times = uniqueTimes(from: scheduledDates)
+        let times = uniqueTimes(from: timingDates)
         let primaryTime = times.first ?? .defaultMorning
 
         switch route {
         case .oral, .gel, .sublingual:
             return .daily(times: times.isEmpty ? [primaryTime] : times)
         case .injection, .patchApply, .patchRemove:
-            let interval = inferredIntervalDays(from: scheduledDates)
+            let interval = inferredIntervalDays(from: timingDates)
             let roundedInterval = max(1, interval ?? 7)
             return .everyNDays(
                 intervalDays: roundedInterval,
-                startDate: scheduledDates.last ?? Date(),
+                startDate: timingDates.last ?? Date(),
                 time: primaryTime
             )
         }
@@ -394,17 +468,157 @@ final class HealthMedicationImportService: MedicationImportServicing {
     private func makeHealthPlanSummary(
         hasSchedule: Bool,
         recurrence: MedicationPlanRecurrence,
-        scheduleDoseEvents: [HKMedicationDoseEvent]
+        timingDates: [Date]
     ) -> String {
         guard hasSchedule else {
             return String(localized: "medimport.summary.as_needed")
         }
 
-        guard !scheduleDoseEvents.isEmpty else {
+        guard !timingDates.isEmpty else {
             return String(localized: "medimport.summary.schedule_unavailable")
         }
 
         return recurrenceSummary(recurrence)
+    }
+
+    private func parsedStrengths(from snapshot: HealthMedicationSnapshot) -> [MedicationStrengthPerUnit] {
+        MedicationStrengthParser.parseStrengthPerUnit(from: snapshot.displayName)
+            + MedicationStrengthParser.parseStrengthPerUnit(from: snapshot.nickname ?? "")
+    }
+
+    private func parsedReleaseRateUGPerDay(from snapshot: HealthMedicationSnapshot) -> Double? {
+        MedicationStrengthParser.parseReleaseRateUGPerDay(from: snapshot.displayName)
+            ?? MedicationStrengthParser.parseReleaseRateUGPerDay(from: snapshot.nickname ?? "")
+    }
+
+    private func parsedStrength(
+        for normalizedUnit: String,
+        in strengths: [MedicationStrengthPerUnit]
+    ) -> MedicationStrengthPerUnit? {
+        strengths.first { $0.denominatorUnit == normalizedUnit }
+    }
+
+    private func normalizedDoseUnit(_ unitString: String) -> String {
+        unitString
+            .lowercased()
+            .replacingOccurrences(of: "milliliters", with: "ml")
+            .replacingOccurrences(of: "milliliter", with: "ml")
+            .replacingOccurrences(of: "millilitres", with: "ml")
+            .replacingOccurrences(of: "millilitre", with: "ml")
+            .replacingOccurrences(of: "grams", with: "g")
+            .replacingOccurrences(of: "gram", with: "g")
+            .replacingOccurrences(of: "milligrams", with: "mg")
+            .replacingOccurrences(of: "milligram", with: "mg")
+            .replacingOccurrences(of: "micrograms", with: "mcg")
+            .replacingOccurrences(of: "microgram", with: "mcg")
+            .replacingOccurrences(of: "tablets", with: "tablet")
+            .replacingOccurrences(of: "capsules", with: "capsule")
+            .replacingOccurrences(of: "caplets", with: "caplet")
+            .replacingOccurrences(of: "patches", with: "patch")
+            .replacingOccurrences(of: "pumps", with: "pump")
+            .replacingOccurrences(of: "actuations", with: "actuation")
+            .replacingOccurrences(of: "applications", with: "application")
+            .replacingOccurrences(of: "packets", with: "packet")
+            .replacingOccurrences(of: "sachets", with: "sachet")
+            .replacingOccurrences(of: "doses", with: "dose")
+            .replacingOccurrences(of: "softgels", with: "softgel")
+            .replacingOccurrences(of: "vials", with: "vial")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @available(iOS 26.0, *)
+    private func makeDoseDescription(
+        from doseSeedEvent: HKMedicationDoseEvent?,
+        rawDoseMG: Double?,
+        extras: [DoseEvent.ExtraKey: Double]
+    ) -> String? {
+        guard let doseSeedEvent else {
+            if let releaseRate = extras[.releaseRateUGPerDay] {
+                return "Parsed \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day from the medication name."
+            }
+            if let rawDoseMG {
+                return "Parsed \(formattedNumber(rawDoseMG)) mg from the medication name."
+            }
+            return nil
+        }
+
+        let quantity = doseSeedEvent.scheduledDoseQuantity ?? doseSeedEvent.doseQuantity
+        let unitString = doseSeedEvent.unit.unitString
+        let normalizedUnit = normalizedDoseUnit(unitString)
+
+        if let quantity,
+           let concentration = extras[.concentrationMGmL],
+           (normalizedUnit == "ml" || normalizedUnit == "l"),
+           let rawDoseMG {
+            return "\(formattedNumber(quantity)) \(unitString) × \(formattedNumber(concentration)) mg/mL → \(formattedNumber(rawDoseMG)) mg"
+        }
+
+        if let quantity,
+           let releaseRate = extras[.releaseRateUGPerDay] {
+            return "\(formattedNumber(quantity)) \(unitString) at \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day"
+        }
+
+        if let quantity,
+           let rawDoseMG {
+            return "\(formattedNumber(quantity)) \(unitString) → \(formattedNumber(rawDoseMG)) mg"
+        }
+
+        if let releaseRate = extras[.releaseRateUGPerDay] {
+            return "Parsed \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day from the medication name."
+        }
+
+        return rawDoseMG.map { "Parsed \(formattedNumber($0)) mg from the medication name." }
+    }
+
+    @available(iOS 26.0, *)
+    private func fallbackDoseDescription(from doseSeedEvent: HKMedicationDoseEvent?) -> String? {
+        guard let doseSeedEvent,
+              let quantity = doseSeedEvent.scheduledDoseQuantity ?? doseSeedEvent.doseQuantity else {
+            return nil
+        }
+        return "\(formattedNumber(quantity)) \(doseSeedEvent.unit.unitString)"
+    }
+
+    private func timingDates(
+        hasSchedule: Bool,
+        doseEvents: [HKMedicationDoseEvent]
+    ) -> [Date] {
+        guard hasSchedule else { return [] }
+
+        let exactScheduleDates = doseEvents
+            .filter { $0.scheduleType == .schedule }
+            .compactMap(\.scheduledDate)
+            .sorted()
+        if !exactScheduleDates.isEmpty {
+            return exactScheduleDates
+        }
+
+        let scheduledEventDates = doseEvents
+            .filter { $0.scheduleType == .schedule }
+            .map(\.startDate)
+            .sorted()
+        if !scheduledEventDates.isEmpty {
+            return scheduledEventDates
+        }
+
+        return doseEvents.map(\.startDate).sorted()
+    }
+
+    @available(iOS 26.0, *)
+    private func eventDate(for event: HKMedicationDoseEvent) -> Date {
+        event.scheduledDate ?? event.startDate
+    }
+
+    private func formattedNumber(
+        _ value: Double,
+        maximumFractionDigits: Int = 2
+    ) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale.current
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maximumFractionDigits
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     private func defaultRecurrence(for route: DoseEvent.Route, date: Date) -> MedicationPlanRecurrence {

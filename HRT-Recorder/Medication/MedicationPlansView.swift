@@ -1774,6 +1774,14 @@ private struct MedicationImportSuggestionCard: View {
                 )
             }
 
+            if let latestDoseDescription = suggestion.latestDoseDescription, !latestDoseDescription.isEmpty {
+                LabeledStatusRow(
+                    title: "Health dose",
+                    value: latestDoseDescription,
+                    systemImage: "pills"
+                )
+            }
+
             LabeledStatusRow(
                 title: String(localized: "medplan.import.health_mapping"),
                 value: alignmentSummary,

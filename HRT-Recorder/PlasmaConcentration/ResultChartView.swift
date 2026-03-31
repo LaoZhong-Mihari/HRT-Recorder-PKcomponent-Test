@@ -223,7 +223,7 @@ struct ResultChartView: View {
         self.sim = sim
         self.preferredChartHeight = preferredChartHeight
 
-        let points = Array(zip(sim.timeH, sim.concPGmL)).map { hour, concentration in
+        let points = Array(zip(sim.timeH, sim.concentrations)).map { hour, concentration in
             ResultChartPoint(hour: hour, concentration: concentration)
         }
 
@@ -240,7 +240,7 @@ struct ResultChartView: View {
     }
 
     private var yAxisLabel: String {
-        NSLocalizedString("chart.axis.conc", comment: "Y-axis label")
+        "\(sim.displayMetadata.hormone.displayName) concentration"
     }
 
     private var currentHour: Double {
@@ -248,7 +248,7 @@ struct ResultChartView: View {
     }
 
     private var chartAccentColor: Color {
-        .pink
+        sim.displayMetadata.hormone.chartColor
     }
 
     private var totalDomain: ClosedRange<Double> {
@@ -291,11 +291,7 @@ struct ResultChartView: View {
         guard let value = sim.concentration(at: currentHour) else {
             return NSLocalizedString("chart.currentConc.missing", comment: "Current concentration unavailable")
         }
-        let formatted = value.formatted(.number.precision(.fractionLength(1)))
-        return String.localizedStringWithFormat(
-            NSLocalizedString("chart.currentConc.value", comment: "Current concentration label"),
-            formatted
-        )
+        return ResultChartFormatter.concentrationLabel(for: value, unit: sim.concentrationUnit)
     }
 
     private var axisStepHours: Double {
@@ -403,7 +399,7 @@ struct ResultChartView: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let concentration = value.as(Double.self) {
-                        Text(ResultChartFormatter.yAxisLabel(for: concentration))
+                        Text(ResultChartFormatter.yAxisLabel(for: concentration, unit: sim.concentrationUnit))
                             .font(dynamicTypeSize.isAccessibilitySize ? .caption2 : .caption)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
@@ -520,7 +516,7 @@ struct ResultChartView: View {
                 }
             }
             .annotation(position: .top) {
-                ResultChartBadge(text: ResultChartFormatter.concentrationLabel(for: point.concentration))
+                ResultChartBadge(text: ResultChartFormatter.concentrationLabel(for: point.concentration, unit: sim.concentrationUnit))
                     .fixedSize()
             }
         }
@@ -731,8 +727,8 @@ struct ResultChartView: View {
 }
 
 private enum ResultChartFormatter {
-    static func concentrationLabel(for concentration: Double) -> String {
-        String(format: "%.1f pg/mL", locale: Locale.current, concentration)
+    static func concentrationLabel(for concentration: Double, unit: ConcentrationUnit) -> String {
+        String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
     }
 
     static func yAxisDomain(forMaximum concentration: Double) -> ClosedRange<Double> {
@@ -740,11 +736,11 @@ private enum ResultChartFormatter {
         return 0...topBoundary
     }
 
-    static func yAxisLabel(for concentration: Double) -> String {
+    static func yAxisLabel(for concentration: Double, unit: ConcentrationUnit) -> String {
         if concentration >= 10 {
-            return String(format: "%.0f pg/mL", locale: Locale.current, concentration)
+            return String(format: "%.0f %@", locale: Locale.current, concentration, unit.symbol)
         }
-        return String(format: "%.1f pg/mL", locale: Locale.current, concentration)
+        return String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
     }
 
     static func axisStep(for visibleHours: Double, targetLabelCount: Int) -> Double {

@@ -32,10 +32,9 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
         guard session.activationState == .activated else { return }
 
         let bridgeEvents = events.map(WatchDoseBridgeEvent.init)
-        let chartPoints = buildChartPoints(from: result)
         let payload = WatchDoseSnapshot(
             events: bridgeEvents,
-            chartPoints: chartPoints,
+            chartPoints: nil,
             bodyWeightKG: bodyWeightKG,
             eventsModifiedAt: eventsModifiedAt
         )
@@ -44,27 +43,24 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
         try? session.updateApplicationContext(["doseSnapshot": data])
     }
 
-    private func buildChartPoints(from result: SimulationResult?) -> [WatchChartPoint] {
-        guard let result else { return [] }
-
-        return Array(zip(result.timeH, result.concPGmL)).map {
-            WatchChartPoint(timeH: $0.0, concentration: $0.1)
-        }
-    }
-
     private func makeDoseEvent(from bridge: WatchDoseBridgeEvent) -> DoseEvent? {
-        guard let route = DoseEvent.Route(rawValue: bridge.routeRawValue),
-              let ester = Ester(rawValue: bridge.esterRawValue) else {
+        guard let route = DoseEvent.Route(rawValue: bridge.routeRawValue) else {
+            return nil
+        }
+
+        guard let compound = Compound(rawValue: bridge.compoundRawValue ?? bridge.esterRawValue ?? "") else {
             return nil
         }
 
         let extras = bridge.extras.compactMapKeys { DoseEvent.ExtraKey(rawValue: $0) }
+        let category = bridge.categoryRawValue.flatMap(MedicationCategory.init(rawValue:))
         return DoseEvent(
             id: bridge.id,
+            category: category,
             route: route,
             timeH: bridge.timeH,
             doseMG: bridge.doseMG,
-            ester: ester,
+            compound: compound,
             extras: extras,
             recordOnlyOralMedication: bridge.recordOnlyOralMedicationRawValue.flatMap(RecordOnlyOralMedication.init(rawValue:))
         )
@@ -183,26 +179,32 @@ private extension Dictionary {
 
 struct WatchDoseBridgeEvent: Codable {
     let id: UUID
+    let categoryRawValue: String?
     let routeRawValue: String
     let timeH: Double
     let doseMG: Double
-    let esterRawValue: String
+    let compoundRawValue: String?
+    let esterRawValue: String?
     let extras: [String: Double]
     let recordOnlyOralMedicationRawValue: String?
 
     init(
         id: UUID,
+        categoryRawValue: String?,
         routeRawValue: String,
         timeH: Double,
         doseMG: Double,
-        esterRawValue: String,
+        compoundRawValue: String?,
+        esterRawValue: String?,
         extras: [String: Double],
         recordOnlyOralMedicationRawValue: String?
     ) {
         self.id = id
+        self.categoryRawValue = categoryRawValue
         self.routeRawValue = routeRawValue
         self.timeH = timeH
         self.doseMG = doseMG
+        self.compoundRawValue = compoundRawValue
         self.esterRawValue = esterRawValue
         self.extras = extras
         self.recordOnlyOralMedicationRawValue = recordOnlyOralMedicationRawValue
@@ -210,10 +212,12 @@ struct WatchDoseBridgeEvent: Codable {
 
     init(event: DoseEvent) {
         self.id = event.id
+        self.categoryRawValue = event.category.rawValue
         self.routeRawValue = event.route.rawValue
         self.timeH = event.timeH
         self.doseMG = event.doseMG
-        self.esterRawValue = event.ester.rawValue
+        self.compoundRawValue = event.compound.rawValue
+        self.esterRawValue = event.compound.rawValue
         self.extras = event.extras.reduce(into: [:]) { partialResult, pair in
             partialResult[pair.key.rawValue] = pair.value
         }
@@ -222,9 +226,11 @@ struct WatchDoseBridgeEvent: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case categoryRawValue = "category"
         case routeRawValue = "route"
         case timeH
         case doseMG
+        case compoundRawValue = "compound"
         case esterRawValue = "ester"
         case extras
         case recordOnlyOralMedicationRawValue = "recordOnlyOralMedication"
@@ -248,7 +254,7 @@ struct WatchDoseReplacePayload: Codable {
 
 struct WatchDoseSnapshot: Codable {
     let events: [WatchDoseBridgeEvent]
-    let chartPoints: [WatchChartPoint]
+    let chartPoints: [WatchChartPoint]?
     let bodyWeightKG: Double
     let eventsModifiedAt: TimeInterval
 }

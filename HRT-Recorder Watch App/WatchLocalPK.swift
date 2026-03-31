@@ -1,55 +1,80 @@
 import Foundation
 import Combine
 
-private enum WatchCorePK {
-    static let vdPerKG: Double = 2.0
-    static let kClear: Double = 0.41
-    static let kClearInjection: Double = 0.041
-    static let depotK1Corr: Double = 1.0
+private struct WatchHormoneCoreParams {
+    let vdPerKG: Double
+    let kClear: Double
+    let kClearInjection: Double
+    let depotK1Corr: Double
 }
 
-enum WatchSublingualTier: Int {
-    case quick = 0
-    case casual = 1
-    case standard = 2
-    case strict = 3
+private enum WatchCorePK {
+    static let byHormone: [WatchSimulatedHormone: WatchHormoneCoreParams] = Dictionary(
+        uniqueKeysWithValues: WatchPKSharedCatalogResource.current.hormones.map { hormone, config in
+            (
+                hormone,
+                WatchHormoneCoreParams(
+                    vdPerKG: config.vdPerKG,
+                    kClear: config.kClear,
+                    kClearInjection: config.kClearInjection,
+                    depotK1Corr: config.depotK1Corr
+                )
+            )
+        }
+    )
+
+    static func params(for hormone: WatchSimulatedHormone) -> WatchHormoneCoreParams {
+        byHormone[hormone] ?? byHormone[.estradiol]!
+    }
+}
+
+enum WatchSublingualTier: String, CaseIterable {
+    case quick
+    case casual
+    case standard
+    case strict
 }
 
 enum WatchSublingualTheta {
-    static let recommended: [WatchSublingualTier: Double] = [
-        .quick: 0.01,
-        .casual: 0.04,
-        .standard: 0.11,
-        .strict: 0.18
-    ]
+    static let recommended = WatchPKSharedCatalogResource.current.sublingualRecommendedTheta
+    static let holdMinutes = WatchPKSharedCatalogResource.current.sublingualHoldMinutes
+    static let thetaRangeLow = WatchPKSharedCatalogResource.current.sublingualThetaRangeLow
+    static let thetaRangeHigh = WatchPKSharedCatalogResource.current.sublingualThetaRangeHigh
+}
 
-    static let holdMinutes: [WatchSublingualTier: Double] = [
-        .quick: 2,
-        .casual: 5,
-        .standard: 10,
-        .strict: 15
-    ]
+private struct WatchTwoPartDepotParams {
+    let fracFast: Double
+    let k1Fast: Double
+    let k1Slow: Double
 }
 
 private enum WatchTwoPartDepotPK {
-    static let fracFast: [WatchDoseEvent.Ester: Double] = [.EB: 0.90, .EV: 0.40, .EC: 0.229164549, .EN: 0.05, .E2: 1.0]
-    static let k1Fast: [WatchDoseEvent.Ester: Double] = [.EB: 0.144, .EV: 0.0216, .EC: 0.005035046, .EN: 0.0010, .E2: 0]
-    static let k1Slow: [WatchDoseEvent.Ester: Double] = [.EB: 0.114, .EV: 0.0138, .EC: 0.004510574, .EN: 0.0050, .E2: 0]
+    static let params: [WatchCompound: WatchTwoPartDepotParams] = Dictionary(
+        uniqueKeysWithValues: WatchPKSharedCatalogResource.current.twoPartDepot.map { compound, config in
+            (
+                compound,
+                WatchTwoPartDepotParams(
+                    fracFast: config.fracFast,
+                    k1Fast: config.k1Fast,
+                    k1Slow: config.k1Slow
+                )
+            )
+        }
+    )
 }
 
 private enum WatchInjectionPK {
-    static let formationFraction: [WatchDoseEvent.Ester: Double] = [.EB: 0.10922376473734707, .EV: 0.062258288229969413, .EC: 0.117255838, .EN: 0.12, .E2: 1.0]
+    static let formationFraction = WatchPKSharedCatalogResource.current.formationFraction
 }
 
-private enum WatchEsterPK {
-    static let k2: [WatchDoseEvent.Ester: Double] = [.EB: 0.090, .EV: 0.070, .EC: 0.045, .EN: 0.015, .E2: 0]
+private enum WatchCompoundHydrolysisPK {
+    static let k2 = WatchPKSharedCatalogResource.current.hydrolysisK2
 }
 
 private enum WatchOralPK {
-    static let kAbsE2: Double = 0.32
-    static let kAbsEV: Double = 0.05
-    static let bioavailability: Double = 0.03
-    static let kAbsSL: Double = 1.8
+    static let kAbs = WatchPKSharedCatalogResource.current.oralKAbs
+    static let bioavailability = WatchPKSharedCatalogResource.current.oralBioavailability
+    static let kAbsSL = WatchPKSharedCatalogResource.current.kAbsSL
 }
 
 private struct WatchPKParams {
@@ -65,45 +90,94 @@ private struct WatchPKParams {
 
 private enum WatchParameterResolver {
     static func resolve(event: WatchDoseEvent) -> WatchPKParams {
-        let k3 = (event.route == .injection) ? WatchCorePK.kClearInjection : WatchCorePK.kClear
+        guard let hormone = event.simulatedHormone else {
+            return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: 0, rateMGh: 0, fFast: 0, fSlow: 0)
+        }
+
+        let core = WatchCorePK.params(for: hormone)
+        let k3 = event.route == .injection ? core.kClearInjection : core.kClear
 
         switch event.route {
         case .injection:
-            let k1corr = WatchCorePK.depotK1Corr
-            let k1Fast = (WatchTwoPartDepotPK.k1Fast[event.ester] ?? 0) * k1corr
-            let k1Slow = (WatchTwoPartDepotPK.k1Slow[event.ester] ?? 0) * k1corr
-            let fracFast = WatchTwoPartDepotPK.fracFast[event.ester] ?? 1.0
-            let f = WatchInjectionPK.formationFraction[event.ester] ?? 0.1
-            return WatchPKParams(fracFast: fracFast, k1Fast: k1Fast, k1Slow: k1Slow, k2: WatchEsterPK.k2[event.ester] ?? 0, k3: k3, rateMGh: 0, fFast: f, fSlow: f)
+            let depot = WatchTwoPartDepotPK.params[event.compound]
+            let k1corr = core.depotK1Corr
+            let k1Fast = (depot?.k1Fast ?? 0) * k1corr
+            let k1Slow = (depot?.k1Slow ?? 0) * k1corr
+            let fracFast = depot?.fracFast ?? 1.0
+            let formationFraction = WatchInjectionPK.formationFraction[event.compound] ?? 1.0
+            return WatchPKParams(
+                fracFast: fracFast,
+                k1Fast: k1Fast,
+                k1Slow: k1Slow,
+                k2: WatchCompoundHydrolysisPK.k2[event.compound] ?? 0,
+                k3: k3,
+                rateMGh: 0,
+                fFast: formationFraction,
+                fSlow: formationFraction
+            )
 
         case .patchApply:
-            if let rUG = event.extras[.releaseRateUGPerDay] {
-                return WatchPKParams(fracFast: 1.0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: rUG / 24_000.0, fFast: 1.0, fSlow: 1.0)
+            if let releaseRateUGPerDay = event.extras[.releaseRateUGPerDay] {
+                return WatchPKParams(
+                    fracFast: 1.0,
+                    k1Fast: 0,
+                    k1Slow: 0,
+                    k2: 0,
+                    k3: k3,
+                    rateMGh: releaseRateUGPerDay / 24_000.0,
+                    fFast: 1.0,
+                    fSlow: 1.0
+                )
             }
-            return WatchPKParams(fracFast: 1.0, k1Fast: 0.0075, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 1.0, fSlow: 1.0)
+            let fallbackK1 = WatchPKSharedCatalogResource.current.hormones[hormone]?.patchFallbackK1 ?? 0
+            return WatchPKParams(fracFast: 1.0, k1Fast: fallbackK1, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 1.0, fSlow: 1.0)
 
         case .patchRemove:
             return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0)
 
         case .gel:
-            return WatchPKParams(fracFast: 1.0, k1Fast: 0.022, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0.05, fSlow: 0.05)
+            let config = WatchPKSharedCatalogResource.current.hormones[hormone]
+            return WatchPKParams(
+                fracFast: 1.0,
+                k1Fast: config?.gelK1 ?? 0,
+                k1Slow: 0,
+                k2: 0,
+                k3: k3,
+                rateMGh: 0,
+                fFast: config?.gelFmax ?? 0,
+                fSlow: config?.gelFmax ?? 0
+            )
 
         case .oral:
-            let ka = (event.ester == .EV) ? WatchOralPK.kAbsEV : WatchOralPK.kAbsE2
-            let k2 = (event.ester == .EV) ? (WatchEsterPK.k2[.EV] ?? 0) : 0
-            return WatchPKParams(fracFast: 1.0, k1Fast: ka, k1Slow: 0, k2: k2, k3: k3, rateMGh: 0, fFast: WatchOralPK.bioavailability, fSlow: WatchOralPK.bioavailability)
+            let k1 = WatchOralPK.kAbs[event.compound] ?? 0
+            let k2 = (hormone == .estradiol && event.compound == .EV) ? (WatchCompoundHydrolysisPK.k2[.EV] ?? 0) : 0
+            let bioavailability = WatchOralPK.bioavailability[event.compound] ?? 0
+            return WatchPKParams(fracFast: 1.0, k1Fast: k1, k1Slow: 0, k2: k2, k3: k3, rateMGh: 0, fFast: bioavailability, fSlow: bioavailability)
 
         case .sublingual:
+            guard hormone == .estradiol else {
+                return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0)
+            }
             let theta: Double
             if let explicit = event.extras[.sublingualTheta] {
                 theta = max(0, min(1, explicit))
             } else {
-                let idx = Int((event.extras[.sublingualTier] ?? 2).rounded())
-                let tier = WatchSublingualTier(rawValue: min(max(idx, 0), 3)) ?? .standard
+                let index = Int((event.extras[.sublingualTier] ?? 2).rounded())
+                let tier = WatchSublingualTier.allCases[safe: min(max(index, 0), WatchSublingualTier.allCases.count - 1)] ?? .standard
                 theta = WatchSublingualTheta.recommended[tier] ?? 0.11
             }
-            let k2 = (event.ester == .EV) ? (WatchEsterPK.k2[.EV] ?? 0) : 0
-            return WatchPKParams(fracFast: theta, k1Fast: WatchOralPK.kAbsSL, k1Slow: (event.ester == .EV ? WatchOralPK.kAbsEV : WatchOralPK.kAbsE2), k2: k2, k3: k3, rateMGh: 0, fFast: 1.0, fSlow: WatchOralPK.bioavailability)
+
+            let k2 = event.compound == .EV ? (WatchCompoundHydrolysisPK.k2[.EV] ?? 0) : 0
+            return WatchPKParams(
+                fracFast: theta,
+                k1Fast: WatchOralPK.kAbsSL,
+                k1Slow: WatchOralPK.kAbs[event.compound] ?? 0,
+                k2: k2,
+                k3: k3,
+                rateMGh: 0,
+                fFast: 1.0,
+                fSlow: WatchOralPK.bioavailability[event.compound] ?? 0
+            )
         }
     }
 }
@@ -130,24 +204,24 @@ private enum WatchPKModel {
         return doseMG * f * ka / (ka - ke) * (exp(-ke * tau) - exp(-ka * tau))
     }
 
-    static func concentrationAt(timeH: Double, events: [WatchDoseEvent], bodyWeightKG: Double) -> Double {
-        let plasmaVolumeML = WatchCorePK.vdPerKG * bodyWeightKG * 1000
+    static func concentrationAt(timeH: Double, events: [WatchDoseEvent], hormone: WatchSimulatedHormone, bodyWeightKG: Double) -> Double {
+        let core = WatchCorePK.params(for: hormone)
+        let plasmaVolumeML = core.vdPerKG * bodyWeightKG * 1000
         guard plasmaVolumeML > 0 else { return 0 }
 
         var totalAmountMG = 0.0
 
-        for event in events {
-            if event.route == .patchRemove { continue }
+        for event in events where event.route != .patchRemove {
             let p = WatchParameterResolver.resolve(event: event)
             let tau = timeH - event.timeH
             if tau < 0 { continue }
 
             switch event.route {
             case .injection:
-                let doseF = event.doseMG * p.fracFast
-                let doseS = event.doseMG * (1.0 - p.fracFast)
-                totalAmountMG += analytic3C(tau: tau, doseMG: doseF, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
-                totalAmountMG += analytic3C(tau: tau, doseMG: doseS, f: p.fSlow, k1: p.k1Slow, k2: p.k2, k3: p.k3)
+                let doseFast = event.doseMG * p.fracFast
+                let doseSlow = event.doseMG * (1.0 - p.fracFast)
+                totalAmountMG += analytic3C(tau: tau, doseMG: doseFast, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
+                totalAmountMG += analytic3C(tau: tau, doseMG: doseSlow, f: p.fSlow, k1: p.k1Slow, k2: p.k2, k3: p.k3)
 
             case .patchApply:
                 if p.rateMGh > 0 {
@@ -166,14 +240,13 @@ private enum WatchPKModel {
 
             case .sublingual:
                 if p.k2 > 0 {
-                    let doseF = event.doseMG * p.fracFast
-                    let doseS = event.doseMG * (1.0 - p.fracFast)
-                    totalAmountMG += analytic3C(tau: tau, doseMG: doseF, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
-                    totalAmountMG += analytic3C(tau: tau, doseMG: doseS, f: p.fSlow, k1: p.k1Slow, k2: p.k2, k3: p.k3)
+                    let doseFast = event.doseMG * p.fracFast
+                    let doseSlow = event.doseMG * (1.0 - p.fracFast)
+                    totalAmountMG += analytic3C(tau: tau, doseMG: doseFast, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
+                    totalAmountMG += oneComp(tau: tau, doseMG: doseSlow, f: p.fSlow, ka: p.k1Slow, ke: p.k3)
                 } else {
-                    let fast = oneComp(tau: tau, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
-                    let slow = oneComp(tau: tau, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
-                    totalAmountMG += fast + slow
+                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
                 }
 
             case .patchRemove:
@@ -181,7 +254,7 @@ private enum WatchPKModel {
             }
         }
 
-        return totalAmountMG * (1e9 / plasmaVolumeML)
+        return totalAmountMG * (hormone.concentrationUnit.concentrationScale / plasmaVolumeML)
     }
 }
 
@@ -193,17 +266,39 @@ final class WatchDoseTimelineVM: ObservableObject {
             runSimulation()
         }
     }
+    @Published var selectedHormone: WatchSimulatedHormone = .estradiol {
+        didSet {
+            UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
+            runSimulation()
+        }
+    }
     @Published private(set) var localChartPoints: [WatchChartPoint] = []
     @Published private(set) var currentConcentration: Double?
+    @Published private(set) var displayMetadata: WatchSimulationDisplayMetadata
 
     private let store: WatchDoseStore
     private var cancellables = Set<AnyCancellable>()
     private let weightKey = "watch.user.weightKg"
+    private let selectedHormoneKey = "watch.timeline.selectedHormone"
 
     init(store: WatchDoseStore) {
         self.store = store
-        let saved = UserDefaults.standard.double(forKey: weightKey)
-        self.bodyWeightKG = saved > 0 ? saved : 70.0
+        let savedWeight = UserDefaults.standard.double(forKey: weightKey)
+        self.bodyWeightKG = savedWeight > 0 ? savedWeight : 70.0
+
+        let initialSelectedHormone: WatchSimulatedHormone
+        if let savedHormoneRawValue = UserDefaults.standard.string(forKey: selectedHormoneKey),
+           let savedHormone = WatchSimulatedHormone(rawValue: savedHormoneRawValue) {
+            initialSelectedHormone = savedHormone
+        } else {
+            initialSelectedHormone = .estradiol
+        }
+        self.selectedHormone = initialSelectedHormone
+
+        self.displayMetadata = WatchSimulationDisplayMetadata(
+            hormone: initialSelectedHormone,
+            concentrationUnit: initialSelectedHormone.concentrationUnit
+        )
 
         store.$events
             .sink { [weak self] _ in
@@ -214,30 +309,59 @@ final class WatchDoseTimelineVM: ObservableObject {
         runSimulation()
     }
 
+    var visibleEvents: [WatchDoseEvent] {
+        store.events.filter { $0.appearsInTimeline(for: selectedHormone) }
+    }
+
     func runSimulation() {
-        let events = store.events.sorted { $0.timeH < $1.timeH }
-        guard !events.isEmpty else {
+        displayMetadata = WatchSimulationDisplayMetadata(
+            hormone: selectedHormone,
+            concentrationUnit: selectedHormone.concentrationUnit
+        )
+
+        let simulationEvents = store.events
+            .filter { $0.participatesInSimulation && $0.simulatedHormone == selectedHormone }
+            .sorted { $0.timeH < $1.timeH }
+
+        guard !simulationEvents.isEmpty else {
             localChartPoints = []
             currentConcentration = nil
             return
         }
 
         let nowH = Date().timeIntervalSince1970 / 3600.0
-        let startH = (events.first?.timeH ?? nowH) - 24.0
-        let endH = (events.last?.timeH ?? nowH) + 24.0 * 14.0
+        let startH = (simulationEvents.first?.timeH ?? nowH) - 24.0
+        let endH = (simulationEvents.last?.timeH ?? nowH) + 24.0 * 14.0
         let steps = 1000
         let stepH = (endH - startH) / Double(steps - 1)
 
         var points: [WatchChartPoint] = []
         points.reserveCapacity(steps)
 
-        for i in 0..<steps {
-            let t = startH + Double(i) * stepH
-            let c = WatchPKModel.concentrationAt(timeH: t, events: events, bodyWeightKG: bodyWeightKG)
-            points.append(WatchChartPoint(timeH: t, concentration: c))
+        for index in 0..<steps {
+            let timeH = startH + Double(index) * stepH
+            let concentration = WatchPKModel.concentrationAt(
+                timeH: timeH,
+                events: simulationEvents,
+                hormone: selectedHormone,
+                bodyWeightKG: bodyWeightKG
+            )
+            points.append(WatchChartPoint(timeH: timeH, concentration: concentration))
         }
 
         localChartPoints = points
-        currentConcentration = WatchPKModel.concentrationAt(timeH: nowH, events: events, bodyWeightKG: bodyWeightKG)
+        currentConcentration = WatchPKModel.concentrationAt(
+            timeH: nowH,
+            events: simulationEvents,
+            hormone: selectedHormone,
+            bodyWeightKG: bodyWeightKG
+        )
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        guard indices.contains(index) else { return nil }
+        return self[index]
     }
 }

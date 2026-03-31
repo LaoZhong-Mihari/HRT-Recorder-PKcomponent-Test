@@ -99,8 +99,19 @@ struct TimelineScreen: View {
         }
     }
 
+    private var hormoneSwitcherSection: some View {
+        Section {
+            Picker("Hormone", selection: $vm.selectedHormone) {
+                Text("Estradiol").tag(SimulatedHormone.estradiol)
+                Text("Testosterone").tag(SimulatedHormone.testosterone)
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
     private var timelineList: some View {
         List {
+            hormoneSwitcherSection
             timelineSections
         }
         .listStyle(InsetGroupedListStyle())
@@ -193,7 +204,7 @@ struct TimelineScreen: View {
             .sheet(item: $activeSheet) { mode in
                 switch mode {
                 case .add(_):
-                    InputEventView(eventToEdit: nil) { event in
+                    InputEventView(eventToEdit: nil, preferredCategory: vm.selectedHormone.category) { event in
                         vm.save(event)
                     }
 
@@ -201,6 +212,7 @@ struct TimelineScreen: View {
                     InputEventView(
                         eventToEdit: nil,
                         seed: seed,
+                        preferredCategory: vm.selectedHormone.category,
                         navigationTitleOverride: seed.title,
                         onSave: { event in
                             vm.save(event)
@@ -235,7 +247,7 @@ struct TimelineScreen: View {
                     }
 
                 case .edit(let event):
-                    InputEventView(eventToEdit: event) { updated in
+                    InputEventView(eventToEdit: event, preferredCategory: event.category) { updated in
                         vm.save(updated)
                     }
                 }

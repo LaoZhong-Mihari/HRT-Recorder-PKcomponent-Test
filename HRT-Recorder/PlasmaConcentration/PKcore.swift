@@ -35,17 +35,128 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
         case sublingualTheta
         case sublingualTier          // 0: quick, 1: casual, 2: standard, 3: strict
     }
+    let category: MedicationCategory
     let route: Route
     let timeH: Double
     let doseMG: Double
-    let ester: Ester
+    let compound: Compound
     let extras: [ExtraKey: Double]
     let recordOnlyOralMedication: RecordOnlyOralMedication?
+
+    init(
+        id: UUID,
+        category: MedicationCategory? = nil,
+        route: Route,
+        timeH: Double,
+        doseMG: Double,
+        compound: Compound,
+        extras: [ExtraKey: Double],
+        recordOnlyOralMedication: RecordOnlyOralMedication?
+    ) {
+        let resolvedCategory = category
+            ?? (recordOnlyOralMedication != nil ? .antiAndrogen : compound.medicationCategory)
+
+        self.id = id
+        self.category = resolvedCategory
+        self.route = route
+        self.timeH = timeH
+        self.doseMG = doseMG
+        self.compound = compound
+        self.extras = extras
+        self.recordOnlyOralMedication = recordOnlyOralMedication
+    }
+
+    init(
+        id: UUID,
+        category: MedicationCategory? = nil,
+        route: Route,
+        timeH: Double,
+        doseMG: Double,
+        ester: Ester,
+        extras: [ExtraKey: Double],
+        recordOnlyOralMedication: RecordOnlyOralMedication?
+    ) {
+        self.init(
+            id: id,
+            category: category,
+            route: route,
+            timeH: timeH,
+            doseMG: doseMG,
+            compound: ester,
+            extras: extras,
+            recordOnlyOralMedication: recordOnlyOralMedication
+        )
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case category
+        case route
+        case timeH
+        case doseMG
+        case compound
+        case ester
+        case extras
+        case recordOnlyOralMedication
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let route = try container.decode(Route.self, forKey: .route)
+        let timeH = try container.decode(Double.self, forKey: .timeH)
+        let doseMG = try container.decode(Double.self, forKey: .doseMG)
+        let compound = try container.decodeIfPresent(Compound.self, forKey: .compound)
+            ?? container.decode(Compound.self, forKey: .ester)
+        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
+        let recordOnly = try container.decodeIfPresent(RecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
+        let category = try container.decodeIfPresent(MedicationCategory.self, forKey: .category)
+
+        self.init(
+            id: id,
+            category: category,
+            route: route,
+            timeH: timeH,
+            doseMG: doseMG,
+            compound: compound,
+            extras: extras,
+            recordOnlyOralMedication: recordOnly
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(category, forKey: .category)
+        try container.encode(route, forKey: .route)
+        try container.encode(timeH, forKey: .timeH)
+        try container.encode(doseMG, forKey: .doseMG)
+        try container.encode(compound, forKey: .compound)
+        try container.encode(extras, forKey: .extras)
+        try container.encodeIfPresent(recordOnlyOralMedication, forKey: .recordOnlyOralMedication)
+    }
 }
 
 extension DoseEvent {
+    nonisolated var ester: Ester { compound }
+
+    nonisolated var simulatedHormone: SimulatedHormone? {
+        category.simulatedHormone
+    }
+
     nonisolated var participatesInSimulation: Bool {
-        recordOnlyOralMedication == nil
+        recordOnlyOralMedication == nil && simulatedHormone != nil
+    }
+
+    nonisolated func appearsInTimeline(for hormone: SimulatedHormone) -> Bool {
+        switch category {
+        case .estradiol:
+            return hormone == .estradiol
+        case .testosterone:
+            return hormone == .testosterone
+        case .antiAndrogen:
+            return hormone == .estradiol
+        }
     }
 }
 
@@ -69,25 +180,28 @@ struct PKParams: Sendable {
 
 struct ParameterResolver {
     public static func resolve(event: DoseEvent, bodyWeightKG: Double) -> PKParams {
-        let k3 = (event.route == .injection) ? CorePK.kClearInjection : CorePK.kClear
+        guard let hormone = event.simulatedHormone else {
+            return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: 0, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0)
+        }
+
+        let core = CorePK.params(for: hormone)
+        let k3 = (event.route == .injection) ? core.kClearInjection : core.kClear
+
         switch event.route {
         case .injection:
-            // new two-part-depot params + formationFraction + global k1-correction
-            let k1corr   = CorePK.depotK1Corr
-            let k1_fast  = (TwoPartDepotPK.k1_fast[event.ester]  ?? 0) * k1corr
-            let k1_slow  = (TwoPartDepotPK.k1_slow[event.ester]  ?? 0) * k1corr
-            let fracFast =  TwoPartDepotPK.Frac_fast[event.ester] ?? 1.0
-
-            // F = formationFraction × 分子量换算 toE2Factor
-            let form = InjectionPK.formationFraction[event.ester] ?? 0.08
-            let toE2 = EsterInfo.by(ester: event.ester).toE2Factor
-            let F    = form * toE2
+            let depot = TwoPartDepotPK.params(for: event.compound)
+            let k1corr = core.depotK1Corr
+            let k1_fast = (depot?.k1Fast ?? 0) * k1corr
+            let k1_slow = (depot?.k1Slow ?? 0) * k1corr
+            let fracFast = depot?.fracFast ?? 1.0
+            let form = InjectionPK.formationFraction[event.compound] ?? 1.0
+            let F = form
 
             return PKParams(
                 Frac_fast: fracFast,
                 k1_fast:   k1_fast,
                 k1_slow:   k1_slow,
-                k2:        EsterPK.k2[event.ester] ?? 0,
+                k2:        CompoundHydrolysisPK.k2[event.compound] ?? 0,
                 k3:        k3,
                 F:         F,
                 rateMGh:   0,
@@ -97,17 +211,15 @@ struct ParameterResolver {
         case .patchApply:
             if let rUG = event.extras[.releaseRateUGPerDay] {          // zero‑order
                 let rateMGh = rUG / 24_000.0                           // µg/day → mg/h
-                // MODIFIED: Adapt to new PKParams struct for constant-k model.
                 return PKParams(Frac_fast: 1.0, k1_fast: 0, k1_slow: 0,
                                 k2: 0, k3: k3,
                                 F: 1.0, rateMGh: rateMGh,
                                 F_fast: 1.0, F_slow: 1.0)
             } else {                                                   // first‑order
                 let k1: Double = {
-                    if case let .firstOrder(k1Val) = PatchPK.generic { return k1Val }
+                    if case let .firstOrder(k1Val) = PatchPK.generic(for: hormone) { return k1Val }
                     return 0
                 }()
-                // MODIFIED: Adapt to new PKParams struct for constant-k model.
                 return PKParams(Frac_fast: 1.0, k1_fast: k1, k1_slow: 0,
                                 k2: 0, k3: k3,
                                 F: 1.0, rateMGh: 0,
@@ -115,27 +227,28 @@ struct ParameterResolver {
             }
         case .gel:
             let area = event.extras[.areaCM2] ?? 750
-            let tuple = TransdermalGelPK.parameters(doseMG: event.doseMG, areaCM2: area)
-            // MODIFIED: Adapt to new PKParams struct for constant-k model.
+            let tuple = TransdermalGelPK.parameters(doseMG: event.doseMG, areaCM2: area, hormone: hormone)
             return PKParams(Frac_fast: 1.0, k1_fast: tuple.k1, k1_slow: 0,
                             k2: 0, k3: k3,
                             F: tuple.F, rateMGh: 0,
                             F_fast: tuple.F, F_slow: tuple.F)
         case .oral:
-            let k1Value = (event.ester == .EV) ? OralPK.kAbsEV : OralPK.kAbsE2
-            let k2Value = (event.ester == .EV) ? (EsterPK.k2[.EV] ?? 0) : 0
-            // MODIFIED: Adapt to new PKParams struct for constant-k model.
+            let k1Value = OralPK.kAbs(for: event.compound)
+            let k2Value = (hormone == .estradiol && event.compound == .EV) ? (CompoundHydrolysisPK.k2[.EV] ?? 0) : 0
+            let bioavailability = OralPK.bioavailability(for: event.compound)
             return PKParams(Frac_fast: 1.0, k1_fast: k1Value, k1_slow: 0,
                             k2: k2Value, k3: k3,
-                            F: OralPK.bioavailability, rateMGh: 0,
-                            F_fast: OralPK.bioavailability, F_slow: OralPK.bioavailability)
+                            F: bioavailability, rateMGh: 0,
+                            F_fast: bioavailability, F_slow: bioavailability)
         case .patchRemove:
-             // MODIFIED: Adapt to new PKParams struct.
              return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0,
                              k2: 0, k3: k3,
                              F: 0, rateMGh: 0,
                              F_fast: 0, F_slow: 0)
         case .sublingual:
+            guard hormone == .estradiol else {
+                return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: k3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0)
+            }
             // θ resolver: prefer explicit theta; otherwise map from UI tier code.
             // UI should set one of:
             //   - extras[.sublingualTheta] = Double in [0,1]
@@ -160,16 +273,16 @@ struct ParameterResolver {
                 return 0.11
             }()
             let k1_fast = OralPK.kAbsSL
-            let k1_slow = (event.ester == .EV) ? OralPK.kAbsEV : OralPK.kAbsE2
+            let k1_slow = OralPK.kAbs(for: event.compound)
 
             // 舌下快通路（黏膜）默认 F_fast = 1（剂量按 E2 当量输入）
             // 吞咽慢通路（相当于口服）F_slow = 口服生物利用度
             let F_fast = 1.0
-            let F_slow = OralPK.bioavailability
+            let F_slow = OralPK.bioavailability(for: event.compound)
 
             // 若为 EV，保留已标定的 k2（供舌下快支路/其他 3C 路径使用）；E2 则 k2 = 0。
             // 舌下慢支路（吞咽→胃肠）会按 oral 一室模型计算，不再额外水解。
-            let k2Value = (event.ester == .EV) ? (EsterPK.k2[.EV] ?? 0) : 0
+            let k2Value = (event.compound == .EV) ? (CompoundHydrolysisPK.k2[.EV] ?? 0) : 0
 
             return PKParams(
                 Frac_fast: max(0.0, min(1.0, theta)),
@@ -375,15 +488,19 @@ struct ThreeCompartmentModel {
 
 struct SimulationResult: Equatable, Sendable {
     let timeH: [Double]
-    let concPGmL: [Double]
+    let concentrations: [Double]
     let auc: Double
+    let displayMetadata: SimulationDisplayMetadata
+
+    nonisolated var concPGmL: [Double] { concentrations }
+    nonisolated var concentrationUnit: ConcentrationUnit { displayMetadata.concentrationUnit }
 }
 
 extension SimulationResult {
     func concentration(at hour: Double) -> Double? {
-        guard !timeH.isEmpty, timeH.count == concPGmL.count else { return nil }
-        if hour <= timeH.first! { return concPGmL.first }
-        if hour >= timeH.last! { return concPGmL.last }
+        guard !timeH.isEmpty, timeH.count == concentrations.count else { return nil }
+        if hour <= timeH.first! { return concentrations.first }
+        if hour >= timeH.last! { return concentrations.last }
 
         var low = 0
         var high = timeH.count - 1
@@ -391,7 +508,7 @@ extension SimulationResult {
         while high - low > 1 {
             let mid = (low + high) / 2
             if timeH[mid] == hour {
-                return concPGmL[mid]
+                return concentrations[mid]
             } else if timeH[mid] < hour {
                 low = mid
             } else {
@@ -401,8 +518,8 @@ extension SimulationResult {
 
         let t0 = timeH[low]
         let t1 = timeH[high]
-        let c0 = concPGmL[low]
-        let c1 = concPGmL[high]
+        let c0 = concentrations[low]
+        let c1 = concentrations[high]
         guard t1 > t0 else { return c0 }
         let ratio = (hour - t0) / (t1 - t0)
         return c0 + (c1 - c0) * ratio
@@ -411,17 +528,19 @@ extension SimulationResult {
 
 func simulateTimelineResult(
     events: [DoseEvent],
+    hormone: SimulatedHormone,
     bodyWeightKG: Double,
     historyPaddingHours: Double = 24.0,
     forecastHours: Double = 24.0 * 14.0,
     numberOfSteps: Int = 1000
 ) -> SimulationResult {
-    let simulatedEvents = events.filter(\.participatesInSimulation)
+    let simulatedEvents = events.filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
     let startTime = (simulatedEvents.first?.timeH ?? 0) - historyPaddingHours
     let endTime = (simulatedEvents.last?.timeH ?? startTime) + forecastHours
 
     let engine = SimulationEngine(
         events: simulatedEvents,
+        hormone: hormone,
         bodyWeightKG: bodyWeightKG,
         startTimeH: startTime,
         endTimeH: endTime,
@@ -434,18 +553,20 @@ func simulateTimelineResult(
 struct SimulationEngine: Sendable {
     private let precomputedModels: [PrecomputedEventModel]
     private let plasmaVolumeML: Double
+    private let displayMetadata: SimulationDisplayMetadata
     let startTimeH: Double
     let endTimeH: Double
     let numberOfSteps: Int
 
-    init(events: [DoseEvent], bodyWeightKG: Double, startTimeH: Double, endTimeH: Double, numberOfSteps: Int) {
+    init(events: [DoseEvent], hormone: SimulatedHormone, bodyWeightKG: Double, startTimeH: Double, endTimeH: Double, numberOfSteps: Int) {
         self.precomputedModels = events.compactMap { event -> PrecomputedEventModel? in
             guard event.route != .patchRemove else { return nil }
             return PrecomputedEventModel(event: event, allEvents: events, bodyWeightKG: bodyWeightKG)
         }
-        
-        // Literature values for estradiol are typically in the 10-15 L/kg range due to tissue binding.
-        self.plasmaVolumeML = CorePK.vdPerKG * bodyWeightKG * 1000
+
+        let core = CorePK.params(for: hormone)
+        self.plasmaVolumeML = core.vdPerKG * bodyWeightKG * 1000
+        self.displayMetadata = SimulationDisplayMetadata(hormone: hormone, concentrationUnit: hormone.concentrationUnit)
         self.startTimeH = startTimeH
         self.endTimeH = endTimeH
         self.numberOfSteps = numberOfSteps
@@ -453,7 +574,7 @@ struct SimulationEngine: Sendable {
 
     func run() -> SimulationResult {
         guard startTimeH < endTimeH, numberOfSteps > 1, plasmaVolumeML > 0 else {
-            return SimulationResult(timeH: [], concPGmL: [], auc: 0)
+            return SimulationResult(timeH: [], concentrations: [], auc: 0, displayMetadata: displayMetadata)
         }
 
         let stepSize = (endTimeH - startTimeH) / Double(numberOfSteps - 1)
@@ -462,7 +583,7 @@ struct SimulationEngine: Sendable {
         timeArr.reserveCapacity(numberOfSteps)
         concArr.reserveCapacity(numberOfSteps)
         var auc = 0.0
-        let concentrationScale = 1e9 / plasmaVolumeML
+        let concentrationScale = displayMetadata.concentrationUnit.concentrationScale / plasmaVolumeML
         var previousConc = 0.0
 
         for i in 0..<numberOfSteps {
@@ -484,6 +605,6 @@ struct SimulationEngine: Sendable {
             previousConc = currentConc
         }
         
-        return SimulationResult(timeH: timeArr, concPGmL: concArr, auc: auc)
+        return SimulationResult(timeH: timeArr, concentrations: concArr, auc: auc, displayMetadata: displayMetadata)
     }
 }

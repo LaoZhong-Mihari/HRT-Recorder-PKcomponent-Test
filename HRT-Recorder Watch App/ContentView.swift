@@ -33,6 +33,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
+                hormoneSection
                 concentrationSection
                 eventSection
             }
@@ -52,11 +53,11 @@ struct ContentView: View {
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .add:
-                    WatchAddDoseView { event in
+                    WatchAddDoseView(preferredCategory: timelineVM.selectedHormone.category) { event in
                         save(event)
                     }
                 case .edit(let event):
-                    WatchAddDoseView(eventToEdit: event) { updatedEvent in
+                    WatchAddDoseView(eventToEdit: event, preferredCategory: event.category) { updatedEvent in
                         save(updatedEvent)
                     }
                 }
@@ -72,13 +73,25 @@ struct ContentView: View {
         }
     }
 
+    private var hormoneSection: some View {
+        Section {
+            Picker("Hormone", selection: $timelineVM.selectedHormone) {
+                Text("Estradiol").tag(WatchSimulatedHormone.estradiol)
+                Text("Testosterone").tag(WatchSimulatedHormone.testosterone)
+            }
+        }
+    }
+
     private var chartPointsForDisplay: [WatchChartPoint] {
-        let sourcePoints = syncService.chartPoints.isEmpty ? timelineVM.localChartPoints : syncService.chartPoints
-        return sourcePoints.sorted { $0.timeH < $1.timeH }
+        timelineVM.localChartPoints.sorted { $0.timeH < $1.timeH }
     }
 
     private var concentrationForDisplay: Double? {
-        syncService.currentConcentration ?? timelineVM.currentConcentration
+        timelineVM.currentConcentration
+    }
+
+    private var visibleEvents: [WatchDoseEvent] {
+        timelineVM.visibleEvents
     }
 
     private var concentrationSection: some View {
@@ -92,6 +105,8 @@ struct ContentView: View {
             if !chartPointsForDisplay.isEmpty {
                 WatchInteractiveChartCard(
                     points: chartPointsForDisplay,
+                    unit: timelineVM.displayMetadata.concentrationUnit,
+                    accentColor: timelineVM.selectedHormone.chartColor,
                     isInlineChartActive: $isInlineChartActive
                 )
             }
@@ -100,11 +115,11 @@ struct ContentView: View {
 
     private var eventSection: some View {
         Section("watch.section.events") {
-            if store.events.isEmpty {
+            if visibleEvents.isEmpty {
                 Text("watch.events.empty")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(store.events) { event in
+                ForEach(visibleEvents) { event in
                     Button {
                         isInlineChartActive = false
                         activeSheet = .edit(event)
@@ -114,7 +129,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                 }
                 .onDelete { offsets in
-                    store.delete(at: offsets)
+                    deleteVisibleEvents(at: offsets)
                     syncService.replaceAll(events: store.events)
                 }
             }
@@ -123,9 +138,21 @@ struct ContentView: View {
 
     private var currentConcentrationText: String {
         if let value = concentrationForDisplay {
-            return String(format: "%.1f pg/mL", locale: Locale.current, value)
+            return String(
+                format: "%.1f %@",
+                locale: Locale.current,
+                value,
+                timelineVM.displayMetadata.concentrationSymbol
+            )
         }
         return "--"
+    }
+
+    private func deleteVisibleEvents(at offsets: IndexSet) {
+        let idsToDelete = offsets.compactMap { visibleEvents[safe: $0]?.id }
+        guard !idsToDelete.isEmpty else { return }
+        let remaining = store.events.filter { !idsToDelete.contains($0.id) }
+        store.replace(with: remaining)
     }
 
     private func save(_ event: WatchDoseEvent) {
@@ -136,25 +163,36 @@ struct ContentView: View {
 
 private struct WatchInteractiveChartCard: View {
     let points: [WatchChartPoint]
+    let unit: WatchConcentrationUnit
+    let accentColor: Color
     @Binding var isInlineChartActive: Bool
     @State private var isFullscreenPresented = false
 
     var body: some View {
         WatchInlineConcentrationChart(
             points: points,
+            unit: unit,
+            accentColor: accentColor,
             isInlineChartActive: $isInlineChartActive
         ) {
             isInlineChartActive = false
             isFullscreenPresented = true
         }
         .fullScreenCover(isPresented: $isFullscreenPresented) {
-            WatchFullscreenConcentrationChart(points: points, isPresented: $isFullscreenPresented)
+            WatchFullscreenConcentrationChart(
+                points: points,
+                unit: unit,
+                accentColor: accentColor,
+                isPresented: $isFullscreenPresented
+            )
         }
     }
 }
 
 private struct WatchInlineConcentrationChart: View {
     let points: [WatchChartPoint]
+    let unit: WatchConcentrationUnit
+    let accentColor: Color
     @Binding var isInlineChartActive: Bool
     let onExpand: () -> Void
 
@@ -266,6 +304,8 @@ private struct WatchInlineConcentrationChart: View {
     private var chartBase: some View {
         WatchConcentrationChartSurface(
             points: sortedPoints,
+            unit: unit,
+            accentColor: accentColor,
             visibleHours: visibleHours,
             scrollPosition: $scrollPosition,
             selectedPoint: selectedPoint,
@@ -408,6 +448,8 @@ private struct WatchInlineConcentrationChart: View {
 
 private struct WatchFullscreenConcentrationChart: View {
     let points: [WatchChartPoint]
+    let unit: WatchConcentrationUnit
+    let accentColor: Color
     @Binding var isPresented: Bool
 
     @FocusState private var isFocused: Bool
@@ -504,6 +546,8 @@ private struct WatchFullscreenConcentrationChart: View {
     private var interactiveChart: some View {
         let baseChart = WatchConcentrationChartSurface(
             points: sortedPoints,
+            unit: unit,
+            accentColor: accentColor,
             visibleHours: visibleHours,
             scrollPosition: $scrollPosition,
             selectedPoint: selectedPoint,
@@ -657,6 +701,8 @@ private struct WatchFullscreenConcentrationChart: View {
 
 private struct WatchConcentrationChartSurface: View {
     let points: [WatchChartPoint]
+    let unit: WatchConcentrationUnit
+    let accentColor: Color
     let visibleHours: Double
     @Binding var scrollPosition: Double
     let selectedPoint: WatchChartPoint?
@@ -714,7 +760,7 @@ private struct WatchConcentrationChartSurface: View {
                         y: .value("Concentration", point.concentration)
                     )
                     .interpolationMethod(.monotone)
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(accentColor)
                 }
 
                 if let selectedPoint {
@@ -726,10 +772,10 @@ private struct WatchConcentrationChartSurface: View {
                         x: .value("Time", selectedPoint.timeH),
                         y: .value("Concentration", selectedPoint.concentration)
                     )
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(accentColor)
                     .symbolSize(22)
                     .annotation(position: .top) {
-                        WatchChartBadge(text: WatchChartFormatter.concentrationLabel(for: selectedPoint.concentration))
+                        WatchChartBadge(text: WatchChartFormatter.concentrationLabel(for: selectedPoint.concentration, unit: unit))
                     }
                 }
             }
@@ -772,7 +818,7 @@ private struct WatchConcentrationChartSurface: View {
                     AxisTick()
                     AxisValueLabel {
                         if let concentration = value.as(Double.self) {
-                            Text(WatchChartFormatter.yAxisLabel(for: concentration))
+                            Text(WatchChartFormatter.yAxisLabel(for: concentration, unit: unit))
                                 .font(.caption2.monospacedDigit())
                         }
                     }
@@ -839,11 +885,11 @@ private struct WatchChartScrollingModifier: ViewModifier {
 }
 
 private enum WatchChartFormatter {
-    static func concentrationLabel(for concentration: Double) -> String {
-        String(format: "%.1f pg/mL", locale: Locale.current, concentration)
+    static func concentrationLabel(for concentration: Double, unit: WatchConcentrationUnit) -> String {
+        String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
     }
 
-    static func yAxisLabel(for concentration: Double) -> String {
+    static func yAxisLabel(for concentration: Double, unit: WatchConcentrationUnit) -> String {
         if concentration >= 100 {
             return String(format: "%.0f", locale: Locale.current, concentration)
         }
@@ -982,12 +1028,16 @@ private struct WatchEventRow: View {
     }
 
     private var title: String {
+        if let recordOnlyMedication = event.recordOnlyOralMedication {
+            return recordOnlyMedication.displayName
+        }
+
         switch event.route {
         case .injection:
             return String(
                 format: NSLocalizedString("timeline.row.injection", comment: "Timeline row title for injection"),
                 locale: Locale.current,
-                event.ester.abbreviation
+                event.compound.abbreviation
             )
         case .patchApply:
             return NSLocalizedString("timeline.row.patchApply", comment: "Timeline row title for patch apply")
@@ -999,13 +1049,13 @@ private struct WatchEventRow: View {
             return String(
                 format: NSLocalizedString("timeline.row.oral", comment: "Timeline row title for oral"),
                 locale: Locale.current,
-                event.ester.abbreviation
+                event.compound.abbreviation
             )
         case .sublingual:
             return String(
                 format: NSLocalizedString("timeline.row.sublingual", comment: "Timeline row title for sublingual"),
                 locale: Locale.current,
-                event.ester.abbreviation
+                event.compound.abbreviation
             )
         }
     }

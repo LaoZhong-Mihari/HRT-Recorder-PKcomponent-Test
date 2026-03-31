@@ -3,6 +3,177 @@ import SwiftUI
 import Combine
 import WatchConnectivity
 
+enum WatchMedicationCategory: String, CaseIterable, Identifiable, Codable {
+    case estradiol
+    case testosterone
+    case antiAndrogen
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .estradiol: return WatchSimulatedHormone.estradiol.displayName
+        case .testosterone: return WatchSimulatedHormone.testosterone.displayName
+        case .antiAndrogen: return "Anti-androgen"
+        }
+    }
+
+    var simulatedHormone: WatchSimulatedHormone? {
+        switch self {
+        case .estradiol: return .estradiol
+        case .testosterone: return .testosterone
+        case .antiAndrogen: return nil
+        }
+    }
+}
+
+enum WatchSimulatedHormone: String, CaseIterable, Identifiable, Codable {
+    case estradiol
+    case testosterone
+
+    var id: Self { self }
+
+    var category: WatchMedicationCategory {
+        switch self {
+        case .estradiol: return .estradiol
+        case .testosterone: return .testosterone
+        }
+    }
+
+    var displayName: String {
+        WatchPKSharedCatalogResource.current.hormones[self]?.displayName ?? rawValue.capitalized
+    }
+
+    var concentrationUnit: WatchConcentrationUnit {
+        WatchPKSharedCatalogResource.current.hormones[self]?.concentrationUnit ?? .pgPerML
+    }
+
+    var chartColor: Color {
+        switch self {
+        case .estradiol:
+            return Color(red: 0.95, green: 0.50, blue: 0.74)
+        case .testosterone:
+            return .blue
+        }
+    }
+}
+
+enum WatchConcentrationUnit: String, Codable {
+    case pgPerML
+    case ngPerDL
+
+    var symbol: String {
+        switch self {
+        case .pgPerML: return "pg/mL"
+        case .ngPerDL: return "ng/dL"
+        }
+    }
+
+    var concentrationScale: Double {
+        switch self {
+        case .pgPerML: return 1e9
+        case .ngPerDL: return 1e8
+        }
+    }
+}
+
+struct WatchSimulationDisplayMetadata: Equatable, Codable {
+    let hormone: WatchSimulatedHormone
+    let concentrationUnit: WatchConcentrationUnit
+
+    var concentrationSymbol: String { concentrationUnit.symbol }
+}
+
+enum WatchCompound: String, CaseIterable, Identifiable, Codable {
+    case E2, EB, EV, EC, EN
+    case T, TC, TE, TU
+
+    var id: Self { self }
+
+    var info: WatchCompoundInfo { WatchCompoundInfo.by(compound: self) }
+    var fullName: String { info.fullName }
+    var hormone: WatchSimulatedHormone { info.hormone }
+    var medicationCategory: WatchMedicationCategory { hormone.category }
+
+    var localizedName: String {
+        NSLocalizedString(
+            "compound.\(rawValue).name",
+            tableName: nil,
+            bundle: .main,
+            value: fullName,
+            comment: "Localized compound name"
+        )
+    }
+
+    var abbreviation: String {
+        NSLocalizedString(
+            "compound.\(rawValue).abbr",
+            tableName: nil,
+            bundle: .main,
+            value: rawValue,
+            comment: "Localized compound abbreviation"
+        )
+    }
+}
+
+struct WatchCompoundInfo {
+    let compound: WatchCompound
+    let fullName: String
+    let hormone: WatchSimulatedHormone
+    let molecularWeight: Double
+    let activeMolecularWeight: Double
+    let isProdrug: Bool
+
+    var toActiveFactor: Double {
+        activeMolecularWeight / molecularWeight
+    }
+
+    static let all: [WatchCompound: WatchCompoundInfo] = Dictionary(
+        uniqueKeysWithValues: WatchPKSharedCatalogResource.current.compounds.map { compound, config in
+            (
+                compound,
+                WatchCompoundInfo(
+                    compound: compound,
+                    fullName: config.fullName,
+                    hormone: config.hormone,
+                    molecularWeight: config.molecularWeight,
+                    activeMolecularWeight: config.activeMolecularWeight,
+                    isProdrug: config.isProdrug
+                )
+            )
+        }
+    )
+
+    static func by(compound: WatchCompound) -> WatchCompoundInfo {
+        all[compound]!
+    }
+}
+
+enum WatchRecordOnlyOralMedication: String, CaseIterable, Identifiable, Codable {
+    case cyproteroneAcetate
+    case spironolactone
+    case bicalutamide
+    case finasteride
+    case dutasteride
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .cyproteroneAcetate:
+            return NSLocalizedString("record_medication.cyproterone_acetate.name", comment: "Cyproterone acetate")
+        case .spironolactone:
+            return NSLocalizedString("record_medication.spironolactone.name", comment: "Spironolactone")
+        case .bicalutamide:
+            return NSLocalizedString("record_medication.bicalutamide.name", comment: "Bicalutamide")
+        case .finasteride:
+            return NSLocalizedString("record_medication.finasteride.name", comment: "Finasteride")
+        case .dutasteride:
+            return NSLocalizedString("record_medication.dutasteride.name", comment: "Dutasteride")
+        }
+    }
+}
+
 struct WatchDoseEvent: Identifiable, Codable, Equatable {
     enum Route: String, CaseIterable, Codable {
         case injection
@@ -28,61 +199,6 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
         }
     }
 
-    enum Ester: String, CaseIterable, Codable {
-        case E2
-        case EB
-        case EV
-        case EC
-        case EN
-
-        var localizedName: String {
-            NSLocalizedString(
-                "ester.\(rawValue).name",
-                tableName: nil,
-                bundle: .main,
-                value: defaultName,
-                comment: "Localized ester name"
-            )
-        }
-
-        var abbreviation: String {
-            NSLocalizedString(
-                "ester.\(rawValue).abbr",
-                tableName: nil,
-                bundle: .main,
-                value: rawValue,
-                comment: "Localized ester abbreviation"
-            )
-        }
-
-        var toE2Factor: Double {
-            guard self != .E2 else { return 1.0 }
-            return Self.e2MolecularWeight / molecularWeight
-        }
-
-        private var defaultName: String {
-            switch self {
-            case .E2: return "Estradiol"
-            case .EB: return "Estradiol Benzoate"
-            case .EV: return "Estradiol Valerate"
-            case .EC: return "Estradiol Cypionate"
-            case .EN: return "Estradiol Enanthate"
-            }
-        }
-
-        private var molecularWeight: Double {
-            switch self {
-            case .E2: return Self.e2MolecularWeight
-            case .EB: return 376.50
-            case .EV: return 356.50
-            case .EC: return 396.58
-            case .EN: return 384.56
-            }
-        }
-
-        private static let e2MolecularWeight = 272.38
-    }
-
     enum ExtraKey: String, Codable, CaseIterable {
         case concentrationMGmL
         case areaCM2
@@ -92,14 +208,130 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
     }
 
     let id: UUID
+    let category: WatchMedicationCategory
     let route: Route
     let date: Date
     let doseMG: Double
-    let ester: Ester
+    let compound: WatchCompound
     let extras: [ExtraKey: Double]
+    let recordOnlyOralMedication: WatchRecordOnlyOralMedication?
+
+    init(
+        id: UUID,
+        category: WatchMedicationCategory? = nil,
+        route: Route,
+        date: Date,
+        doseMG: Double,
+        compound: WatchCompound,
+        extras: [ExtraKey: Double],
+        recordOnlyOralMedication: WatchRecordOnlyOralMedication?
+    ) {
+        let resolvedCategory = category
+            ?? (recordOnlyOralMedication != nil ? .antiAndrogen : compound.medicationCategory)
+
+        self.id = id
+        self.category = resolvedCategory
+        self.route = route
+        self.date = date
+        self.doseMG = doseMG
+        self.compound = compound
+        self.extras = extras
+        self.recordOnlyOralMedication = recordOnlyOralMedication
+    }
 
     var timeH: Double {
         date.timeIntervalSince1970 / 3600.0
+    }
+
+    var ester: WatchCompound { compound }
+
+    var simulatedHormone: WatchSimulatedHormone? {
+        category.simulatedHormone
+    }
+
+    var participatesInSimulation: Bool {
+        recordOnlyOralMedication == nil && simulatedHormone != nil
+    }
+
+    func appearsInTimeline(for hormone: WatchSimulatedHormone) -> Bool {
+        switch category {
+        case .estradiol:
+            return hormone == .estradiol
+        case .testosterone:
+            return hormone == .testosterone
+        case .antiAndrogen:
+            return hormone == .estradiol
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case category
+        case route
+        case date
+        case doseMG
+        case compound
+        case ester
+        case extras
+        case recordOnlyOralMedication
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let route = try container.decode(Route.self, forKey: .route)
+        let date = try container.decode(Date.self, forKey: .date)
+        let doseMG = try container.decode(Double.self, forKey: .doseMG)
+        let compound = try container.decodeIfPresent(WatchCompound.self, forKey: .compound)
+            ?? container.decode(WatchCompound.self, forKey: .ester)
+        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
+        let recordOnly = try container.decodeIfPresent(WatchRecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
+        let category = try container.decodeIfPresent(WatchMedicationCategory.self, forKey: .category)
+
+        self.init(
+            id: id,
+            category: category,
+            route: route,
+            date: date,
+            doseMG: doseMG,
+            compound: compound,
+            extras: extras,
+            recordOnlyOralMedication: recordOnly
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(category, forKey: .category)
+        try container.encode(route, forKey: .route)
+        try container.encode(date, forKey: .date)
+        try container.encode(doseMG, forKey: .doseMG)
+        try container.encode(compound, forKey: .compound)
+        try container.encode(extras, forKey: .extras)
+        try container.encodeIfPresent(recordOnlyOralMedication, forKey: .recordOnlyOralMedication)
+    }
+}
+
+enum WatchCompoundSupport {
+    static func availableCompounds(for category: WatchMedicationCategory, route: WatchDoseEvent.Route) -> [WatchCompound] {
+        switch category {
+        case .antiAndrogen:
+            return [.E2]
+        case .estradiol:
+            switch route {
+            case .injection: return [.EB, .EV, .EC, .EN]
+            case .patchApply, .patchRemove, .gel: return [.E2]
+            case .oral, .sublingual: return [.E2, .EV]
+            }
+        case .testosterone:
+            switch route {
+            case .injection: return [.TC, .TE, .TU]
+            case .patchApply, .patchRemove, .gel: return [.T]
+            case .oral: return [.TU]
+            case .sublingual: return []
+            }
+        }
     }
 }
 
@@ -116,27 +348,81 @@ struct WatchChartPoint: Codable, Identifiable {
 
 struct WatchDoseBridgeEvent: Codable {
     let id: UUID
+    let categoryRawValue: String?
     let routeRawValue: String
     let timeH: Double
     let doseMG: Double
-    let esterRawValue: String
+    let compoundRawValue: String?
+    let esterRawValue: String?
     let extras: [String: Double]
+    let recordOnlyOralMedicationRawValue: String?
+
+    init(
+        id: UUID,
+        categoryRawValue: String?,
+        routeRawValue: String,
+        timeH: Double,
+        doseMG: Double,
+        compoundRawValue: String?,
+        esterRawValue: String?,
+        extras: [String: Double],
+        recordOnlyOralMedicationRawValue: String?
+    ) {
+        self.id = id
+        self.categoryRawValue = categoryRawValue
+        self.routeRawValue = routeRawValue
+        self.timeH = timeH
+        self.doseMG = doseMG
+        self.compoundRawValue = compoundRawValue
+        self.esterRawValue = esterRawValue
+        self.extras = extras
+        self.recordOnlyOralMedicationRawValue = recordOnlyOralMedicationRawValue
+    }
+
+    init(event: WatchDoseEvent) {
+        self.id = event.id
+        self.categoryRawValue = event.category.rawValue
+        self.routeRawValue = event.route.rawValue
+        self.timeH = event.timeH
+        self.doseMG = event.doseMG
+        self.compoundRawValue = event.compound.rawValue
+        self.esterRawValue = event.compound.rawValue
+        self.extras = event.extras.reduce(into: [:]) { partialResult, pair in
+            partialResult[pair.key.rawValue] = pair.value
+        }
+        self.recordOnlyOralMedicationRawValue = event.recordOnlyOralMedication?.rawValue
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
+        case categoryRawValue = "category"
         case routeRawValue = "route"
         case timeH
         case doseMG
+        case compoundRawValue = "compound"
         case esterRawValue = "ester"
         case extras
+        case recordOnlyOralMedicationRawValue = "recordOnlyOralMedication"
     }
 }
 
 struct WatchDoseSnapshot: Codable {
     let events: [WatchDoseBridgeEvent]
-    let chartPoints: [WatchChartPoint]
+    let chartPoints: [WatchChartPoint]?
     let bodyWeightKG: Double?
     let eventsModifiedAt: TimeInterval
+
+    init(
+        events: [WatchDoseBridgeEvent],
+        chartPoints: [WatchChartPoint]? = nil,
+        bodyWeightKG: Double?,
+        eventsModifiedAt: TimeInterval
+    ) {
+        self.events = events
+        self.chartPoints = chartPoints
+        self.bodyWeightKG = bodyWeightKG
+        self.eventsModifiedAt = eventsModifiedAt
+    }
 }
 
 struct WatchDoseEventPayload: Codable {
@@ -216,8 +502,6 @@ final class WatchDoseStore: ObservableObject {
 
 @MainActor
 final class WatchDoseSyncService: NSObject, ObservableObject {
-    @Published private(set) var chartPoints: [WatchChartPoint] = []
-
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private weak var store: WatchDoseStore?
@@ -239,18 +523,8 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
     }
 
     func send(event: WatchDoseEvent) {
-        let payloadEvent = WatchDoseBridgeEvent(
-            id: event.id,
-            routeRawValue: event.route.rawValue,
-            timeH: event.timeH,
-            doseMG: event.doseMG,
-            esterRawValue: event.ester.rawValue,
-            extras: event.extras.reduce(into: [:]) { partialResult, pair in
-                partialResult[pair.key.rawValue] = pair.value
-            }
-        )
         let wrappedPayload = WatchDoseEventPayload(
-            event: payloadEvent,
+            event: WatchDoseBridgeEvent(event: event),
             modifiedAt: store?.eventsModifiedAt ?? Date().timeIntervalSince1970
         )
         guard let payload = try? encoder.encode(wrappedPayload) else { return }
@@ -258,20 +532,8 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
     }
 
     func replaceAll(events: [WatchDoseEvent]) {
-        let payloadEvents = events.map { event in
-            WatchDoseBridgeEvent(
-                id: event.id,
-                routeRawValue: event.route.rawValue,
-                timeH: event.timeH,
-                doseMG: event.doseMG,
-                esterRawValue: event.ester.rawValue,
-                extras: event.extras.reduce(into: [:]) { partialResult, pair in
-                    partialResult[pair.key.rawValue] = pair.value
-                }
-            )
-        }
         let wrappedPayload = WatchDoseReplacePayload(
-            events: payloadEvents,
+            events: events.map(WatchDoseBridgeEvent.init),
             modifiedAt: store?.eventsModifiedAt ?? Date().timeIntervalSince1970
         )
         guard let payload = try? encoder.encode(wrappedPayload) else { return }
@@ -280,12 +542,6 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
 
     func requestSnapshot() {
         enqueueOrSend(PendingUserInfo(key: "watchRequestSnapshot", data: nil, boolValue: true))
-    }
-
-    var currentConcentration: Double? {
-        guard !chartPoints.isEmpty else { return nil }
-        let nowH = Date().timeIntervalSince1970 / 3600.0
-        return interpolateConcentration(at: nowH)
     }
 
     private func enqueueOrSend(_ pending: PendingUserInfo) {
@@ -345,27 +601,28 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
         UserDefaults.standard.set(data, forKey: pendingKey)
     }
 
-    private func interpolateConcentration(at hour: Double) -> Double? {
-        let sorted = chartPoints.sorted { $0.timeH < $1.timeH }
-        guard let first = sorted.first, let last = sorted.last else { return nil }
-        if hour <= first.timeH { return first.concentration }
-        if hour >= last.timeH { return last.concentration }
-
-        var low = 0
-        var high = sorted.count - 1
-        while high - low > 1 {
-            let mid = (low + high) / 2
-            if sorted[mid].timeH < hour {
-                low = mid
-            } else {
-                high = mid
-            }
+    private func makeEvent(from payload: WatchDoseBridgeEvent) -> WatchDoseEvent? {
+        guard let route = WatchDoseEvent.Route(rawValue: payload.routeRawValue) else {
+            return nil
+        }
+        guard let compound = WatchCompound(rawValue: payload.compoundRawValue ?? payload.esterRawValue ?? "") else {
+            return nil
         }
 
-        let left = sorted[low]
-        let right = sorted[high]
-        let ratio = (hour - left.timeH) / (right.timeH - left.timeH)
-        return left.concentration + (right.concentration - left.concentration) * ratio
+        let extras = payload.extras.compactMapKeys { WatchDoseEvent.ExtraKey(rawValue: $0) }
+        let category = payload.categoryRawValue.flatMap(WatchMedicationCategory.init(rawValue:))
+        let recordOnly = payload.recordOnlyOralMedicationRawValue.flatMap(WatchRecordOnlyOralMedication.init(rawValue:))
+        let date = Date(timeIntervalSince1970: payload.timeH * 3600.0)
+        return WatchDoseEvent(
+            id: payload.id,
+            category: category,
+            route: route,
+            date: date,
+            doseMG: payload.doseMG,
+            compound: compound,
+            extras: extras,
+            recordOnlyOralMedication: recordOnly
+        )
     }
 
     private func activateIfNeeded() {
@@ -378,35 +635,17 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
     private func applySnapshot(_ snapshot: WatchDoseSnapshot) {
         let localModifiedAt = store?.eventsModifiedAt ?? 0
         if snapshot.eventsModifiedAt > 0, snapshot.eventsModifiedAt < localModifiedAt {
-            chartPoints = []
             if let bodyWeightKG = snapshot.bodyWeightKG, bodyWeightKG > 0 {
                 onReceiveSyncedBodyWeight?(bodyWeightKG)
             }
             return
         }
 
-        let convertedEvents = snapshot.events.compactMap { payload -> WatchDoseEvent? in
-            guard let route = WatchDoseEvent.Route(rawValue: payload.routeRawValue),
-                  let ester = WatchDoseEvent.Ester(rawValue: payload.esterRawValue) else {
-                return nil
-            }
-            let extras = payload.extras.compactMapKeys { WatchDoseEvent.ExtraKey(rawValue: $0) }
-            let date = Date(timeIntervalSince1970: payload.timeH * 3600.0)
-            return WatchDoseEvent(
-                id: payload.id,
-                route: route,
-                date: date,
-                doseMG: payload.doseMG,
-                ester: ester,
-                extras: extras
-            )
-        }
-
+        let convertedEvents = snapshot.events.compactMap { makeEvent(from: $0) }
         let appliedModifiedAt = snapshot.eventsModifiedAt > 0
             ? snapshot.eventsModifiedAt
             : store?.eventsModifiedAt
         store?.replace(with: convertedEvents, modifiedAt: appliedModifiedAt)
-        chartPoints = snapshot.chartPoints.sorted { $0.timeH < $1.timeH }
 
         if let bodyWeightKG = snapshot.bodyWeightKG, bodyWeightKG > 0 {
             onReceiveSyncedBodyWeight?(bodyWeightKG)

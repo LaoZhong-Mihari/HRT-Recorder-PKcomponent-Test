@@ -1,16 +1,90 @@
 import Foundation
 
 struct MedicationDoseTemplate: Codable, Equatable, Sendable {
+    var category: MedicationCategory
     var route: DoseEvent.Route
     var doseMG: Double
-    var ester: Ester
+    var compound: Compound
     var extras: [DoseEvent.ExtraKey: Double]
     var recordOnlyOralMedication: RecordOnlyOralMedication?
 
+    init(
+        category: MedicationCategory? = nil,
+        route: DoseEvent.Route,
+        doseMG: Double,
+        compound: Compound,
+        extras: [DoseEvent.ExtraKey: Double],
+        recordOnlyOralMedication: RecordOnlyOralMedication?
+    ) {
+        self.category = category
+            ?? (recordOnlyOralMedication != nil ? .antiAndrogen : compound.medicationCategory)
+        self.route = route
+        self.doseMG = doseMG
+        self.compound = compound
+        self.extras = extras
+        self.recordOnlyOralMedication = recordOnlyOralMedication
+    }
+
+    init(
+        category: MedicationCategory? = nil,
+        route: DoseEvent.Route,
+        doseMG: Double,
+        ester: Ester,
+        extras: [DoseEvent.ExtraKey: Double],
+        recordOnlyOralMedication: RecordOnlyOralMedication?
+    ) {
+        self.init(
+            category: category,
+            route: route,
+            doseMG: doseMG,
+            compound: ester,
+            extras: extras,
+            recordOnlyOralMedication: recordOnlyOralMedication
+        )
+    }
+
+    var ester: Ester { compound }
+
+    enum CodingKeys: String, CodingKey {
+        case category
+        case route
+        case doseMG
+        case compound
+        case ester
+        case extras
+        case recordOnlyOralMedication
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let recordOnly = try container.decodeIfPresent(RecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
+        let compound = try container.decodeIfPresent(Compound.self, forKey: .compound)
+            ?? container.decode(Compound.self, forKey: .ester)
+        self.init(
+            category: try container.decodeIfPresent(MedicationCategory.self, forKey: .category),
+            route: try container.decode(DoseEvent.Route.self, forKey: .route),
+            doseMG: try container.decode(Double.self, forKey: .doseMG),
+            compound: compound,
+            extras: try container.decodeIfPresent([DoseEvent.ExtraKey: Double].self, forKey: .extras) ?? [:],
+            recordOnlyOralMedication: recordOnly
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(category, forKey: .category)
+        try container.encode(route, forKey: .route)
+        try container.encode(doseMG, forKey: .doseMG)
+        try container.encode(compound, forKey: .compound)
+        try container.encode(extras, forKey: .extras)
+        try container.encodeIfPresent(recordOnlyOralMedication, forKey: .recordOnlyOralMedication)
+    }
+
     static let empty = MedicationDoseTemplate(
+        category: .estradiol,
         route: .oral,
         doseMG: 0,
-        ester: .E2,
+        compound: .E2,
         extras: [:],
         recordOnlyOralMedication: nil
     )
@@ -34,7 +108,7 @@ extension MedicationDoseTemplate {
             return doseMG
         }
 
-        let factor = EsterInfo.by(ester: ester).toE2Factor
+        let factor = CompoundInfo.by(compound: compound).toActiveFactor
         guard doseMG > 0, factor > 0 else { return doseMG }
         return doseMG / factor
     }
