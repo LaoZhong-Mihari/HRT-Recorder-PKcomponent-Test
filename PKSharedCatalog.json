@@ -9,7 +9,7 @@
       "depotK1Corr": 1.0,
       "patchFallbackK1": 0.0075,
       "gelK1": 0.022,
-      "gelFmax": 0.05
+      "gelFmax": 0.06
     },
     "testosterone": {
       "displayName": "Testosterone",

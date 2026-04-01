@@ -1,0 +1,16 @@
+{
+  "anchors": 1,
+  "body_weight_kg": 70.0,
+  "compound": "TC",
+  "iterations": 200,
+  "objective": 2.045996161950449e-08,
+  "parameters": {
+    "formation_fraction": 0.04865182176197935,
+    "frac_fast": 0.3288231877169232,
+    "k1_fast": 0.15735410269242237,
+    "k1_slow": 0.014029681341685078,
+    "k2": 0.09838552421390577,
+    "k3": 0.07067513623396295
+  },
+  "route": "injection"
+}

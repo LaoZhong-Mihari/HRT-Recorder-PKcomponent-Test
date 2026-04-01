@@ -1,0 +1,4 @@
+source_id,source_tier,hormone,compound,route,formulation,dose_value,dose_unit,is_active_equivalent,time_value,time_unit,concentration_value,concentration_unit,anchor_kind,is_steady_state,population_note,notes
+example_tc_label,regulatory,testosterone,TC,injection,IM oil,200,mg,false,24,h,900,ng/dL,Cmax,false,adult men,Replace with real source values
+example_te_label,regulatory,testosterone,TE,injection,IM oil,200,mg,false,1,day,850,ng/dL,Tmax,false,adult men,Replace with real source values
+example_tu_oral,regulatory,testosterone,TU,oral,capsule,225,mg,false,5,h,450,ng/dL,Tmax,false,adult men,Replace with real source values
