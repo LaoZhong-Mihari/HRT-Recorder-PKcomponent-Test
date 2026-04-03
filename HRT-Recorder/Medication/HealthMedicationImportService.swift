@@ -534,10 +534,16 @@ final class HealthMedicationImportService: MedicationImportServicing {
     ) -> String? {
         guard let doseSeedEvent else {
             if let releaseRate = extras[.releaseRateUGPerDay] {
-                return "Parsed \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day from the medication name."
+                return String.localizedStringWithFormat(
+                    String(localized: "medimport.dose.parsed_release_rate"),
+                    formattedNumber(releaseRate, maximumFractionDigits: 0)
+                )
             }
             if let rawDoseMG {
-                return "Parsed \(formattedNumber(rawDoseMG)) mg from the medication name."
+                return String.localizedStringWithFormat(
+                    String(localized: "medimport.dose.parsed_mass"),
+                    formattedNumber(rawDoseMG)
+                )
             }
             return nil
         }
@@ -550,24 +556,48 @@ final class HealthMedicationImportService: MedicationImportServicing {
            let concentration = extras[.concentrationMGmL],
            (normalizedUnit == "ml" || normalizedUnit == "l"),
            let rawDoseMG {
-            return "\(formattedNumber(quantity)) \(unitString) × \(formattedNumber(concentration)) mg/mL → \(formattedNumber(rawDoseMG)) mg"
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.dose.volume_times_concentration"),
+                formattedNumber(quantity),
+                unitString,
+                formattedNumber(concentration),
+                formattedNumber(rawDoseMG)
+            )
         }
 
         if let quantity,
            let releaseRate = extras[.releaseRateUGPerDay] {
-            return "\(formattedNumber(quantity)) \(unitString) at \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day"
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.dose.release_rate_quantity"),
+                formattedNumber(quantity),
+                unitString,
+                formattedNumber(releaseRate, maximumFractionDigits: 0)
+            )
         }
 
         if let quantity,
            let rawDoseMG {
-            return "\(formattedNumber(quantity)) \(unitString) → \(formattedNumber(rawDoseMG)) mg"
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.dose.quantity_to_mg"),
+                formattedNumber(quantity),
+                unitString,
+                formattedNumber(rawDoseMG)
+            )
         }
 
         if let releaseRate = extras[.releaseRateUGPerDay] {
-            return "Parsed \(formattedNumber(releaseRate, maximumFractionDigits: 0)) ug/day from the medication name."
+            return String.localizedStringWithFormat(
+                String(localized: "medimport.dose.parsed_release_rate"),
+                formattedNumber(releaseRate, maximumFractionDigits: 0)
+            )
         }
 
-        return rawDoseMG.map { "Parsed \(formattedNumber($0)) mg from the medication name." }
+        return rawDoseMG.map {
+            String.localizedStringWithFormat(
+                String(localized: "medimport.dose.parsed_mass"),
+                formattedNumber($0)
+            )
+        }
     }
 
     @available(iOS 26.0, *)

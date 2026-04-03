@@ -76,8 +76,8 @@ struct ContentView: View {
     private var hormoneSection: some View {
         Section {
             Picker("Hormone", selection: $timelineVM.selectedHormone) {
-                Text("Estradiol").tag(WatchSimulatedHormone.estradiol)
-                Text("Testosterone").tag(WatchSimulatedHormone.testosterone)
+                Text(WatchSimulatedHormone.estradiol.displayName).tag(WatchSimulatedHormone.estradiol)
+                Text(WatchSimulatedHormone.testosterone.displayName).tag(WatchSimulatedHormone.testosterone)
             }
         }
     }
@@ -518,7 +518,7 @@ private struct WatchFullscreenConcentrationChart: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(verbatim: "Close"))
+            .accessibilityLabel(Text("Close"))
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 8)

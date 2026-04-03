@@ -184,16 +184,71 @@ private enum WatchParameterResolver {
 
 private enum WatchPKModel {
     static func analytic3C(tau: Double, doseMG: Double, f: Double, k1: Double, k2: Double, k3: Double) -> Double {
-        guard tau >= 0, doseMG > 0, k1 > 0 else { return 0 }
+        guard tau >= 0, doseMG > 0, f > 0, k1 > 0, k2 > 0, k3 > 0 else { return 0 }
         let k1k2 = k1 - k2
         let k1k3 = k1 - k3
         let k2k3 = k2 - k3
-        if abs(k1k2) < 1e-9 || abs(k1k3) < 1e-9 || abs(k2k3) < 1e-9 { return 0 }
+        if let repeatedRootAmount = analytic3CRepeatedRates(
+            tau: tau,
+            doseMG: doseMG,
+            f: f,
+            k1: k1,
+            k2: k2,
+            k3: k3,
+            tolerance: 1e-9
+        ) {
+            return repeatedRootAmount
+        }
 
         let t1 = exp(-k1 * tau) / (k1k2 * k1k3)
         let t2 = exp(-k2 * tau) / (-k1k2 * k2k3)
         let t3 = exp(-k3 * tau) / (k1k3 * k2k3)
         return doseMG * f * k1 * k2 * (t1 + t2 + t3)
+    }
+
+    static func analytic3CRepeatedRates(
+        tau: Double,
+        doseMG: Double,
+        f: Double,
+        k1: Double,
+        k2: Double,
+        k3: Double,
+        tolerance: Double
+    ) -> Double? {
+        let scaledDose = doseMG * f
+        let k1EqualsK2 = abs(k1 - k2) < tolerance
+        let k1EqualsK3 = abs(k1 - k3) < tolerance
+        let k2EqualsK3 = abs(k2 - k3) < tolerance
+
+        if k1EqualsK2 && k1EqualsK3 {
+            return scaledDose * k1 * k1 * tau * tau * 0.5 * exp(-k1 * tau)
+        }
+
+        if k2EqualsK3 {
+            let delta = k1 - k2
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k2
+                * (exp(-k1 * tau) + exp(-k2 * tau) * (delta * tau - 1))
+                / (delta * delta)
+        }
+
+        if k1EqualsK2 {
+            let delta = k1 - k3
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k1
+                * (exp(-k3 * tau) - exp(-k1 * tau) * (1 + delta * tau))
+                / (delta * delta)
+        }
+
+        if k1EqualsK3 {
+            let delta = k2 - k1
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k2
+                * (exp(-k2 * tau) + exp(-k1 * tau) * (delta * tau - 1))
+                / (delta * delta)
+        }
+
+        return nil
     }
 
     static func oneComp(tau: Double, doseMG: Double, f: Double, ka: Double, ke: Double) -> Double {

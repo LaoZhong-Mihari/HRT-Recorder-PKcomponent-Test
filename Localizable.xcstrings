@@ -312,7 +312,7 @@
       }
     },
     "Anti-androgen" : {
-
+      "comment" : "Medication category"
     },
     "Apple Health took too long to answer. Close the sheet and try again." : {
       "extractionState" : "stale",
@@ -365,6 +365,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雌二醇"
+          }
+        }
+      }
+    },
+    "chart.axis.concentration_format" : {
+      "comment" : "Chart axis title format with hormone name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ concentration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 浓度"
           }
         }
       }
@@ -696,6 +713,23 @@
     "Done" : {
 
     },
+    "Dose (mg)" : {
+      "comment" : "Generic dose label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dose (mg)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剂量（mg）"
+          }
+        }
+      }
+    },
     "Dose details still need confirmation." : {
       "localizations" : {
         "zh-Hans" : {
@@ -949,7 +983,24 @@
       }
     },
     "Estradiol" : {
-
+      "comment" : "Hormone name"
+    },
+    "Estradiol-equivalent dose (mg)" : {
+      "comment" : "Estradiol equivalent dose label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol-equivalent dose (mg)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌二醇当量剂量（mg）"
+          }
+        }
+      }
     },
     "Every %lld day%@" : {
       "localizations" : {
@@ -1011,6 +1062,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此设备不支持健康数据。"
+          }
+        }
+      }
+    },
+    "Health dose" : {
+      "comment" : "Imported Health medication dose summary title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health dose"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康用药剂量"
           }
         }
       }
@@ -1216,6 +1284,23 @@
         }
       }
     },
+    "input.dose.compound_placeholder" : {
+      "comment" : "Compound dose placeholder",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ dose (mg)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 剂量（mg）"
+          }
+        }
+      }
+    },
     "input.dose.e2" : {
       "comment" : "E2-equivalent dose placeholder",
       "extractionState" : "stale",
@@ -1279,6 +1364,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "药物 / 酯类"
+          }
+        }
+      }
+    },
+    "input.equivalent_preview" : {
+      "comment" : "Equivalent dose preview",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@-equivalent: %2$@ mg"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 当量：%2$@ mg"
           }
         }
       }
@@ -1361,6 +1463,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模式"
+          }
+        }
+      }
+    },
+    "input.patchMode.package_hint" : {
+      "comment" : "Patch release rate hint shown in dose input",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If the package shows a release rate like x µg/day, use that value as the source of truth."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果包装上标有释放速率（如 x µg/day），请优先以该数值为准。"
           }
         }
       }
@@ -1759,6 +1878,159 @@
         }
       }
     },
+    "medication.plan.default.apply_gel" : {
+      "comment" : "Default medication plan name for gel application",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply gel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "涂凝胶"
+          }
+        }
+      }
+    },
+    "medication.plan.default.apply_patch" : {
+      "comment" : "Default medication plan name for patch application",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apply patch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贴片"
+          }
+        }
+      }
+    },
+    "medication.plan.default.inject" : {
+      "comment" : "Default medication plan name for injection",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inject %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注射 %@"
+          }
+        }
+      }
+    },
+    "medication.plan.default.remove_patch" : {
+      "comment" : "Default medication plan name for patch removal",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove patch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除贴片"
+          }
+        }
+      }
+    },
+    "medication.plan.default.take" : {
+      "comment" : "Default medication plan name for oral medication",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服用 %@"
+          }
+        }
+      }
+    },
+    "medication.plan.default.take_sublingual" : {
+      "comment" : "Default medication plan name for sublingual medication",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take %@ sublingually"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舌下含服 %@"
+          }
+        }
+      }
+    },
+    "medication.template.compound_dose_format" : {
+      "comment" : "Reminder dose format with amount and compound abbreviation",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ mg %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ %1$@ mg"
+          }
+        }
+      }
+    },
+    "medication.template.patch_removal" : {
+      "comment" : "Reminder dose line for removing a patch",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "patch removal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除贴片"
+          }
+        }
+      }
+    },
+    "medication.template.release_rate_format" : {
+      "comment" : "Reminder dose format for patch release rate",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ug/day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ug/day"
+          }
+        }
+      }
+    },
     "medimport.availability.health_data_unavailable" : {
       "localizations" : {
         "en" : {
@@ -1803,6 +2075,91 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用药导入需要 iOS 26 或更高版本。"
+          }
+        }
+      }
+    },
+    "medimport.dose.parsed_mass" : {
+      "comment" : "Import note when mass was parsed from medication name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parsed %1$@ mg from the medication name."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从药名中解析出 %1$@ mg。"
+          }
+        }
+      }
+    },
+    "medimport.dose.parsed_release_rate" : {
+      "comment" : "Import note when release rate was parsed from medication name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parsed %1$@ ug/day from the medication name."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从药名中解析出 %1$@ ug/day。"
+          }
+        }
+      }
+    },
+    "medimport.dose.quantity_to_mg" : {
+      "comment" : "Import note converting quantity and unit to milligrams",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ -> %3$@ mg"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ -> %3$@ mg"
+          }
+        }
+      }
+    },
+    "medimport.dose.release_rate_quantity" : {
+      "comment" : "Import note for release rate quantity",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ at %3$@ ug/day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@，释放速率 %3$@ ug/day"
+          }
+        }
+      }
+    },
+    "medimport.dose.volume_times_concentration" : {
+      "comment" : "Import note converting volume and concentration to milligrams",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ × %3$@ mg/mL -> %4$@ mg"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ × %3$@ mg/mL -> %4$@ mg"
           }
         }
       }
@@ -1883,6 +2240,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Health 映射：%@。"
+          }
+        }
+      }
+    },
+    "medimport.note.matched_rule_format" : {
+      "comment" : "Import note describing which Apple Health medication rule matched",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Matched %@ from Apple Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已将 Apple Health 中的该药物匹配为 %@。"
           }
         }
       }
@@ -2015,6 +2389,125 @@
         }
       }
     },
+    "medimport.rule.estradiol_benzoate_injection" : {
+      "comment" : "Import rule name for estradiol benzoate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol benzoate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "苯甲酸雌二醇注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_cypionate_injection" : {
+      "comment" : "Import rule name for estradiol cypionate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol cypionate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "环戊丙酸雌二醇注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_enanthate_injection" : {
+      "comment" : "Import rule name for estradiol enanthate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol enanthate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "庚酸雌二醇注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_oral_tablet" : {
+      "comment" : "Import rule name for estradiol tablets",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol oral tablet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌二醇口服片"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_topical" : {
+      "comment" : "Import rule name for estradiol topical formulations",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol topical"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌二醇外用制剂"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_transdermal_patch" : {
+      "comment" : "Import rule name for estradiol patches",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol transdermal patch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌二醇透皮贴片"
+          }
+        }
+      }
+    },
+    "medimport.rule.estradiol_valerate_injection" : {
+      "comment" : "Import rule name for estradiol valerate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol valerate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "戊酸雌二醇注射液"
+          }
+        }
+      }
+    },
     "medimport.rule.estradiol_valerate_oral_tablet" : {
       "localizations" : {
         "en" : {
@@ -2059,6 +2552,125 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "口服螺内酯"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_cypionate_injection" : {
+      "comment" : "Import rule name for testosterone cypionate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone cypionate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "环戊丙酸睾酮注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_enanthate_injection" : {
+      "comment" : "Import rule name for testosterone enanthate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone enanthate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "庚酸睾酮注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_gel" : {
+      "comment" : "Import rule name for testosterone gels",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone gel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睾酮凝胶"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_topical" : {
+      "comment" : "Import rule name for testosterone topical formulations",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone topical"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睾酮外用制剂"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_transdermal_patch" : {
+      "comment" : "Import rule name for testosterone patches",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone transdermal patch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睾酮透皮贴片"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_undecanoate_injection" : {
+      "comment" : "Import rule name for testosterone undecanoate injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone undecanoate injection"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "十一酸睾酮注射液"
+          }
+        }
+      }
+    },
+    "medimport.rule.testosterone_undecanoate_oral" : {
+      "comment" : "Import rule name for oral testosterone undecanoate",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone undecanoate oral"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "口服十一酸睾酮"
           }
         }
       }
@@ -2705,6 +3317,108 @@
         }
       }
     },
+    "notification.action.apply" : {
+      "comment" : "Notification action verb for applying medication",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "apply"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用"
+          }
+        }
+      }
+    },
+    "notification.action.inject" : {
+      "comment" : "Notification action verb for injections",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "inject"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注射"
+          }
+        }
+      }
+    },
+    "notification.action.remove" : {
+      "comment" : "Notification action verb for removing a patch",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "remove"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除"
+          }
+        }
+      }
+    },
+    "notification.action.take" : {
+      "comment" : "Notification action verb for oral medication",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "take"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服用"
+          }
+        }
+      }
+    },
+    "notification.fallback.default" : {
+      "comment" : "Fallback notification body for medication reminders",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@ is due at %3$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%3$@ 该%1$@ %2$@了。"
+          }
+        }
+      }
+    },
+    "notification.fallback.patch_remove" : {
+      "comment" : "Fallback notification body for patch removal reminders",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is due at %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 该%1$@了。"
+          }
+        }
+      }
+    },
     "Notifications" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3151,6 +3865,142 @@
     },
     "Reminder Time" : {
 
+    },
+    "reminder.template.greeting.body" : {
+      "comment" : "Default reminder template body",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It's time for {{dose_line}}."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该 {{dose_line}} 了。"
+          }
+        }
+      }
+    },
+    "reminder.template.greeting.title" : {
+      "comment" : "Default reminder template title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hi!"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒一下"
+          }
+        }
+      }
+    },
+    "reminder.template.mahiro.body" : {
+      "comment" : "Mahiro reminder template body",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't forget about {{dose_line}}."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "别忘了 {{dose_line}}。"
+          }
+        }
+      }
+    },
+    "reminder.template.mahiro.title" : {
+      "comment" : "Mahiro reminder template title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onii...Mahiro-chan!"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欧尼酱……真寻酱！"
+          }
+        }
+      }
+    },
+    "reminder.template.quick_checkin.body" : {
+      "comment" : "Quick check-in reminder template body",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready when you are: {{dose_line}}."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备好了就 {{dose_line}}。"
+          }
+        }
+      }
+    },
+    "reminder.template.quick_checkin.title" : {
+      "comment" : "Quick check-in reminder template title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick check-in"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小提醒"
+          }
+        }
+      }
+    },
+    "reminder.template.reminder.body" : {
+      "comment" : "Reminder template body with time placeholder",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{{time}} is your window for {{dose_line}}."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "现在到 {{time}} 是 {{dose_line}} 的时间。"
+          }
+        }
+      }
+    },
+    "reminder.template.reminder.title" : {
+      "comment" : "Reminder template title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒"
+          }
+        }
+      }
     },
     "Reminders paused" : {
       "localizations" : {
@@ -3642,7 +4492,24 @@
       }
     },
     "Testosterone" : {
-
+      "comment" : "Hormone name"
+    },
+    "Testosterone-equivalent dose (mg)" : {
+      "comment" : "Testosterone equivalent dose label",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone-equivalent dose (mg)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睾酮当量剂量（mg）"
+          }
+        }
+      }
     },
     "This only removes the reminder schedule. Logged doses stay." : {
       "localizations" : {

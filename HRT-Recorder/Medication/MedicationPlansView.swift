@@ -1776,7 +1776,7 @@ private struct MedicationImportSuggestionCard: View {
 
             if let latestDoseDescription = suggestion.latestDoseDescription, !latestDoseDescription.isEmpty {
                 LabeledStatusRow(
-                    title: "Health dose",
+                    title: String(localized: "Health dose"),
                     value: latestDoseDescription,
                     systemImage: "pills"
                 )

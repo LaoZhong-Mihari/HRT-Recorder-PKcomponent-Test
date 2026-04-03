@@ -240,7 +240,10 @@ struct ResultChartView: View {
     }
 
     private var yAxisLabel: String {
-        "\(sim.displayMetadata.hormone.displayName) concentration"
+        String.localizedStringWithFormat(
+            String(localized: "chart.axis.concentration_format"),
+            sim.displayMetadata.hormone.displayName
+        )
     }
 
     private var currentHour: Double {

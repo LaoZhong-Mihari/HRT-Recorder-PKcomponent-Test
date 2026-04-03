@@ -91,6 +91,13 @@ enum MedicationImportCatalog {
         )
     }
 
+    private static func matchedNote(forRuleName ruleName: String) -> String {
+        String.localizedStringWithFormat(
+            String(localized: "medimport.note.matched_rule_format"),
+            ruleName
+        )
+    }
+
     private static func recordOnlyRule(
         name: String,
         aliases: [String] = [],
@@ -114,14 +121,14 @@ enum MedicationImportCatalog {
 
     static let rules: [MedicationAlignmentRule] = [
         compoundRule(
-            name: "Estradiol oral tablet",
+            name: String(localized: "medimport.rule.estradiol_oral_tablet"),
             aliases: ["estrace"],
             requiredTokens: ["estradiol"],
             allowedGeneralFormTokens: ["tablet", "caplet"],
             route: .oral,
             compound: .E2,
             defaultUnitStrengthMG: 2,
-            note: "Matched estradiol tablets from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_oral_tablet"))
         ),
         MedicationAlignmentRule(
             name: String(localized: "medimport.rule.estradiol_valerate_oral_tablet"),
@@ -133,156 +140,156 @@ enum MedicationImportCatalog {
             recordOnlyOralMedication: nil,
             doseParsingMode: .strengthInName,
             defaultUnitStrengthMG: 2,
-            note: "Matched estradiol valerate tablets from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_valerate_oral_tablet"))
         ),
         compoundRule(
-            name: "Estradiol transdermal patch",
+            name: String(localized: "medimport.rule.estradiol_transdermal_patch"),
             aliases: ["climara", "vivelle", "vivelle dot", "dotti", "minivelle", "lyllana", "alora", "menostar"],
             requiredTokens: ["estradiol"],
             allowedGeneralFormTokens: patchForms,
             route: .patchApply,
             compound: .E2,
-            note: "Matched estradiol patches from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_transdermal_patch"))
         ),
         compoundRule(
-            name: "Estradiol topical",
+            name: String(localized: "medimport.rule.estradiol_topical"),
             aliases: ["divigel", "estrogel", "elestrin", "evamist"],
             requiredTokens: ["estradiol"],
             allowedGeneralFormTokens: topicalForms,
             route: .gel,
             compound: .E2,
-            note: "Matched estradiol topical preparations from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_topical"))
         ),
         compoundRule(
-            name: "Estradiol valerate injection",
+            name: String(localized: "medimport.rule.estradiol_valerate_injection"),
             aliases: ["delestrogen"],
             requiredTokens: ["estradiol", "valerate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .EV,
-            note: "Matched estradiol valerate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_valerate_injection"))
         ),
         compoundRule(
-            name: "Estradiol benzoate injection",
+            name: String(localized: "medimport.rule.estradiol_benzoate_injection"),
             requiredTokens: ["estradiol", "benzoate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .EB,
-            note: "Matched estradiol benzoate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_benzoate_injection"))
         ),
         compoundRule(
-            name: "Estradiol cypionate injection",
+            name: String(localized: "medimport.rule.estradiol_cypionate_injection"),
             requiredTokens: ["estradiol", "cypionate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .EC,
-            note: "Matched estradiol cypionate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_cypionate_injection"))
         ),
         compoundRule(
-            name: "Estradiol enanthate injection",
+            name: String(localized: "medimport.rule.estradiol_enanthate_injection"),
             requiredTokens: ["estradiol", "enanthate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .EN,
-            note: "Matched estradiol enanthate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.estradiol_enanthate_injection"))
         ),
         compoundRule(
-            name: "Testosterone cypionate injection",
+            name: String(localized: "medimport.rule.testosterone_cypionate_injection"),
             aliases: ["depo testosterone", "depotestosterone"],
             requiredTokens: ["testosterone", "cypionate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .TC,
-            note: "Matched testosterone cypionate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_cypionate_injection"))
         ),
         compoundRule(
-            name: "Testosterone enanthate injection",
+            name: String(localized: "medimport.rule.testosterone_enanthate_injection"),
             aliases: ["delatestryl", "xyosted", "testoviron depot"],
             requiredTokens: ["testosterone", "enanthate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .TE,
-            note: "Matched testosterone enanthate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_enanthate_injection"))
         ),
         compoundRule(
-            name: "Testosterone undecanoate injection",
+            name: String(localized: "medimport.rule.testosterone_undecanoate_injection"),
             aliases: ["aveed", "nebido", "reandron"],
             requiredTokens: ["testosterone", "undecanoate"],
             allowedGeneralFormTokens: injectionForms,
             route: .injection,
             compound: .TU,
-            note: "Matched testosterone undecanoate injections from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_undecanoate_injection"))
         ),
         compoundRule(
-            name: "Testosterone transdermal patch",
+            name: String(localized: "medimport.rule.testosterone_transdermal_patch"),
             aliases: ["androderm"],
             requiredTokens: ["testosterone"],
             allowedGeneralFormTokens: patchForms,
             route: .patchApply,
             compound: .T,
-            note: "Matched testosterone patches from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_transdermal_patch"))
         ),
         compoundRule(
-            name: "Testosterone gel",
+            name: String(localized: "medimport.rule.testosterone_gel"),
             aliases: ["androgel", "testim", "fortesta", "vogelxo", "testogel"],
             requiredTokens: ["testosterone", "gel"],
             allowedGeneralFormTokens: topicalForms,
             route: .gel,
             compound: .T,
-            note: "Matched testosterone gel from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_gel"))
         ),
         compoundRule(
-            name: "Testosterone topical",
+            name: String(localized: "medimport.rule.testosterone_topical"),
             aliases: ["androgel", "testim", "fortesta", "vogelxo", "testogel"],
             requiredTokens: ["testosterone"],
             allowedGeneralFormTokens: topicalForms,
             route: .gel,
             compound: .T,
-            note: "Matched testosterone topical preparations from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_topical"))
         ),
         compoundRule(
-            name: "Testosterone undecanoate oral",
+            name: String(localized: "medimport.rule.testosterone_undecanoate_oral"),
             aliases: ["jatenzo", "tlando", "kyzatrex"],
             requiredTokens: ["testosterone", "undecanoate"],
             allowedGeneralFormTokens: oralForms,
             route: .oral,
             compound: .TU,
-            note: "Matched oral testosterone undecanoate from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.testosterone_undecanoate_oral"))
         ),
         recordOnlyRule(
             name: String(localized: "medimport.rule.cyproterone_acetate_oral"),
             aliases: ["cpa"],
             requiredTokens: ["cyproterone", "acetate"],
             medication: .cyproteroneAcetate,
-            note: "Matched cyproterone acetate from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.cyproterone_acetate_oral"))
         ),
         recordOnlyRule(
             name: String(localized: "medimport.rule.spironolactone_oral"),
             aliases: ["spiro"],
             requiredTokens: ["spironolactone"],
             medication: .spironolactone,
-            note: "Matched spironolactone from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.spironolactone_oral"))
         ),
         recordOnlyRule(
             name: String(localized: "medimport.rule.bicalutamide_oral"),
             aliases: ["bica"],
             requiredTokens: ["bicalutamide"],
             medication: .bicalutamide,
-            note: "Matched bicalutamide from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.bicalutamide_oral"))
         ),
         recordOnlyRule(
             name: String(localized: "medimport.rule.finasteride_oral"),
             aliases: [],
             requiredTokens: ["finasteride"],
             medication: .finasteride,
-            note: "Matched finasteride from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.finasteride_oral"))
         ),
         recordOnlyRule(
             name: String(localized: "medimport.rule.dutasteride_oral"),
             aliases: [],
             requiredTokens: ["dutasteride"],
             medication: .dutasteride,
-            note: "Matched dutasteride from Apple Health."
+            note: matchedNote(forRuleName: String(localized: "medimport.rule.dutasteride_oral"))
         ),
     ]
 

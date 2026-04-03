@@ -126,14 +126,21 @@ extension MedicationDoseTemplate {
         }
 
         if let releaseRate = extras[.releaseRateUGPerDay] {
-            return "\(Self.formattedNumber(releaseRate, maximumFractionDigits: 0))ug/day"
+            return String.localizedStringWithFormat(
+                String(localized: "medication.template.release_rate_format"),
+                Self.formattedNumber(releaseRate, maximumFractionDigits: 0)
+            )
         }
 
         guard doseMG > 0 else {
             return ester.abbreviation
         }
 
-        return "\(Self.formattedNumber(rawDoseMG))mg \(ester.abbreviation)"
+        return String.localizedStringWithFormat(
+            String(localized: "medication.template.compound_dose_format"),
+            Self.formattedNumber(rawDoseMG),
+            ester.abbreviation
+        )
     }
 
     nonisolated var reminderDoseLine: String {
@@ -146,7 +153,7 @@ extension MedicationDoseTemplate {
 
         switch route {
         case .patchRemove:
-            return "patch removal"
+            return String(localized: "medication.template.patch_removal")
         default:
             return "\(route.reminderLabelLowercased) \(reminderDoseText)"
         }
@@ -179,38 +186,29 @@ extension MedicationDoseTemplate {
 }
 
 extension DoseEvent.Route {
-    nonisolated var planLabel: String {
+    nonisolated var localizationKey: String {
         switch self {
         case .injection:
-            return "Injection"
+            return "route.injection"
         case .patchApply:
-            return "Patch"
+            return "route.patchApply"
         case .patchRemove:
-            return "Patch removal"
+            return "route.patchRemove"
         case .gel:
-            return "Gel"
+            return "route.gel"
         case .oral:
-            return "Oral"
+            return "route.oral"
         case .sublingual:
-            return "Sublingual"
+            return "route.sublingual"
         }
     }
 
+    nonisolated var planLabel: String {
+        NSLocalizedString(localizationKey, comment: "Localized route name")
+    }
+
     nonisolated var reminderLabelLowercased: String {
-        switch self {
-        case .injection:
-            return "injection"
-        case .patchApply:
-            return "patch"
-        case .patchRemove:
-            return "patch removal"
-        case .gel:
-            return "gel"
-        case .oral:
-            return "oral"
-        case .sublingual:
-            return "sublingual"
-        }
+        planLabel.localizedLowercase
     }
 }
 
@@ -240,23 +238,23 @@ struct ReminderMessageTemplate: Codable, Identifiable, Equatable, Sendable {
     nonisolated static var defaultTemplates: [ReminderMessageTemplate] {
         [
             ReminderMessageTemplate(
-                titleTemplate: "Hi!",
-                bodyTemplate: "It's time for {{dose_line}}.",
+                titleTemplate: String(localized: "reminder.template.greeting.title"),
+                bodyTemplate: String(localized: "reminder.template.greeting.body"),
                 weight: 40
             ),
             ReminderMessageTemplate(
-                titleTemplate: "Onii...Mahiro-chan!",
-                bodyTemplate: "Don't forget about {{dose_line}}.",
+                titleTemplate: String(localized: "reminder.template.mahiro.title"),
+                bodyTemplate: String(localized: "reminder.template.mahiro.body"),
                 weight: 10
             ),
             ReminderMessageTemplate(
-                titleTemplate: "Reminder",
-                bodyTemplate: "{{time}} is your window for {{dose_line}}.",
+                titleTemplate: String(localized: "reminder.template.reminder.title"),
+                bodyTemplate: String(localized: "reminder.template.reminder.body"),
                 weight: 30
             ),
             ReminderMessageTemplate(
-                titleTemplate: "Quick check-in",
-                bodyTemplate: "Ready when you are: {{dose_line}}.",
+                titleTemplate: String(localized: "reminder.template.quick_checkin.title"),
+                bodyTemplate: String(localized: "reminder.template.quick_checkin.body"),
                 weight: 20
             )
         ]
@@ -476,17 +474,26 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
 
         switch primaryTemplate.route {
         case .injection:
-            return "Inject \(primaryTemplate.ester.abbreviation)"
+            return String.localizedStringWithFormat(
+                String(localized: "medication.plan.default.inject"),
+                primaryTemplate.ester.abbreviation
+            )
         case .patchApply:
-            return "Apply patch"
+            return String(localized: "medication.plan.default.apply_patch")
         case .patchRemove:
-            return "Remove patch"
+            return String(localized: "medication.plan.default.remove_patch")
         case .gel:
-            return "Apply gel"
+            return String(localized: "medication.plan.default.apply_gel")
         case .oral:
-            return "Take \(primaryTemplate.ester.abbreviation)"
+            return String.localizedStringWithFormat(
+                String(localized: "medication.plan.default.take"),
+                primaryTemplate.ester.abbreviation
+            )
         case .sublingual:
-            return "Take \(primaryTemplate.ester.abbreviation) sublingually"
+            return String.localizedStringWithFormat(
+                String(localized: "medication.plan.default.take_sublingual"),
+                primaryTemplate.ester.abbreviation
+            )
         }
     }
 

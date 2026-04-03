@@ -47,6 +47,10 @@ private enum DraftMedicationCategory: String, CaseIterable, Identifiable {
         }
     }
 
+    var displayName: String {
+        category.displayName
+    }
+
     init(category: MedicationCategory) {
         switch category {
         case .estradiol: self = .estradiol
@@ -264,11 +268,11 @@ struct InputEventView: View {
     private var activeEquivalentDosePlaceholder: String {
         switch draft.medicationCategory {
         case .estradiol:
-            return "Estradiol-equivalent dose (mg)"
+            return String(localized: "Estradiol-equivalent dose (mg)")
         case .testosterone:
-            return "Testosterone-equivalent dose (mg)"
+            return String(localized: "Testosterone-equivalent dose (mg)")
         case .antiAndrogen:
-            return "Dose (mg)"
+            return String(localized: "Dose (mg)")
         }
     }
 
@@ -315,9 +319,9 @@ struct InputEventView: View {
                         DatePicker("input.time", selection: $draft.date, displayedComponents: [.date, .hourAndMinute])
                     }
                     Picker("input.medication_type.title", selection: $draft.medicationCategory) {
-                        Text("Estradiol").tag(DraftMedicationCategory.estradiol)
-                        Text("Testosterone").tag(DraftMedicationCategory.testosterone)
-                        Text("Anti-androgen").tag(DraftMedicationCategory.antiAndrogen)
+                        Text(DraftMedicationCategory.estradiol.displayName).tag(DraftMedicationCategory.estradiol)
+                        Text(DraftMedicationCategory.testosterone.displayName).tag(DraftMedicationCategory.testosterone)
+                        Text(DraftMedicationCategory.antiAndrogen.displayName).tag(DraftMedicationCategory.antiAndrogen)
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: draft.medicationCategory) { _ in
@@ -368,6 +372,11 @@ struct InputEventView: View {
                         .onChange(of: draft.patchMode) { newValue in
                             focusedField = newValue == .totalDose ? .patchTotal : .patchRelease
                         }
+
+                        Text("input.patchMode.package_hint")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
                     }
                 }
                 
@@ -633,13 +642,6 @@ struct InputEventView: View {
     }
 
     private func routeLabel(_ route: DoseEvent.Route) -> String {
-        switch route {
-        case .injection: return "Injection"
-        case .patchApply: return "Patch apply"
-        case .patchRemove: return "Patch remove"
-        case .gel: return "Gel"
-        case .oral: return "Oral"
-        case .sublingual: return "Sublingual"
-        }
+        NSLocalizedString(route.localizationKey, comment: "Localized route name")
     }
 }

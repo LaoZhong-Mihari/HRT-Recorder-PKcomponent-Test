@@ -413,21 +413,24 @@ struct ThreeCompartmentModel {
         // This function calculates the amount of drug in the central compartment (C) at time tau.
         // It assumes k1, k2, and k3 are distinct.
         // Note: In this codebase, non‑injection routes pass dose in E2‑equivalent mg. Keep F = 1 for SL‑EV fast branch; oral/slow branch uses F = bioavailability.
-        
-        // Handle edge case where k1 is zero.
-        guard k1 > 0, doseMG > 0 else { return 0 }
+
+        guard tau >= 0, k1 > 0, k2 > 0, k3 > 0, doseMG > 0, F > 0 else { return 0 }
 
         // To prevent division by zero or floating point instability, check if rates are too close.
         let k1_k2 = k1 - k2
         let k1_k3 = k1 - k3
         let k2_k3 = k2 - k3
 
-        // A robust check for near-equality.
-        if abs(k1_k2) < 1e-9 || abs(k1_k3) < 1e-9 || abs(k2_k3) < 1e-9 {
-            // Fallback to a simpler model or a more complex Bateman equation for repeated roots.
-            // For now, returning 0 for this unlikely degenerate case is safer than crashing.
-            // A proper implementation would handle each case (k1=k2, k1=k3, k2=k3, k1=k2=k3).
-            return 0
+        if let repeatedRootAmount = _analytic3CRepeatedRates(
+            tau: tau,
+            doseMG: doseMG,
+            F: F,
+            k1: k1,
+            k2: k2,
+            k3: k3,
+            tolerance: 1e-9
+        ) {
+            return repeatedRootAmount
         }
 
         let term1 = exp(-k1 * tau) / (k1_k2 * k1_k3)
@@ -435,6 +438,52 @@ struct ThreeCompartmentModel {
         let term3 = exp(-k3 * tau) / (k1_k3 * k2_k3)
         
         return doseMG * F * k1 * k2 * (term1 + term2 + term3)
+    }
+
+    /// Handles the repeated-root cases of the A -> B -> C chain analytically.
+    private static func _analytic3CRepeatedRates(
+        tau: Double,
+        doseMG: Double,
+        F: Double,
+        k1: Double,
+        k2: Double,
+        k3: Double,
+        tolerance: Double
+    ) -> Double? {
+        let scaledDose = doseMG * F
+        let k1EqualsK2 = abs(k1 - k2) < tolerance
+        let k1EqualsK3 = abs(k1 - k3) < tolerance
+        let k2EqualsK3 = abs(k2 - k3) < tolerance
+
+        if k1EqualsK2 && k1EqualsK3 {
+            return scaledDose * k1 * k1 * tau * tau * 0.5 * exp(-k1 * tau)
+        }
+
+        if k2EqualsK3 {
+            let delta = k1 - k2
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k2
+                * (exp(-k1 * tau) + exp(-k2 * tau) * (delta * tau - 1))
+                / (delta * delta)
+        }
+
+        if k1EqualsK2 {
+            let delta = k1 - k3
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k1
+                * (exp(-k3 * tau) - exp(-k1 * tau) * (1 + delta * tau))
+                / (delta * delta)
+        }
+
+        if k1EqualsK3 {
+            let delta = k2 - k1
+            guard abs(delta) >= tolerance else { return nil }
+            return scaledDose * k1 * k2
+                * (exp(-k2 * tau) + exp(-k1 * tau) * (delta * tau - 1))
+                / (delta * delta)
+        }
+
+        return nil
     }
 
     static func injAmount(tau: Double, doseMG: Double, p: PKParams) -> Double {

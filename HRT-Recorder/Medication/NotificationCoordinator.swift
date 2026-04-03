@@ -144,9 +144,18 @@ final class NotificationCoordinator: NSObject, ObservableObject {
 
         switch template.route {
         case .patchRemove:
-            return "\(template.route.planLabel) is due at \(timeText(for: scheduledDate))."
+            return String.localizedStringWithFormat(
+                String(localized: "notification.fallback.patch_remove"),
+                template.route.planLabel,
+                timeText(for: scheduledDate)
+            )
         default:
-            return "\(template.route.planLabel) \(doseText(for: template)) is due at \(timeText(for: scheduledDate))."
+            return String.localizedStringWithFormat(
+                String(localized: "notification.fallback.default"),
+                template.route.planLabel,
+                doseText(for: template),
+                timeText(for: scheduledDate)
+            )
         }
     }
 
@@ -173,17 +182,17 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     private func actionVerb(for route: DoseEvent.Route) -> String {
         switch route {
         case .injection:
-            return "inject"
+            return String(localized: "notification.action.inject")
         case .patchApply:
-            return "apply"
+            return String(localized: "notification.action.apply")
         case .patchRemove:
-            return "remove"
+            return String(localized: "notification.action.remove")
         case .gel:
-            return "apply"
+            return String(localized: "notification.action.apply")
         case .oral:
-            return "take"
+            return String(localized: "notification.action.take")
         case .sublingual:
-            return "take"
+            return String(localized: "notification.action.take")
         }
     }
 

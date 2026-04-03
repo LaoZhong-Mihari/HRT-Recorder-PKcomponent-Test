@@ -101,11 +101,11 @@ struct WatchAddDoseView: View {
     private var activeEquivalentLabel: String {
         switch medicationCategory {
         case .estradiol:
-            return "Estradiol-equivalent dose (mg)"
+            return NSLocalizedString("Estradiol-equivalent dose (mg)", comment: "Estradiol equivalent dose label")
         case .testosterone:
-            return "Testosterone-equivalent dose (mg)"
+            return NSLocalizedString("Testosterone-equivalent dose (mg)", comment: "Testosterone equivalent dose label")
         case .antiAndrogen:
-            return "Dose (mg)"
+            return NSLocalizedString("Dose (mg)", comment: "Generic dose label")
         }
     }
 
@@ -125,9 +125,9 @@ struct WatchAddDoseView: View {
 
                 Section {
                     Picker("Category", selection: $medicationCategory) {
-                        Text("Estradiol").tag(WatchMedicationCategory.estradiol)
-                        Text("Testosterone").tag(WatchMedicationCategory.testosterone)
-                        Text("Anti-androgen").tag(WatchMedicationCategory.antiAndrogen)
+                        Text(WatchMedicationCategory.estradiol.displayName).tag(WatchMedicationCategory.estradiol)
+                        Text(WatchMedicationCategory.testosterone.displayName).tag(WatchMedicationCategory.testosterone)
+                        Text(WatchMedicationCategory.antiAndrogen.displayName).tag(WatchMedicationCategory.antiAndrogen)
                     }
                     .onChange(of: medicationCategory) { _, _ in
                         applyMedicationCategoryChange()
@@ -193,6 +193,10 @@ struct WatchAddDoseView: View {
                         } else {
                             TextField("input.patchMode.releaseRate", text: $patchReleaseRateText)
                         }
+
+                        Text("input.patchMode.package_hint")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -260,7 +264,11 @@ struct WatchAddDoseView: View {
 
     private var dosePlaceholder: String {
         if showsRawCompoundDose {
-            return "\(compound.abbreviation) dose (mg)"
+            return String(
+                format: NSLocalizedString("input.dose.compound_placeholder", comment: "Compound dose placeholder"),
+                locale: Locale.current,
+                compound.abbreviation
+            )
         }
         return activeEquivalentLabel
     }
@@ -274,7 +282,12 @@ struct WatchAddDoseView: View {
         }
 
         let equivalentDose = Self.format(rawDose * compound.info.toActiveFactor, decimals: 2)
-        return "\(medicationCategory.displayName)-equivalent: \(equivalentDose) mg"
+        return String(
+            format: NSLocalizedString("input.equivalent_preview", comment: "Equivalent dose preview"),
+            locale: Locale.current,
+            medicationCategory.displayName,
+            equivalentDose
+        )
     }
 
     private var sublingualSuggestionText: String {

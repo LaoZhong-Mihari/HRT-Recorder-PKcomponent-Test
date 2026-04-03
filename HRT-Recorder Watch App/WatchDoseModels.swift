@@ -14,7 +14,7 @@ enum WatchMedicationCategory: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .estradiol: return WatchSimulatedHormone.estradiol.displayName
         case .testosterone: return WatchSimulatedHormone.testosterone.displayName
-        case .antiAndrogen: return "Anti-androgen"
+        case .antiAndrogen: return NSLocalizedString("Anti-androgen", comment: "Medication category")
         }
     }
 
@@ -41,7 +41,12 @@ enum WatchSimulatedHormone: String, CaseIterable, Identifiable, Codable {
     }
 
     var displayName: String {
-        WatchPKSharedCatalogResource.current.hormones[self]?.displayName ?? rawValue.capitalized
+        switch self {
+        case .estradiol:
+            return NSLocalizedString("Estradiol", comment: "Hormone name")
+        case .testosterone:
+            return NSLocalizedString("Testosterone", comment: "Hormone name")
+        }
     }
 
     var concentrationUnit: WatchConcentrationUnit {

@@ -25,7 +25,7 @@ enum MedicationCategory: String, CaseIterable, Identifiable, Codable, Sendable {
         switch self {
         case .estradiol: return SimulatedHormone.estradiol.displayName
         case .testosterone: return SimulatedHormone.testosterone.displayName
-        case .antiAndrogen: return "Anti-androgen"
+        case .antiAndrogen: return String(localized: "Anti-androgen")
         }
     }
 }
@@ -44,7 +44,12 @@ enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 
     nonisolated var displayName: String {
-        PKSharedCatalogResource.current.hormones[self]?.displayName ?? category.rawValue.capitalized
+        switch self {
+        case .estradiol:
+            return String(localized: "Estradiol")
+        case .testosterone:
+            return String(localized: "Testosterone")
+        }
     }
 
     nonisolated var concentrationUnit: ConcentrationUnit {
