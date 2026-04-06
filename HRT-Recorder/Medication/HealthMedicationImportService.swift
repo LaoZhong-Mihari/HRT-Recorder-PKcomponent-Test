@@ -8,10 +8,18 @@ private struct ImportedDoseDetails: Sendable {
 }
 
 @MainActor
+enum MedicationImportAuthorizationState: Equatable {
+    case ready
+    case needsAuthorization
+}
+
+@MainActor
 protocol MedicationImportServicing {
     var isSupported: Bool { get }
     var availabilityDescription: String { get }
 
+    func authorizationState() async -> MedicationImportAuthorizationState
+    func requestAuthorizationIfNeeded() async throws
     func loadSuggestions() async throws -> [MedicationImportSuggestion]
 }
 
@@ -25,6 +33,12 @@ struct UnsupportedMedicationImportService: MedicationImportServicing {
 
         return String(localized: "medimport.availability.unsupported_os")
     }
+
+    func authorizationState() async -> MedicationImportAuthorizationState {
+        .ready
+    }
+
+    func requestAuthorizationIfNeeded() async throws {}
 
     func loadSuggestions() async throws -> [MedicationImportSuggestion] {
         throw HealthMedicationImportError.unsupportedOS
@@ -47,12 +61,26 @@ final class HealthMedicationImportService: MedicationImportServicing {
         return String(localized: "medimport.availability.import_plans")
     }
 
+    func authorizationState() async -> MedicationImportAuthorizationState {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            return .ready
+        }
+
+        guard let shouldRequest = try? await HealthKitService.shared.shouldRequestMedicationAuthorization() else {
+            return .ready
+        }
+
+        return shouldRequest ? .needsAuthorization : .ready
+    }
+
+    func requestAuthorizationIfNeeded() async throws {
+        try await HealthKitService.shared.requestMedicationAuthorizationIfNeeded()
+    }
+
     func loadSuggestions() async throws -> [MedicationImportSuggestion] {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HealthMedicationImportError.healthDataUnavailable
         }
-
-        try await HealthKitService.shared.requestMedicationAuthorizationIfNeeded()
 
         let medications = try await fetchActiveMedications()
         guard !medications.isEmpty else { return [] }

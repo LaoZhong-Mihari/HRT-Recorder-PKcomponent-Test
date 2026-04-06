@@ -146,7 +146,9 @@ struct TimelineScreen: View {
                         } else {
                             TimelineChartOverlay(
                                 sim: sim,
+                                availableUnits: vm.availableConcentrationUnits,
                                 chartHeight: chartDockedPlotHeight,
+                                onSelectUnit: { unit in vm.setSelectedConcentrationUnit(unit) },
                                 onCollapse: { toggleChartCollapse() },
                                 onExpand: { isChartFullscreenPresented = true }
                             )
@@ -241,7 +243,12 @@ struct TimelineScreen: View {
                             onEditWeight: { activeSheet = .weight },
                             onImportWeight: {
                                 activeSheet = nil
-                                Task { await importBodyWeight() }
+                                Task {
+                                    if await vm.shouldRequestHealthKitAuthorization() {
+                                        await waitForHealthKitPresentationTransition()
+                                    }
+                                    await importBodyWeight()
+                                }
                             }
                         )
                     }
@@ -269,7 +276,9 @@ struct TimelineScreen: View {
                     if let sim = vm.result, hasVisibleChart {
                         TimelineChartFullscreen(
                             sim: sim,
-                            isPresented: $isChartFullscreenPresented
+                            availableUnits: vm.availableConcentrationUnits,
+                            isPresented: $isChartFullscreenPresented,
+                            onSelectUnit: { unit in vm.setSelectedConcentrationUnit(unit) }
                         )
                     } else {
                         Color.clear
@@ -286,6 +295,10 @@ struct TimelineScreen: View {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
             isChartCollapsed.toggle()
         }
+    }
+
+    private func waitForHealthKitPresentationTransition() async {
+        try? await Task.sleep(for: .milliseconds(350))
     }
 
     private var toolbarButtonBackground: some View {
@@ -323,6 +336,24 @@ struct TimelineScreen: View {
     }
 
     private func saveEditedWeightAndSync(_ newWeight: Double) async {
+        if await vm.shouldRequestHealthKitAuthorization() {
+            vm.updateBodyWeightLocally(newWeight)
+            activeSheet = nil
+            await waitForHealthKitPresentationTransition()
+
+            do {
+                try await vm.requestHealthKitAuthorization()
+                try await vm.updateBodyWeightAndSyncToHealthKit(newWeight)
+            } catch {
+                healthMessage = String(
+                    format: NSLocalizedString("settings.health.weightSync.partialFailure", comment: "Weight sync partial failure message"),
+                    locale: Locale.current,
+                    error.localizedDescription
+                )
+            }
+            return
+        }
+
         do {
             try await vm.requestHealthKitAuthorization()
             try await vm.updateBodyWeightAndSyncToHealthKit(newWeight)
@@ -353,7 +384,9 @@ private struct TimelineChartOverlay: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let sim: SimulationResult
+    let availableUnits: [ConcentrationUnit]
     let chartHeight: CGFloat
+    let onSelectUnit: (ConcentrationUnit) -> Void
     let onCollapse: () -> Void
     let onExpand: () -> Void
 
@@ -373,7 +406,12 @@ private struct TimelineChartOverlay: View {
                 expandButton
             }
 
-            ResultChartView(sim: sim, preferredChartHeight: chartHeight)
+            ResultChartView(
+                sim: sim,
+                availableUnits: availableUnits,
+                preferredChartHeight: chartHeight,
+                onSelectUnit: onSelectUnit
+            )
         }
         .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -437,7 +475,9 @@ private struct TimelineChartFullscreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let sim: SimulationResult
+    let availableUnits: [ConcentrationUnit]
     @Binding var isPresented: Bool
+    let onSelectUnit: (ConcentrationUnit) -> Void
 
     private var controlButtonSize: CGFloat {
         dynamicTypeSize.isAccessibilitySize ? 52 : 44
@@ -473,7 +513,12 @@ private struct TimelineChartFullscreen: View {
                         dismissButton
                     }
 
-                    ResultChartView(sim: sim, preferredChartHeight: plotHeight)
+                    ResultChartView(
+                        sim: sim,
+                        availableUnits: availableUnits,
+                        preferredChartHeight: plotHeight,
+                        onSelectUnit: onSelectUnit
+                    )
                 }
                 .padding(cardPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

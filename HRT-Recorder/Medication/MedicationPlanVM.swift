@@ -7,6 +7,7 @@ final class MedicationPlanVM: ObservableObject {
     @Published private(set) var plans: [MedicationPlan]
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published private(set) var importSuggestions: [MedicationImportSuggestion] = []
+    @Published private(set) var importAuthorizationState: MedicationImportAuthorizationState = .ready
     @Published private(set) var isImporting = false
     @Published var importErrorMessage: String?
     @Published var notificationMessage: String?
@@ -61,6 +62,36 @@ final class MedicationPlanVM: ObservableObject {
         defer { isImporting = false }
 
         do {
+            importSuggestions = try await importService.loadSuggestions()
+        } catch {
+            importSuggestions = []
+            importErrorMessage = error.localizedDescription
+        }
+    }
+
+    func prepareImportSuggestions() async {
+        importErrorMessage = nil
+        let authorizationState = await importService.authorizationState()
+        importAuthorizationState = authorizationState
+
+        guard authorizationState == .ready else {
+            importSuggestions = []
+            return
+        }
+
+        await loadImportSuggestions()
+    }
+
+    func requestImportAuthorizationAndLoadSuggestions() async {
+        guard !isImporting else { return }
+
+        isImporting = true
+        importErrorMessage = nil
+        defer { isImporting = false }
+
+        do {
+            try await importService.requestAuthorizationIfNeeded()
+            importAuthorizationState = await importService.authorizationState()
             importSuggestions = try await importService.loadSuggestions()
         } catch {
             importSuggestions = []

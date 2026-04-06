@@ -205,6 +205,8 @@ private struct ResultChartInteractionSurface: UIViewRepresentable {
 struct ResultChartView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
+    let availableUnits: [ConcentrationUnit]
+    let onSelectUnit: ((ConcentrationUnit) -> Void)?
     private let chartPoints: [ResultChartPoint]
     private let chartMaxConcentration: Double
     private let preferredChartHeight: CGFloat?
@@ -219,9 +221,16 @@ struct ResultChartView: View {
 
     private let timer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common).autoconnect()
 
-    init(sim: SimulationResult, preferredChartHeight: CGFloat? = nil) {
+    init(
+        sim: SimulationResult,
+        availableUnits: [ConcentrationUnit] = [],
+        preferredChartHeight: CGFloat? = nil,
+        onSelectUnit: ((ConcentrationUnit) -> Void)? = nil
+    ) {
         self.sim = sim
+        self.availableUnits = availableUnits
         self.preferredChartHeight = preferredChartHeight
+        self.onSelectUnit = onSelectUnit
 
         let points = Array(zip(sim.timeH, sim.concentrations)).map { hour, concentration in
             ResultChartPoint(hour: hour, concentration: concentration)
@@ -237,6 +246,14 @@ struct ResultChartView: View {
 
     private var xAxisLabel: String {
         NSLocalizedString("chart.axis.time", comment: "X-axis label")
+    }
+
+    private var chartTitle: String {
+        String.localizedStringWithFormat(
+            String(localized: "chart.title"),
+            sim.displayMetadata.hormone.displayName,
+            sim.concentrationUnit.symbol
+        )
     }
 
     private var yAxisLabel: String {
@@ -292,9 +309,34 @@ struct ResultChartView: View {
 
     private var currentConcentrationText: String {
         guard let value = sim.concentration(at: currentHour) else {
-            return NSLocalizedString("chart.currentConc.missing", comment: "Current concentration unavailable")
+            return "—"
         }
         return ResultChartFormatter.concentrationLabel(for: value, unit: sim.concentrationUnit)
+    }
+
+    private var currentConcentrationAccessibilityText: String {
+        let hormoneName = sim.displayMetadata.hormone.displayName
+        guard let value = sim.concentration(at: currentHour) else {
+            return String.localizedStringWithFormat(
+                String(localized: "chart.currentConc.missing"),
+                hormoneName
+            )
+        }
+
+        let formattedValue = ResultChartFormatter.concentrationLabel(for: value, unit: sim.concentrationUnit)
+        return String.localizedStringWithFormat(
+            String(localized: "chart.currentConc.value"),
+            hormoneName,
+            formattedValue
+        )
+    }
+
+    private var chartAccessibilityLabel: String {
+        String.localizedStringWithFormat(
+            String(localized: "chart.accessibility"),
+            sim.displayMetadata.hormone.displayName,
+            sim.concentrationUnit.symbol
+        )
     }
 
     private var axisStepHours: Double {
@@ -365,6 +407,94 @@ struct ResultChartView: View {
             return isPad ? 380 : 340
         }
         return isPad ? 320 : 260
+    }
+
+    private var shouldShowUnitMenu: Bool {
+        availableUnits.count > 1 && onSelectUnit != nil
+    }
+
+    private var unitMenuForegroundColor: Color {
+        Color(uiColor: .label)
+    }
+
+    private var unitMenuBackgroundColor: Color {
+        chartAccentColor.opacity(0.12)
+    }
+
+    private var unitMenuBorderColor: Color {
+        chartAccentColor.opacity(0.28)
+    }
+
+    @ViewBuilder
+    private var unitMenu: some View {
+        if shouldShowUnitMenu, let onSelectUnit {
+            Menu {
+                Picker(
+                    String(localized: "chart.unit.title"),
+                    selection: Binding(
+                        get: { sim.concentrationUnit },
+                        set: { newValue in
+                            guard newValue != sim.concentrationUnit else { return }
+                            onSelectUnit(newValue)
+                        }
+                    )
+                ) {
+                    ForEach(availableUnits, id: \.self) { unit in
+                        Text(unit.localizedLabel).tag(unit)
+                    }
+                }
+            } label: {
+                Label {
+                    Text(sim.concentrationUnit.localizedLabel)
+                } icon: {
+                    Image(systemName: "arrow.left.arrow.right")
+                }
+                .font(dynamicTypeSize.isAccessibilitySize ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
+                .foregroundStyle(unitMenuForegroundColor)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(unitMenuBackgroundColor))
+                .overlay(
+                    Capsule()
+                        .stroke(unitMenuBorderColor, lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("chart.unit.accessibility"))
+        }
+    }
+
+    private var chartHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(chartTitle)
+                        .font(.headline)
+                    Text(currentConcentrationText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text(currentConcentrationAccessibilityText))
+                }
+                Spacer(minLength: 0)
+                unitMenu
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(chartTitle)
+                        .font(.headline)
+                    Spacer(minLength: 0)
+                    unitMenu
+                }
+
+                Text(currentConcentrationText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Text(currentConcentrationAccessibilityText))
+            }
+        }
+        .padding(.horizontal)
     }
 
     private var concentrationChart: some View {
@@ -531,43 +661,11 @@ struct ResultChartView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(LocalizedStringKey("chart.title"))
-                        .font(.headline)
-                    Text(currentConcentrationText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(currentConcentrationText)
-                }
-                .padding(.horizontal)
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(LocalizedStringKey("chart.title"))
-                            .font(.headline)
-                        Spacer()
-                        Text(currentConcentrationText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(currentConcentrationText)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(LocalizedStringKey("chart.title"))
-                            .font(.headline)
-                        Text(currentConcentrationText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel(currentConcentrationText)
-                    }
-                }
-                .padding(.horizontal)
-            }
+            chartHeader
 
             concentrationChart
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text(LocalizedStringKey("chart.accessibility")))
+                .accessibilityLabel(Text(chartAccessibilityLabel))
         }
         .animation(.easeInOut(duration: 0.18), value: displayHour)
         .transaction { transaction in

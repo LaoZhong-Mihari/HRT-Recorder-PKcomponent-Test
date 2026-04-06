@@ -95,11 +95,22 @@ struct ContentView: View {
     }
 
     private var concentrationSection: some View {
-        Section("chart.title") {
+        Section(chartSectionTitle) {
             TimelineView(.periodic(from: .now, by: 60)) { _ in
                 Text(currentConcentrationText)
                     .font(.headline.monospacedDigit())
                     .foregroundStyle(concentrationForDisplay == nil ? .secondary : .primary)
+            }
+
+            if timelineVM.availableConcentrationUnits.count > 1 {
+                Picker("chart.unit.title", selection: Binding(
+                    get: { timelineVM.selectedConcentrationUnit },
+                    set: { timelineVM.setSelectedConcentrationUnit($0) }
+                )) {
+                    ForEach(timelineVM.availableConcentrationUnits, id: \.self) { unit in
+                        Text(unit.localizedLabel).tag(unit)
+                    }
+                }
             }
 
             if !chartPointsForDisplay.isEmpty {
@@ -146,6 +157,14 @@ struct ContentView: View {
             )
         }
         return "--"
+    }
+
+    private var chartSectionTitle: String {
+        String.localizedStringWithFormat(
+            String(localized: "chart.title"),
+            timelineVM.selectedHormone.displayName,
+            timelineVM.selectedConcentrationUnit.symbol
+        )
     }
 
     private func deleteVisibleEvents(at offsets: IndexSet) {

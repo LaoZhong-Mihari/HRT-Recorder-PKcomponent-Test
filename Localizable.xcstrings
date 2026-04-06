@@ -312,7 +312,21 @@
       }
     },
     "Anti-androgen" : {
-      "comment" : "Medication category"
+      "comment" : "Medication category",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anti-androgen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "抗雄激素"
+          }
+        }
+      }
     },
     "Apple Health took too long to answer. Close the sheet and try again." : {
       "extractionState" : "stale",
@@ -349,7 +363,21 @@
 
     },
     "chart.accessibility" : {
-
+      "comment" : "Accessibility label for concentration chart with hormone and unit",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ concentration chart (%2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@浓度图（%2$@）"
+          }
+        }
+      }
     },
     "chart.axis.conc" : {
       "comment" : "Y-axis label",
@@ -409,47 +437,81 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Current E2 concentration: —"
+            "value" : "Current %1$@ concentration: —"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前雌二醇浓度：—"
+            "value" : "当前%1$@浓度：—"
           }
         }
       }
     },
     "chart.currentConc.value" : {
       "comment" : "Current concentration label",
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Current E2 concentration: %@ pg/mL"
+            "value" : "Current %1$@ concentration: %2$@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前雌二醇浓度：%@ pg/mL"
+            "value" : "当前%1$@浓度：%2$@"
           }
         }
       }
     },
     "chart.title" : {
+      "comment" : "Chart title with hormone name and concentration unit",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estradiol concentration (pg/mL)"
+            "value" : "%1$@ concentration (%2$@)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "雌二醇浓度 (pg/mL)"
+            "value" : "%1$@浓度（%2$@）"
+          }
+        }
+      }
+    },
+    "chart.unit.accessibility" : {
+      "comment" : "Accessibility label for concentration unit picker",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select display unit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择显示单位"
+          }
+        }
+      }
+    },
+    "chart.unit.title" : {
+      "comment" : "Display unit picker title",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display Unit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示单位"
           }
         }
       }
@@ -983,7 +1045,21 @@
       }
     },
     "Estradiol" : {
-      "comment" : "Hormone name"
+      "comment" : "Hormone name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estradiol"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雌二醇"
+          }
+        }
+      }
     },
     "Estradiol-equivalent dose (mg)" : {
       "comment" : "Estradiol equivalent dose label",
@@ -1210,7 +1286,20 @@
       }
     },
     "Hormone" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hormone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "激素"
+          }
+        }
+      }
     },
     "Import from Health" : {
       "localizations" : {
@@ -3155,6 +3244,54 @@
         }
       }
     },
+    "medplan.import.authorization.button" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Health Access"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许访问健康数据"
+          }
+        }
+      }
+    },
+    "medplan.import.authorization.message" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Apple Health access first, then the app can read medications and dose events."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先允许访问 Apple 健康，随后应用才能读取用药和给药事件。"
+          }
+        }
+      }
+    },
+    "medplan.import.authorization.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health access required"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要健康数据访问权限"
+          }
+        }
+      }
+    },
     "medplan.import.review_plan" : {
       "localizations" : {
         "en" : {
@@ -4492,7 +4629,21 @@
       }
     },
     "Testosterone" : {
-      "comment" : "Hormone name"
+      "comment" : "Hormone name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Testosterone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "睾酮"
+          }
+        }
+      }
     },
     "Testosterone-equivalent dose (mg)" : {
       "comment" : "Testosterone equivalent dose label",
