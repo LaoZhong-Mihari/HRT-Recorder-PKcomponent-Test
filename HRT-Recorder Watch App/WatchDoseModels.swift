@@ -49,8 +49,23 @@ enum WatchSimulatedHormone: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    var analyteCompound: WatchCompound {
+        switch self {
+        case .estradiol: return .E2
+        case .testosterone: return .T
+        }
+    }
+
+    var molecularWeight: Double {
+        analyteCompound.info.activeMolecularWeight
+    }
+
     var concentrationUnit: WatchConcentrationUnit {
         WatchPKSharedCatalogResource.current.hormones[self]?.concentrationUnit ?? .pgPerML
+    }
+
+    var supportedConcentrationUnits: [WatchConcentrationUnit] {
+        WatchConcentrationUnit.supportedUnits(for: self)
     }
 
     var chartColor: Color {
@@ -63,22 +78,72 @@ enum WatchSimulatedHormone: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-enum WatchConcentrationUnit: String, Codable {
+enum WatchConcentrationUnit: String, CaseIterable, Identifiable, Codable {
     case pgPerML
+    case pmolPerL
     case ngPerDL
+    case ngPerML
+    case nmolPerL
+
+    var id: Self { self }
 
     var symbol: String {
         switch self {
         case .pgPerML: return "pg/mL"
+        case .pmolPerL: return "pmol/L"
         case .ngPerDL: return "ng/dL"
+        case .ngPerML: return "ng/mL"
+        case .nmolPerL: return "nmol/L"
         }
     }
 
-    var concentrationScale: Double {
+    var localizedLabel: String {
+        symbol
+    }
+
+    func concentrationScale(for hormone: WatchSimulatedHormone) -> Double {
         switch self {
         case .pgPerML: return 1e9
         case .ngPerDL: return 1e8
+        case .ngPerML: return 1e6
+        case .pmolPerL: return 1e12 / hormone.molecularWeight
+        case .nmolPerL: return 1e9 / hormone.molecularWeight
         }
+    }
+
+    func isSupported(for hormone: WatchSimulatedHormone) -> Bool {
+        Self.supportedUnits(for: hormone).contains(self)
+    }
+
+    static func supportedUnits(for hormone: WatchSimulatedHormone) -> [WatchConcentrationUnit] {
+        switch hormone {
+        case .estradiol:
+            return [.pgPerML, .pmolPerL]
+        case .testosterone:
+            return [.ngPerDL, .ngPerML, .nmolPerL]
+        }
+    }
+
+    static func convert(
+        _ value: Double,
+        from sourceUnit: WatchConcentrationUnit,
+        to targetUnit: WatchConcentrationUnit,
+        hormone: WatchSimulatedHormone
+    ) -> Double {
+        guard sourceUnit != targetUnit else { return value }
+        let baseValue = value / sourceUnit.concentrationScale(for: hormone)
+        return baseValue * targetUnit.concentrationScale(for: hormone)
+    }
+}
+
+extension WatchSimulatedHormone {
+    func preferredUnit(from rawValue: String?) -> WatchConcentrationUnit {
+        guard let rawValue,
+              let unit = WatchConcentrationUnit(rawValue: rawValue),
+              unit.isSupported(for: self) else {
+            return concentrationUnit
+        }
+        return unit
     }
 }
 
@@ -87,6 +152,12 @@ struct WatchSimulationDisplayMetadata: Equatable, Codable {
     let concentrationUnit: WatchConcentrationUnit
 
     var concentrationSymbol: String { concentrationUnit.symbol }
+}
+
+extension WatchSimulationDisplayMetadata {
+    func withUnit(_ concentrationUnit: WatchConcentrationUnit) -> WatchSimulationDisplayMetadata {
+        WatchSimulationDisplayMetadata(hormone: hormone, concentrationUnit: concentrationUnit)
+    }
 }
 
 enum WatchCompound: String, CaseIterable, Identifiable, Codable {

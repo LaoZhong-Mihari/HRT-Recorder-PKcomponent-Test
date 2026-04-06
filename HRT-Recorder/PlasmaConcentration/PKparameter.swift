@@ -52,11 +52,26 @@ enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
+    nonisolated var analyteCompound: Compound {
+        switch self {
+        case .estradiol: return .E2
+        case .testosterone: return .T
+        }
+    }
+
+    nonisolated var molecularWeight: Double {
+        analyteCompound.info.activeMolecularWeight
+    }
+
     nonisolated var concentrationUnit: ConcentrationUnit {
         switch self {
         case .estradiol: return .pgPerML
         case .testosterone: return .ngPerDL
         }
+    }
+
+    nonisolated var supportedConcentrationUnits: [ConcentrationUnit] {
+        ConcentrationUnit.supportedUnits(for: self)
     }
 
     nonisolated var chartColor: Color {
@@ -69,29 +84,91 @@ enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-enum ConcentrationUnit: String, Codable, Sendable {
+enum ConcentrationUnit: String, CaseIterable, Identifiable, Codable, Sendable {
     case pgPerML
+    case pmolPerL
     case ngPerDL
+    case ngPerML
+    case nmolPerL
+
+    nonisolated var id: Self { self }
 
     nonisolated var symbol: String {
         switch self {
         case .pgPerML: return "pg/mL"
+        case .pmolPerL: return "pmol/L"
         case .ngPerDL: return "ng/dL"
+        case .ngPerML: return "ng/mL"
+        case .nmolPerL: return "nmol/L"
         }
     }
 
-    nonisolated var concentrationScale: Double {
+    nonisolated func concentrationScale(for hormone: SimulatedHormone) -> Double {
         switch self {
         case .pgPerML: return 1e9
         case .ngPerDL: return 1e8
+        case .ngPerML: return 1e6
+        case .pmolPerL: return 1e12 / hormone.molecularWeight
+        case .nmolPerL: return 1e9 / hormone.molecularWeight
         }
     }
 
     nonisolated var aucSymbol: String {
         switch self {
         case .pgPerML: return "pg·h/mL"
+        case .pmolPerL: return "pmol·h/L"
         case .ngPerDL: return "ng·h/dL"
+        case .ngPerML: return "ng·h/mL"
+        case .nmolPerL: return "nmol·h/L"
         }
+    }
+
+    nonisolated func isSupported(for hormone: SimulatedHormone) -> Bool {
+        Self.supportedUnits(for: hormone).contains(self)
+    }
+
+    nonisolated static func supportedUnits(for hormone: SimulatedHormone) -> [ConcentrationUnit] {
+        switch hormone {
+        case .estradiol:
+            return [.pgPerML, .pmolPerL]
+        case .testosterone:
+            return [.ngPerDL, .ngPerML, .nmolPerL]
+        }
+    }
+
+    nonisolated static func convert(
+        _ value: Double,
+        from sourceUnit: ConcentrationUnit,
+        to targetUnit: ConcentrationUnit,
+        hormone: SimulatedHormone
+    ) -> Double {
+        guard sourceUnit != targetUnit else { return value }
+        let baseValue = value / sourceUnit.concentrationScale(for: hormone)
+        return baseValue * targetUnit.concentrationScale(for: hormone)
+    }
+
+    nonisolated static func convertAUC(
+        _ value: Double,
+        from sourceUnit: ConcentrationUnit,
+        to targetUnit: ConcentrationUnit,
+        hormone: SimulatedHormone
+    ) -> Double {
+        convert(value, from: sourceUnit, to: targetUnit, hormone: hormone)
+    }
+
+    nonisolated var localizedLabel: String {
+        symbol
+    }
+}
+
+extension SimulatedHormone {
+    nonisolated func preferredUnit(from rawValue: String?) -> ConcentrationUnit {
+        guard let rawValue,
+              let unit = ConcentrationUnit(rawValue: rawValue),
+              unit.isSupported(for: self) else {
+            return concentrationUnit
+        }
+        return unit
     }
 }
 
@@ -101,6 +178,12 @@ struct SimulationDisplayMetadata: Equatable, Codable, Sendable {
 
     nonisolated var concentrationSymbol: String { concentrationUnit.symbol }
     nonisolated var aucSymbol: String { concentrationUnit.aucSymbol }
+}
+
+extension SimulationDisplayMetadata {
+    nonisolated func withUnit(_ concentrationUnit: ConcentrationUnit) -> SimulationDisplayMetadata {
+        SimulationDisplayMetadata(hormone: hormone, concentrationUnit: concentrationUnit)
+    }
 }
 
 enum Compound: String, CaseIterable, Identifiable, Codable, Sendable {

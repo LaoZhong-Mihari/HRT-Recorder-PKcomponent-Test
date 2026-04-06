@@ -573,6 +573,28 @@ extension SimulationResult {
         let ratio = (hour - t0) / (t1 - t0)
         return c0 + (c1 - c0) * ratio
     }
+
+    func converted(to unit: ConcentrationUnit) -> SimulationResult {
+        guard unit != concentrationUnit else { return self }
+
+        let hormone = displayMetadata.hormone
+        let convertedConcentrations = concentrations.map {
+            ConcentrationUnit.convert($0, from: concentrationUnit, to: unit, hormone: hormone)
+        }
+        let convertedAUC = ConcentrationUnit.convertAUC(
+            auc,
+            from: concentrationUnit,
+            to: unit,
+            hormone: hormone
+        )
+
+        return SimulationResult(
+            timeH: timeH,
+            concentrations: convertedConcentrations,
+            auc: convertedAUC,
+            displayMetadata: displayMetadata.withUnit(unit)
+        )
+    }
 }
 
 func simulateTimelineResult(
@@ -632,7 +654,7 @@ struct SimulationEngine: Sendable {
         timeArr.reserveCapacity(numberOfSteps)
         concArr.reserveCapacity(numberOfSteps)
         var auc = 0.0
-        let concentrationScale = displayMetadata.concentrationUnit.concentrationScale / plasmaVolumeML
+        let concentrationScale = displayMetadata.concentrationUnit.concentrationScale(for: displayMetadata.hormone) / plasmaVolumeML
         var previousConc = 0.0
 
         for i in 0..<numberOfSteps {

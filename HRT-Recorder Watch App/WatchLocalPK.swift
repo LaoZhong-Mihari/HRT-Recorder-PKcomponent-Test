@@ -309,7 +309,7 @@ private enum WatchPKModel {
             }
         }
 
-        return totalAmountMG * (hormone.concentrationUnit.concentrationScale / plasmaVolumeML)
+        return totalAmountMG * (hormone.concentrationUnit.concentrationScale(for: hormone) / plasmaVolumeML)
     }
 }
 
@@ -324,9 +324,15 @@ final class WatchDoseTimelineVM: ObservableObject {
     @Published var selectedHormone: WatchSimulatedHormone = .estradiol {
         didSet {
             UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
-            runSimulation()
+            let preferredUnit = preferredConcentrationUnit(for: selectedHormone)
+            if selectedConcentrationUnit != preferredUnit {
+                selectedConcentrationUnit = preferredUnit
+            } else {
+                runSimulation()
+            }
         }
     }
+    @Published private(set) var selectedConcentrationUnit: WatchConcentrationUnit
     @Published private(set) var localChartPoints: [WatchChartPoint] = []
     @Published private(set) var currentConcentration: Double?
     @Published private(set) var displayMetadata: WatchSimulationDisplayMetadata
@@ -349,15 +355,26 @@ final class WatchDoseTimelineVM: ObservableObject {
             initialSelectedHormone = .estradiol
         }
         self.selectedHormone = initialSelectedHormone
+        let initialSelectedConcentrationUnit = initialSelectedHormone.preferredUnit(
+            from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: initialSelectedHormone))
+        )
+        self.selectedConcentrationUnit = initialSelectedConcentrationUnit
 
         self.displayMetadata = WatchSimulationDisplayMetadata(
             hormone: initialSelectedHormone,
-            concentrationUnit: initialSelectedHormone.concentrationUnit
+            concentrationUnit: initialSelectedConcentrationUnit
         )
 
         store.$events
             .sink { [weak self] _ in
                 self?.runSimulation()
+            }
+            .store(in: &cancellables)
+
+        $selectedConcentrationUnit
+            .dropFirst()
+            .sink { [weak self] unit in
+                self?.applySelectedConcentrationUnit(unit)
             }
             .store(in: &cancellables)
 
@@ -368,10 +385,20 @@ final class WatchDoseTimelineVM: ObservableObject {
         store.events.filter { $0.appearsInTimeline(for: selectedHormone) }
     }
 
+    var availableConcentrationUnits: [WatchConcentrationUnit] {
+        selectedHormone.supportedConcentrationUnits
+    }
+
+    func setSelectedConcentrationUnit(_ unit: WatchConcentrationUnit) {
+        guard unit.isSupported(for: selectedHormone), selectedConcentrationUnit != unit else { return }
+        selectedConcentrationUnit = unit
+    }
+
     func runSimulation() {
+        let selectedUnit = selectedConcentrationUnit
         displayMetadata = WatchSimulationDisplayMetadata(
             hormone: selectedHormone,
-            concentrationUnit: selectedHormone.concentrationUnit
+            concentrationUnit: selectedUnit
         )
 
         let simulationEvents = store.events
@@ -389,6 +416,7 @@ final class WatchDoseTimelineVM: ObservableObject {
         let endH = (simulationEvents.last?.timeH ?? nowH) + 24.0 * 14.0
         let steps = 1000
         let stepH = (endH - startH) / Double(steps - 1)
+        let sourceUnit = selectedHormone.concentrationUnit
 
         var points: [WatchChartPoint] = []
         points.reserveCapacity(steps)
@@ -401,16 +429,49 @@ final class WatchDoseTimelineVM: ObservableObject {
                 hormone: selectedHormone,
                 bodyWeightKG: bodyWeightKG
             )
-            points.append(WatchChartPoint(timeH: timeH, concentration: concentration))
+            let convertedConcentration = WatchConcentrationUnit.convert(
+                concentration,
+                from: sourceUnit,
+                to: selectedUnit,
+                hormone: selectedHormone
+            )
+            points.append(WatchChartPoint(timeH: timeH, concentration: convertedConcentration))
         }
 
         localChartPoints = points
-        currentConcentration = WatchPKModel.concentrationAt(
+        let nativeCurrentConcentration = WatchPKModel.concentrationAt(
             timeH: nowH,
             events: simulationEvents,
             hormone: selectedHormone,
             bodyWeightKG: bodyWeightKG
         )
+        currentConcentration = WatchConcentrationUnit.convert(
+            nativeCurrentConcentration,
+            from: sourceUnit,
+            to: selectedUnit,
+            hormone: selectedHormone
+        )
+    }
+
+    private func applySelectedConcentrationUnit(_ unit: WatchConcentrationUnit) {
+        guard unit.isSupported(for: selectedHormone) else {
+            let fallback = selectedHormone.concentrationUnit
+            if selectedConcentrationUnit != fallback {
+                selectedConcentrationUnit = fallback
+            }
+            return
+        }
+
+        UserDefaults.standard.set(unit.rawValue, forKey: Self.concentrationUnitKey(for: selectedHormone))
+        runSimulation()
+    }
+
+    private func preferredConcentrationUnit(for hormone: WatchSimulatedHormone) -> WatchConcentrationUnit {
+        hormone.preferredUnit(from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: hormone)))
+    }
+
+    private static func concentrationUnitKey(for hormone: WatchSimulatedHormone) -> String {
+        "watch.timeline.selectedConcentrationUnit.\(hormone.rawValue)"
     }
 }
 

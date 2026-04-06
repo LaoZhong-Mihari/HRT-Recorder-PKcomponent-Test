@@ -47,9 +47,15 @@ final class DoseTimelineVM: ObservableObject {
         didSet {
             UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
             refreshDayGroups()
-            runSimulation()
+            let preferredUnit = preferredConcentrationUnit(for: selectedHormone)
+            if selectedConcentrationUnit != preferredUnit {
+                selectedConcentrationUnit = preferredUnit
+            } else {
+                runSimulation()
+            }
         }
     }
+    @Published private(set) var selectedConcentrationUnit: ConcentrationUnit
     private let weightKey = "user.weightKg"
     private let eventsModifiedKey = "dose.events.modifiedAt"
     private let weightSyncDateKey = "user.weight.syncDate"
@@ -81,10 +87,17 @@ final class DoseTimelineVM: ObservableObject {
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        let initialSelectedHormone: SimulatedHormone
         if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
            let hormone = SimulatedHormone(rawValue: raw) {
-            self.selectedHormone = hormone
+            initialSelectedHormone = hormone
+        } else {
+            initialSelectedHormone = .estradiol
         }
+        self.selectedHormone = initialSelectedHormone
+        self.selectedConcentrationUnit = initialSelectedHormone.preferredUnit(
+            from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: initialSelectedHormone))
+        )
         let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
         self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
         if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
@@ -105,10 +118,17 @@ final class DoseTimelineVM: ObservableObject {
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
+        let initialSelectedHormone: SimulatedHormone
         if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
            let hormone = SimulatedHormone(rawValue: raw) {
-            self.selectedHormone = hormone
+            initialSelectedHormone = hormone
+        } else {
+            initialSelectedHormone = .estradiol
         }
+        self.selectedHormone = initialSelectedHormone
+        self.selectedConcentrationUnit = initialSelectedHormone.preferredUnit(
+            from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: initialSelectedHormone))
+        )
         let syncDate = UserDefaults.standard.double(forKey: weightSyncDateKey)
         self.lastBodyWeightSyncDate = syncDate > 0 ? Date(timeIntervalSince1970: syncDate) : nil
         if let rawValue = UserDefaults.standard.string(forKey: weightSyncSourceKey) {
@@ -128,6 +148,13 @@ final class DoseTimelineVM: ObservableObject {
         $bodyWeightKG
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.runSimulation() }
+            .store(in: &cancellables)
+
+        $selectedConcentrationUnit
+            .dropFirst()
+            .sink { [weak self] unit in
+                self?.applySelectedConcentrationUnit(unit)
+            }
             .store(in: &cancellables)
     }
 
@@ -168,6 +195,15 @@ final class DoseTimelineVM: ObservableObject {
         events = newEvents.sorted { $0.timeH < $1.timeH }
         runSimulation()
     }
+
+    var availableConcentrationUnits: [ConcentrationUnit] {
+        selectedHormone.supportedConcentrationUnits
+    }
+
+    func setSelectedConcentrationUnit(_ unit: ConcentrationUnit) {
+        guard unit.isSupported(for: selectedHormone), selectedConcentrationUnit != unit else { return }
+        selectedConcentrationUnit = unit
+    }
     
     func runSimulation() {
         guard !events.isEmpty else {
@@ -197,7 +233,7 @@ final class DoseTimelineVM: ObservableObject {
 
             DispatchQueue.main.async {
                 guard generation == self.simulationGeneration else { return }
-                self.result = simulationResult
+                self.result = simulationResult.converted(to: self.selectedConcentrationUnit)
                 self.isSimulating = false
             }
         }
@@ -214,6 +250,9 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     func refreshLatestBodyWeightSilently() async {
+        guard await HealthKitService.shared.canAccessBodyMassWithoutPrompt() else {
+            return
+        }
         guard let sample = try? await HealthKitService.shared.fetchLatestBodyMassSample() else {
             return
         }
@@ -232,6 +271,9 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     func beginBodyWeightHealthKitSync() async {
+        guard await HealthKitService.shared.canAccessBodyMassWithoutPrompt() else {
+            return
+        }
         do {
             try await HealthKitService.shared.startBodyMassBackgroundSync { [weak self] weightKG, date in
                 self?.applyBodyWeightFromHealthKit(weightKG, at: date)
@@ -243,10 +285,40 @@ final class DoseTimelineVM: ObservableObject {
         }
     }
 
+    func shouldRequestHealthKitAuthorization() async -> Bool {
+        (try? await HealthKitService.shared.shouldRequestBodyMassAuthorization()) ?? false
+    }
+
     func concentration(at date: Date) -> Double? {
         guard let result else { return nil }
         let hourValue = date.timeIntervalSince1970 / 3600.0
         return result.concentration(at: hourValue)
+    }
+
+    private func applySelectedConcentrationUnit(_ unit: ConcentrationUnit) {
+        guard unit.isSupported(for: selectedHormone) else {
+            let fallback = selectedHormone.concentrationUnit
+            if selectedConcentrationUnit != fallback {
+                selectedConcentrationUnit = fallback
+            }
+            return
+        }
+
+        UserDefaults.standard.set(unit.rawValue, forKey: Self.concentrationUnitKey(for: selectedHormone))
+
+        if let result, result.displayMetadata.hormone == selectedHormone {
+            self.result = result.converted(to: unit)
+        } else if !events.isEmpty {
+            runSimulation()
+        }
+    }
+
+    private func preferredConcentrationUnit(for hormone: SimulatedHormone) -> ConcentrationUnit {
+        hormone.preferredUnit(from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: hormone)))
+    }
+
+    private static func concentrationUnitKey(for hormone: SimulatedHormone) -> String {
+        "timeline.selectedConcentrationUnit.\(hormone.rawValue)"
     }
 
     var bodyWeightHealthStatusText: String {

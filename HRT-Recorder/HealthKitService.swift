@@ -9,7 +9,6 @@ final class HealthKitService {
     private var bodyMassObserverQuery: HKObserverQuery?
     private var bodyMassUpdateHandler: ((Double, Date) -> Void)?
     private let bodyMassAnchorKey = "healthkit.bodyMass.anchor"
-    private let medicationAuthorizationRequestedKey = "healthkit.medication.authorization.requested"
 
     private init() {}
 
@@ -38,15 +37,42 @@ final class HealthKitService {
     }
 
     func requestBodyMassAuthorizationIfNeeded() async throws {
+        guard try await shouldRequestBodyMassAuthorization() else { return }
         try await requestAuthorization(toShare: bodyMassShareTypes, read: bodyMassReadTypes)
     }
 
     func requestMedicationAuthorizationIfNeeded() async throws {
         guard #available(iOS 26.0, *) else { return }
-        try await MedicationAuthorizationCoordinator.requestIfNeeded(
-            using: store,
-            requestedKey: medicationAuthorizationRequestedKey
+        guard try await shouldRequestMedicationAuthorization() else { return }
+        try await MedicationAuthorizationCoordinator.requestIfNeeded(using: store)
+    }
+
+    func canAccessBodyMassWithoutPrompt() async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        guard let status = try? await authorizationRequestStatus(
+            toShare: bodyMassShareTypes,
+            read: bodyMassReadTypes
+        ) else {
+            return false
+        }
+        return status == .unnecessary
+    }
+
+    func shouldRequestBodyMassAuthorization() async throws -> Bool {
+        try await authorizationRequestStatus(
+            toShare: bodyMassShareTypes,
+            read: bodyMassReadTypes
+        ) == .shouldRequest
+    }
+
+    @available(iOS 26.0, *)
+    func shouldRequestMedicationAuthorization() async throws -> Bool {
+        let medicationType = HKObjectType.userAnnotatedMedicationType()
+        let status = try await authorizationRequestStatus(
+            toShare: Set<HKSampleType>(),
+            read: Set([medicationType])
         )
+        return status == .shouldRequest
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
@@ -59,6 +85,21 @@ final class HealthKitService {
         }
 
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
+    }
+
+    private func authorizationRequestStatus(
+        toShare shareTypes: Set<HKSampleType>,
+        read readTypes: Set<HKObjectType>
+    ) async throws -> HKAuthorizationRequestStatus {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw NSError(
+                domain: "HealthKitService",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.unavailable")]
+            )
+        }
+
+        return try await store.statusForAuthorizationRequest(toShare: shareTypes, read: readTypes)
     }
 
     func fetchLatestBodyMassKG() async throws -> Double {
@@ -219,17 +260,13 @@ final class HealthKitService {
 @MainActor
 @available(iOS 26.0, *)
 private enum MedicationAuthorizationCoordinator {
-    static func requestIfNeeded(using store: HKHealthStore, requestedKey: String) async throws {
+    static func requestIfNeeded(using store: HKHealthStore) async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw NSError(
                 domain: "HealthKitService",
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.unavailable")]
             )
-        }
-
-        guard !UserDefaults.standard.bool(forKey: requestedKey) else {
-            return
         }
 
         let medicationType = HKObjectType.userAnnotatedMedicationType()
@@ -246,8 +283,6 @@ private enum MedicationAuthorizationCoordinator {
                 read: Set([medicationType])
             )
         }
-
-        UserDefaults.standard.set(true, forKey: requestedKey)
     }
 
     private static func requestPerObjectReadAuthorization(

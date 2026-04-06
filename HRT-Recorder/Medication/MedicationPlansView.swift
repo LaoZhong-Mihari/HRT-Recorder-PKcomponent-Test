@@ -653,6 +653,18 @@ private struct MedicationImportView: View {
                             tint: .pink,
                             showsProgress: true
                         )
+                    } else if vm.importAuthorizationState == .needsAuthorization {
+                        StateCard(
+                            title: String(localized: "medplan.import.authorization.title"),
+                            message: String(localized: "medplan.import.authorization.message"),
+                            systemImage: "heart.text.square.fill",
+                            tint: .pink
+                        ) {
+                            Button(String(localized: "medplan.import.authorization.button")) {
+                                Task { await vm.requestImportAuthorizationAndLoadSuggestions() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
                     } else if let error = vm.importErrorMessage {
                         StateCard(
                             title: String(localized: "Import unavailable"),
@@ -661,7 +673,7 @@ private struct MedicationImportView: View {
                             tint: .orange
                         ) {
                             Button("Try Again") {
-                                Task { await vm.loadImportSuggestions() }
+                                Task { await vm.prepareImportSuggestions() }
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -698,17 +710,23 @@ private struct MedicationImportView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Reload") {
-                        Task { await vm.loadImportSuggestions() }
+                        Task {
+                            if vm.importAuthorizationState == .needsAuthorization {
+                                await vm.requestImportAuthorizationAndLoadSuggestions()
+                            } else {
+                                await vm.prepareImportSuggestions()
+                            }
+                        }
                     }
                     .disabled(vm.isImporting)
                 }
             }
         }
         .task {
-            await vm.loadImportSuggestions()
+            await vm.prepareImportSuggestions()
         }
         .refreshable {
-            await vm.loadImportSuggestions()
+            await vm.prepareImportSuggestions()
         }
         .sheet(item: $editingSuggestion) { suggestion in
             MedicationPlanEditorView(existingPlan: nil, importSuggestion: suggestion) { plan in
