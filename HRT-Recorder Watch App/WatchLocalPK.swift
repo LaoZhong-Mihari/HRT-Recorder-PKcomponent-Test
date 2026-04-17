@@ -72,8 +72,32 @@ private enum WatchCompoundHydrolysisPK {
 }
 
 private enum WatchOralPK {
+    struct DualAbsorptionParams {
+        let fracFast: Double
+        let kAbsFast: Double
+        let kAbsSlow: Double
+        let bioavailabilityFast: Double
+        let bioavailabilitySlow: Double
+        let kClear: Double
+    }
+
     static let kAbs = WatchPKSharedCatalogResource.current.oralKAbs
     static let bioavailability = WatchPKSharedCatalogResource.current.oralBioavailability
+    static let dualAbsorption: [WatchCompound: DualAbsorptionParams] = Dictionary(
+        uniqueKeysWithValues: WatchPKSharedCatalogResource.current.oralDualAbsorption.map { compound, config in
+            (
+                compound,
+                DualAbsorptionParams(
+                    fracFast: config.fracFast,
+                    kAbsFast: config.kAbsFast,
+                    kAbsSlow: config.kAbsSlow,
+                    bioavailabilityFast: config.bioavailabilityFast,
+                    bioavailabilitySlow: config.bioavailabilitySlow,
+                    kClear: config.kClear
+                )
+            )
+        }
+    )
     static let kAbsSL = WatchPKSharedCatalogResource.current.kAbsSL
 }
 
@@ -149,6 +173,18 @@ private enum WatchParameterResolver {
             )
 
         case .oral:
+            if let dual = WatchOralPK.dualAbsorption[event.compound] {
+                return WatchPKParams(
+                    fracFast: dual.fracFast,
+                    k1Fast: dual.kAbsFast,
+                    k1Slow: dual.kAbsSlow,
+                    k2: 0,
+                    k3: dual.kClear,
+                    rateMGh: 0,
+                    fFast: dual.bioavailabilityFast,
+                    fSlow: dual.bioavailabilitySlow
+                )
+            }
             let k1 = WatchOralPK.kAbs[event.compound] ?? 0
             let k2 = (hormone == .estradiol && event.compound == .EV) ? (WatchCompoundHydrolysisPK.k2[.EV] ?? 0) : 0
             let bioavailability = WatchOralPK.bioavailability[event.compound] ?? 0
@@ -279,19 +315,32 @@ private enum WatchPKModel {
                 totalAmountMG += analytic3C(tau: tau, doseMG: doseSlow, f: p.fSlow, k1: p.k1Slow, k2: p.k2, k3: p.k3)
 
             case .patchApply:
+                let wearH: Double = {
+                    if let remove = events
+                        .filter({ $0.route == .patchRemove && $0.timeH > event.timeH })
+                        .min(by: { $0.timeH < $1.timeH }) {
+                        return remove.timeH - event.timeH
+                    }
+                    return 24 * 7
+                }()
                 if p.rateMGh > 0 {
-                    if tau <= 24 * 7 {
+                    if tau <= wearH {
                         totalAmountMG += p.rateMGh / p.k3 * (1 - exp(-p.k3 * tau))
                     } else {
-                        let amountAtRemoval = p.rateMGh / p.k3 * (1 - exp(-p.k3 * 24 * 7))
-                        totalAmountMG += amountAtRemoval * exp(-p.k3 * (tau - 24 * 7))
+                        let amountAtRemoval = p.rateMGh / p.k3 * (1 - exp(-p.k3 * wearH))
+                        totalAmountMG += amountAtRemoval * exp(-p.k3 * (tau - wearH))
                     }
                 } else {
                     totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
                 }
 
             case .gel, .oral:
-                totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                if event.route == .oral, p.k1Slow > 0 {
+                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
+                } else {
+                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                }
 
             case .sublingual:
                 if p.k2 > 0 {

@@ -11,6 +11,7 @@ REQUIRED_HORMONES = {"estradiol", "testosterone"}
 REQUIRED_COMPOUNDS = {"E2", "EB", "EV", "EC", "EN", "T", "TC", "TE", "TU"}
 REQUIRED_INJECTION_COMPOUNDS = {"EB", "EV", "EC", "EN", "TC", "TE", "TU"}
 REQUIRED_ORAL_COMPOUNDS = {"E2", "EV", "TU"}
+REQUIRED_ORAL_DUAL_COMPOUNDS = {"TU"}
 REQUIRED_SUBLINGUAL_TIERS = {"quick", "casual", "standard", "strict"}
 
 
@@ -48,12 +49,18 @@ def main() -> int:
     oral = payload.get("oral", {})
     oral_kabs = set(oral.get("kAbs", {}).keys())
     oral_bioavailability = set(oral.get("bioavailability", {}).keys())
+    oral_dual_absorption = set(oral.get("dualAbsorption", {}).keys())
     if oral_kabs != REQUIRED_ORAL_COMPOUNDS:
         errors.append(f"oral.kAbs keys mismatch: expected {sorted(REQUIRED_ORAL_COMPOUNDS)}, got {sorted(oral_kabs)}")
     if oral_bioavailability != REQUIRED_ORAL_COMPOUNDS:
         errors.append(
             "oral.bioavailability keys mismatch: "
             f"expected {sorted(REQUIRED_ORAL_COMPOUNDS)}, got {sorted(oral_bioavailability)}"
+        )
+    if oral_dual_absorption != REQUIRED_ORAL_DUAL_COMPOUNDS:
+        errors.append(
+            "oral.dualAbsorption keys mismatch: "
+            f"expected {sorted(REQUIRED_ORAL_DUAL_COMPOUNDS)}, got {sorted(oral_dual_absorption)}"
         )
 
     sublingual = payload.get("sublingual", {})
@@ -76,6 +83,7 @@ def main() -> int:
     print(f"- compounds: {sorted(compounds)}")
     print(f"- injection compounds: {sorted(depot)}")
     print(f"- oral compounds: {sorted(oral_kabs)}")
+    print(f"- oral dual-absorption compounds: {sorted(oral_dual_absorption)}")
     return 0
 
 

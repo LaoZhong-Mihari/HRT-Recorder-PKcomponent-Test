@@ -325,6 +325,16 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
         category.simulatedHormone
     }
 
+    var rawDoseMG: Double {
+        if recordOnlyOralMedication != nil || route == .patchApply {
+            return doseMG
+        }
+
+        let factor = compound.info.toActiveFactor
+        guard doseMG > 0, factor > 0 else { return doseMG }
+        return doseMG / factor
+    }
+
     var participatesInSimulation: Bool {
         recordOnlyOralMedication == nil && simulatedHormone != nil
     }

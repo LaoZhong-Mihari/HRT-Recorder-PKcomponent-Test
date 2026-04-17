@@ -7,8 +7,10 @@ This folder is the offline calibration workspace for PK parameter updates, espec
 - `data/`
   - normalized literature / label / trial anchors
   - templates and manually curated source tables
+  - `testosterone_anchor_targets.json` for the approved runtime regression anchors
 - `scripts/`
   - validation and fitting helpers
+  - regression checks that compare runtime constants against documented leaflet anchors
 - `results/`
   - generated summaries, parameter candidates, plots
 
@@ -22,7 +24,13 @@ This folder is the offline calibration workspace for PK parameter updates, espec
    python3 pk_research/scripts/validate_pk_shared_catalog.py
    ```
 
-4. Run route fitting:
+4. Run the anchor regression checks:
+
+   ```bash
+   python3 pk_research/scripts/test_testosterone_anchor_regression.py
+   ```
+
+5. Run route fitting:
 
    ```bash
    python3 pk_research/scripts/fit_route_parameters.py \
@@ -32,8 +40,8 @@ This folder is the offline calibration workspace for PK parameter updates, espec
      --iterations 4000
    ```
 
-5. Review residuals and candidate parameters under `results/`.
-6. Only after review, copy approved constants into `PKSharedCatalog.json`.
+6. Review residuals and candidate parameters under `results/`.
+7. Only after review, copy approved constants into `PKSharedCatalog.json`.
 
 ## Acceptance Rules
 

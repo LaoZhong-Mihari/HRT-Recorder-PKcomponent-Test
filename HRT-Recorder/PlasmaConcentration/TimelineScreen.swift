@@ -855,8 +855,12 @@ struct TimelineRowView: View {
         }
 
         // other routes: show mg
-        guard event.doseMG > 0 else { return nil }
-        return String(format: NSLocalizedString("timeline.row.dose.mg", comment: "Dose label in mg"), locale: Locale.current, String(format: "%.2f", locale: Locale.current, event.doseMG))
+        guard event.rawDoseMG > 0 else { return nil }
+        return String(
+            format: NSLocalizedString("timeline.row.dose.mg", comment: "Dose label in mg"),
+            locale: Locale.current,
+            String(format: "%.2f", locale: Locale.current, event.rawDoseMG)
+        )
     }
     
     var body: some View {

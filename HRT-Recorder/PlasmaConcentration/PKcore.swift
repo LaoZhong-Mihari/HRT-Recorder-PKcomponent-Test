@@ -140,6 +140,16 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
 extension DoseEvent {
     nonisolated var ester: Ester { compound }
 
+    nonisolated var rawDoseMG: Double {
+        if recordOnlyOralMedication != nil || route == .patchApply {
+            return doseMG
+        }
+
+        let factor = compound.info.toActiveFactor
+        guard doseMG > 0, factor > 0 else { return doseMG }
+        return doseMG / factor
+    }
+
     nonisolated var simulatedHormone: SimulatedHormone? {
         category.simulatedHormone
     }
@@ -233,6 +243,19 @@ struct ParameterResolver {
                             F: tuple.F, rateMGh: 0,
                             F_fast: tuple.F, F_slow: tuple.F)
         case .oral:
+            if let dual = OralPK.dualAbsorption(for: event.compound) {
+                return PKParams(
+                    Frac_fast: dual.fracFast,
+                    k1_fast: dual.kAbsFast,
+                    k1_slow: dual.kAbsSlow,
+                    k2: 0,
+                    k3: dual.kClear,
+                    F: dual.bioavailabilityFast,
+                    rateMGh: 0,
+                    F_fast: dual.bioavailabilityFast,
+                    F_slow: dual.bioavailabilitySlow
+                )
+            }
             let k1Value = OralPK.kAbs(for: event.compound)
             let k2Value = (hormone == .estradiol && event.compound == .EV) ? (CompoundHydrolysisPK.k2[.EV] ?? 0) : 0
             let bioavailability = OralPK.bioavailability(for: event.compound)
@@ -331,6 +354,9 @@ fileprivate struct PrecomputedEventModel: Sendable {
             self.model = { timeH in
                 let tau = timeH - startTime
                 guard tau >= 0 else { return 0 }
+                if event.route == .oral, params.k1_slow > 0 {
+                    return ThreeCompartmentModel.dualAbsAmount(tau: tau, doseMG: dose, p: params)
+                }
                 return ThreeCompartmentModel.oneCompAmount(tau: tau, doseMG: dose, p: oneCompParams)
             }
         case .sublingual:

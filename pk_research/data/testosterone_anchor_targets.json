@@ -1,0 +1,81 @@
+{
+  "testosterone": [
+    {
+      "name": "tc_injection_fda_200mg",
+      "route": "injection",
+      "compound": "TC",
+      "doseRawMG": 200.0,
+      "bodyWeightKG": 70.0,
+      "anchors": [
+        { "kind": "cmax", "target": 758.0, "tolerance": 0.05 },
+        { "kind": "tmax", "targetHours": 71.7, "toleranceHours": 4.0 },
+        { "kind": "terminal_half_life", "targetHours": 192.0, "windowStartHours": 168.0, "windowEndHours": 504.0, "tolerance": 0.05 }
+      ],
+      "source": "FDA label: Testosterone Cypionate Injection, 200 mg IM, Cmax/Tmax/terminal t1/2"
+    },
+    {
+      "name": "te_injection_smpc_250mg",
+      "route": "injection",
+      "compound": "TE",
+      "doseRawMG": 250.0,
+      "bodyWeightKG": 70.0,
+      "anchors": [
+        { "kind": "cmax", "target": 2000.0, "tolerance": 0.12 },
+        { "kind": "tmax", "targetHours": 54.0, "toleranceHours": 12.0 },
+        { "kind": "terminal_half_life", "targetHours": 108.0, "windowStartHours": 96.0, "windowEndHours": 336.0, "tolerance": 0.08 }
+      ],
+      "source": "Testoviron Depot 250 SmPC: peak about 20 ng/mL at 1.5-3 days, apparent half-life about 4.5 days"
+    },
+    {
+      "name": "tu_injection_smpc_1000mg",
+      "route": "injection",
+      "compound": "TU",
+      "doseRawMG": 1000.0,
+      "bodyWeightKG": 70.0,
+      "anchors": [
+        { "kind": "cmax", "target": 1100.0, "tolerance": 0.08 },
+        { "kind": "tmax", "targetHours": 168.0, "toleranceHours": 12.0 },
+        { "kind": "terminal_half_life", "targetHours": 528.0, "windowStartHours": 336.0, "windowEndHours": 1344.0, "tolerance": 0.05 }
+      ],
+      "source": "Nebido / TU SmPC and Zhang et al. 1998: Cmax about 11 ng/mL at 7 days, terminal half-life about 22 days"
+    },
+    {
+      "name": "testosterone_patch_fallback_4mg",
+      "route": "patch_first_order",
+      "compound": "T",
+      "doseRawMG": 4.0,
+      "bodyWeightKG": 70.0,
+      "anchors": [
+        { "kind": "tmax", "targetHours": 8.0, "toleranceHours": 0.5 },
+        { "kind": "post_remove_half_life", "targetHours": 1.1666666667, "tolerance": 0.03 }
+      ],
+      "source": "ANDRODERM label: median Tmax about 8 h, apparent half-life after removal about 70 min"
+    },
+    {
+      "name": "testosterone_gel_androgel_40_5mg_steady_state",
+      "route": "gel_steady_state",
+      "compound": "T",
+      "doseRawMG": 40.5,
+      "bodyWeightKG": 70.0,
+      "doseIntervalHours": 24.0,
+      "anchors": [
+        { "kind": "cmax", "target": 663.0, "tolerance": 0.03 },
+        { "kind": "cavg", "target": 457.0, "windowHours": 24.0, "tolerance": 0.03 }
+      ],
+      "source": "AndroGel 1.62% label: Day 112 steady-state Cmax/Cavg for 40.5 mg dose"
+    },
+    {
+      "name": "oral_tu_tlando_225mg",
+      "route": "oral",
+      "compound": "TU",
+      "doseRawMG": 225.0,
+      "bodyWeightKG": 70.0,
+      "anchors": [
+        { "kind": "cmax", "target": 984.0, "tolerance": 0.04 },
+        { "kind": "tmax", "targetHours": 5.0, "toleranceHours": 0.5 },
+        { "kind": "cavg", "target": 476.0, "windowHours": 24.0, "tolerance": 0.04 }
+      ],
+      "source": "TLANDO label: 225 mg oral TU, Tmax about 5 h, mean Cmax about 979-989 ng/dL, Cavg0-24 about 476 ng/dL"
+    }
+  ]
+}

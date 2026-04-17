@@ -27,6 +27,15 @@ struct WatchPKSharedCatalogResource {
         let k1Slow: Double
     }
 
+    struct OralDualConfig {
+        let fracFast: Double
+        let kAbsFast: Double
+        let kAbsSlow: Double
+        let bioavailabilityFast: Double
+        let bioavailabilitySlow: Double
+        let kClear: Double
+    }
+
     let hormones: [WatchSimulatedHormone: HormoneConfig]
     let compounds: [WatchCompound: CompoundConfig]
     let twoPartDepot: [WatchCompound: TwoPartDepotConfig]
@@ -34,6 +43,7 @@ struct WatchPKSharedCatalogResource {
     let hydrolysisK2: [WatchCompound: Double]
     let oralKAbs: [WatchCompound: Double]
     let oralBioavailability: [WatchCompound: Double]
+    let oralDualAbsorption: [WatchCompound: OralDualConfig]
     let kAbsSL: Double
     let sublingualRecommendedTheta: [WatchSublingualTier: Double]
     let sublingualHoldMinutes: [WatchSublingualTier: Double]
@@ -72,8 +82,18 @@ private extension WatchPKSharedCatalogResource {
         }
 
         struct OralDocument: Decodable {
+            struct DualAbsorptionDocument: Decodable {
+                let fracFast: Double
+                let kAbsFast: Double
+                let kAbsSlow: Double
+                let bioavailabilityFast: Double
+                let bioavailabilitySlow: Double
+                let kClear: Double
+            }
+
             let kAbs: [String: Double]
             let bioavailability: [String: Double]
+            let dualAbsorption: [String: DualAbsorptionDocument]?
             let kAbsSL: Double
         }
 
@@ -181,6 +201,21 @@ private extension WatchPKSharedCatalogResource {
             return (compound, value)
         })
 
+        let oralDualAbsorption: [WatchCompound: OralDualConfig] = Dictionary(uniqueKeysWithValues: (document.oral.dualAbsorption ?? [:]).compactMap { key, value in
+            guard let compound = WatchCompound(rawValue: key) else { return nil }
+            return (
+                compound,
+                OralDualConfig(
+                    fracFast: value.fracFast,
+                    kAbsFast: value.kAbsFast,
+                    kAbsSlow: value.kAbsSlow,
+                    bioavailabilityFast: value.bioavailabilityFast,
+                    bioavailabilitySlow: value.bioavailabilitySlow,
+                    kClear: value.kClear
+                )
+            )
+        })
+
         let sublingualRecommendedTheta: [WatchSublingualTier: Double] = Dictionary(uniqueKeysWithValues: document.sublingual.recommendedTheta.compactMap { key, value in
             guard let tier = WatchSublingualTier(rawValue: key) else { return nil }
             return (tier, value)
@@ -206,6 +241,7 @@ private extension WatchPKSharedCatalogResource {
             hydrolysisK2: hydrolysisK2,
             oralKAbs: oralKAbs,
             oralBioavailability: oralBioavailability,
+            oralDualAbsorption: oralDualAbsorption,
             kAbsSL: document.oral.kAbsSL,
             sublingualRecommendedTheta: sublingualRecommendedTheta,
             sublingualHoldMinutes: sublingualHoldMinutes,

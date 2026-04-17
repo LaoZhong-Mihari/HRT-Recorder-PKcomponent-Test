@@ -1093,8 +1093,8 @@ private struct WatchEventRow: View {
             )
         }
 
-        guard event.doseMG > 0 else { return nil }
-        let formattedDose = String(format: "%.2f", locale: Locale.current, event.doseMG)
+        guard event.rawDoseMG > 0 else { return nil }
+        let formattedDose = String(format: "%.2f", locale: Locale.current, event.rawDoseMG)
         return String(
             format: NSLocalizedString("timeline.row.dose.mg", comment: "Dose label in mg"),
             locale: Locale.current,

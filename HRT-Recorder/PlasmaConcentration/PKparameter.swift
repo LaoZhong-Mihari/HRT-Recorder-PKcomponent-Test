@@ -342,8 +342,32 @@ struct TransdermalGelPK {
 }
 
 struct OralPK {
+    struct DualAbsorptionParams: Sendable {
+        let fracFast: Double
+        let kAbsFast: Double
+        let kAbsSlow: Double
+        let bioavailabilityFast: Double
+        let bioavailabilitySlow: Double
+        let kClear: Double
+    }
+
     static let kAbsByCompound: [Compound: Double] = PKSharedCatalogResource.current.oralKAbs
     static let bioavailabilityByCompound: [Compound: Double] = PKSharedCatalogResource.current.oralBioavailability
+    static let dualAbsorptionByCompound: [Compound: DualAbsorptionParams] = Dictionary(
+        uniqueKeysWithValues: PKSharedCatalogResource.current.oralDualAbsorption.map { compound, config in
+            (
+                compound,
+                DualAbsorptionParams(
+                    fracFast: config.fracFast,
+                    kAbsFast: config.kAbsFast,
+                    kAbsSlow: config.kAbsSlow,
+                    bioavailabilityFast: config.bioavailabilityFast,
+                    bioavailabilitySlow: config.bioavailabilitySlow,
+                    kClear: config.kClear
+                )
+            )
+        }
+    )
     static let kAbsSL: Double = PKSharedCatalogResource.current.kAbsSL
 
     nonisolated static func kAbs(for compound: Compound) -> Double {
@@ -352,6 +376,10 @@ struct OralPK {
 
     nonisolated static func bioavailability(for compound: Compound) -> Double {
         bioavailabilityByCompound[compound] ?? 0
+    }
+
+    nonisolated static func dualAbsorption(for compound: Compound) -> DualAbsorptionParams? {
+        dualAbsorptionByCompound[compound]
     }
 }
 
