@@ -1,0 +1,89 @@
+{
+  "" : {
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT-Recorder Watch App-primary.dia",
+    "emit-module-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT-Recorder Watch App-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT-Recorder Watch App-primary-emit-module.dia",
+    "pch" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT-Recorder Watch App-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT-Recorder Watch App-primary.swiftdeps"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/DerivedSources/GeneratedStringSymbols_Localizable.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/GeneratedStringSymbols_Localizable~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/ContentView.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/HRT_RecorderApp.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/HRT_RecorderApp~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/WatchAddDoseView.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchAddDoseView~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/WatchDoseModels.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchDoseModels~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/WatchLocalPK.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchLocalPK~partial.swiftmodule"
+  },
+  "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/HRT-Recorder Watch App/WatchPKSharedCatalog.swift" : {
+    "const-values" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.swiftconstvalues",
+    "dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.d",
+    "diagnostics" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.dia",
+    "index-unit-output-path" : "/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.o",
+    "llvm-bc" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.bc",
+    "object" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.o",
+    "swift-dependencies" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog.swiftdeps",
+    "swiftmodule" : "/Users/wzzzz11/Documents/HRT-Recorder-PKcomponent-Test/.build-obj-ios/HRT-Recorder.build/Debug-watchos/HRT-Recorder Watch App.build/Objects-normal/arm64/WatchPKSharedCatalog~partial.swiftmodule"
+  }
+}

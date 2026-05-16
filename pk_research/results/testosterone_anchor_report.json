@@ -1,0 +1,208 @@
+{
+  "groups": [
+    {
+      "anchors": [
+        {
+          "actual": 758.0,
+          "kind": "cmax",
+          "relative_error": 0.0,
+          "target": 758.0
+        },
+        {
+          "absolute_error_hours": 0.29999999999999716,
+          "actualHours": 72.0,
+          "kind": "tmax",
+          "targetHours": 71.7
+        },
+        {
+          "absolute_error_hours": 1.3518620248721334,
+          "actualHours": 193.35186202487213,
+          "kind": "terminal_half_life",
+          "targetHours": 192.0
+        }
+      ],
+      "compound": "TC",
+      "name": "tc_injection_fda_200mg",
+      "route": "injection",
+      "source": "FDA label: Testosterone Cypionate Injection, 200 mg IM, baseline-corrected Cmax/Tmax plus listed IM half-life",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2022/216318s000lbl.pdf"
+    },
+    {
+      "anchors": [
+        {
+          "actual": 2000.0000000000007,
+          "kind": "cmax",
+          "relative_error": 3.410605131648481e-16,
+          "target": 2000.0
+        },
+        {
+          "absolute_error_hours": 1.5,
+          "actualHours": 55.5,
+          "kind": "tmax",
+          "targetHours": 54.0
+        },
+        {
+          "absolute_error_hours": 1.7878115262184906,
+          "actualHours": 109.78781152621849,
+          "kind": "terminal_half_life",
+          "targetHours": 108.0
+        }
+      ],
+      "compound": "TE",
+      "name": "te_injection_smpc_250mg",
+      "route": "injection",
+      "source": "Bayer Testoviron Depot 250 SmPC: peak about 20 ng/mL at 1.5-3 days, depot-release half-life about 4.5 days",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://www.bayer.com/sites/default/files/testoviron-depot-smpc-sep-2020-1.pdf"
+    },
+    {
+      "anchors": [
+        {
+          "actual": 1379.4440053400758,
+          "kind": "cmax",
+          "relative_error": 0.0005776714369036784,
+          "target": 1378.6476
+        },
+        {
+          "absolute_error_hours": 5.0,
+          "actualHours": 173.0,
+          "kind": "tmax",
+          "targetHours": 168.0
+        },
+        {
+          "absolute_error_hours": 0.46657798250475935,
+          "actualHours": 439.66657798250475,
+          "kind": "terminal_half_life",
+          "targetHours": 439.2
+        },
+        {
+          "actual": 229.48126397495602,
+          "actualHours": 1200.0,
+          "kind": "concentration_at",
+          "relative_error": -0.20435037800791897,
+          "target": 288.42,
+          "targetHours": 1200.0
+        }
+      ],
+      "compound": "TU",
+      "name": "tu_injection_label_500mg_klinefelter",
+      "route": "injection",
+      "source": "TU injection label excerpt / Zhang et al. 1998: 500 mg IM in 4 Klinefelter patients, week-1 mean testosterone 47.8 +/- 10.1 nmol/L, t1/2 beta 18.3 +/- 2.3 days, MRT 21.7 +/- 1.1 days, lower-limit range around day 50-60",
+      "sourceTier": "regulatory_label_excerpt_plus_primary_literature",
+      "sourceUrl": "https://pubmed.ncbi.nlm.nih.gov/9876028/"
+    },
+    {
+      "anchors": [
+        {
+          "absolute_error_hours": 0.0,
+          "actualHours": 8.0,
+          "kind": "tmax",
+          "targetHours": 8.0
+        },
+        {
+          "absolute_error_hours": -0.011421365766757896,
+          "actualHours": 1.1552453009332422,
+          "kind": "post_remove_half_life",
+          "targetHours": 1.1666666667
+        }
+      ],
+      "compound": "T",
+      "name": "testosterone_patch_fallback_4mg",
+      "route": "patch_first_order",
+      "source": "ANDRODERM label: median Tmax about 8 h, apparent half-life after removal about 70 min",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=e58a5328-fdd9-40cb-a19f-8ed798989b9c"
+    },
+    {
+      "anchors": [
+        {
+          "actual": 696.0,
+          "kind": "cmax",
+          "relative_error": 0.0,
+          "target": 696.0
+        }
+      ],
+      "compound": "T",
+      "name": "testosterone_patch_androderm_4mg_steady_state",
+      "route": "patch_zero_order",
+      "source": "ANDRODERM label: 4 mg/day system, mean Day-28 serum testosterone Cmax 696 ng/dL after daily 24 h wear",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=e58a5328-fdd9-40cb-a19f-8ed798989b9c"
+    },
+    {
+      "anchors": [
+        {
+          "actual": 664.7875300831738,
+          "kind": "cmax",
+          "relative_error": 0.0026961238056920148,
+          "target": 663.0
+        },
+        {
+          "actual": 456.71486934034334,
+          "kind": "cavg",
+          "relative_error": -0.0006239182924653365,
+          "target": 457.0
+        }
+      ],
+      "compound": "T",
+      "name": "testosterone_gel_androgel_40_5mg_steady_state",
+      "route": "gel_steady_state",
+      "source": "AndroGel 1.62% label: Day 112 steady-state Cmax/Cavg for 40.5 mg dose",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=f4e8d29b-8707-4d47-e053-2a95a90aecee&version=129"
+    },
+    {
+      "anchors": [
+        {
+          "actualCmax": 978.9999999999999,
+          "actualTmaxHours": 5.0,
+          "kind": "cmax_window",
+          "relative_error": -1.161254726472074e-16,
+          "target": 979.0,
+          "windowEndHours": 12.0,
+          "windowStartHours": 0.0
+        },
+        {
+          "absolute_error_hours": 0.0,
+          "actualCmax": 978.9999999999999,
+          "actualTmaxHours": 5.0,
+          "kind": "tmax_window",
+          "targetHours": 5.0,
+          "windowEndHours": 12.0,
+          "windowStartHours": 0.0
+        },
+        {
+          "actualCmax": 1008.6204206075337,
+          "actualTmaxHours": 17.0,
+          "kind": "cmax_window",
+          "relative_error": 0.019838645710347498,
+          "target": 989.0,
+          "windowEndHours": 24.0,
+          "windowStartHours": 12.0
+        },
+        {
+          "absolute_error_hours": 0.0,
+          "actualCmax": 1008.6204206075337,
+          "actualTmaxHours": 17.0,
+          "kind": "tmax_window",
+          "targetHours": 17.0,
+          "windowEndHours": 24.0,
+          "windowStartHours": 12.0
+        },
+        {
+          "actual": 477.45147109217777,
+          "kind": "cavg",
+          "relative_error": 0.0030493090171801874,
+          "target": 476.0
+        }
+      ],
+      "compound": "TU",
+      "name": "oral_tu_tlando_225mg",
+      "route": "oral",
+      "source": "TLANDO label: 225 mg oral TU twice daily with food, median Tmax about 5 h, morning/evening Cmax 979/989 ng/dL, Cavg0-24 about 476 ng/dL",
+      "sourceTier": "regulatory_label",
+      "sourceUrl": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2025/208088s002lbl.pdf"
+    }
+  ]
+}

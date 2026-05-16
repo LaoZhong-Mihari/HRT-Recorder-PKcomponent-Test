@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'HRT-Recorder' in project 'HRT-Recorder'
+➜ Explicit dependency on target 'HRT-Recorder Watch App' in project 'HRT-Recorder'
+Target 'HRT-Recorder Watch App' in project 'HRT-Recorder' (no dependencies)
