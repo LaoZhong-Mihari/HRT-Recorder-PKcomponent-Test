@@ -145,7 +145,7 @@ def predict_concentration(anchor: AnchorRow, params: dict, catalog: dict, body_w
         amount += analytic_3c(anchor.time_h, anchor.dose_active_eq_mg * (1.0 - frac_fast), params["formation_fraction"], params["k1_slow"], params["k2"], params["k3"])
         return amount * scale
 
-    amount = one_comp(anchor.time_h, anchor.dose_active_eq_mg, params["f"], params["ka"], params["ke"])
+    amount = one_comp(anchor.time_h - params.get("lag", 0.0), anchor.dose_active_eq_mg, params["f"], params["ka"], params["ke"])
     return amount * scale
 
 
@@ -183,7 +183,14 @@ def bounds_for_route(route: str) -> dict[str, tuple[float, float]]:
             "k3": (0.01, 0.08),
             "formation_fraction": (0.01, 1.5),
         }
-    if route in {"oral", "gel", "patchApply"}:
+    if route == "oral":
+        return {
+            "ka": (0.001, 2.0),
+            "ke": (0.01, 2.0),
+            "f": (0.001, 1.0),
+            "lag": (0.0, 8.0),
+        }
+    if route in {"gel", "patchApply"}:
         return {
             "ka": (0.001, 2.0),
             "ke": (0.01, 2.0),

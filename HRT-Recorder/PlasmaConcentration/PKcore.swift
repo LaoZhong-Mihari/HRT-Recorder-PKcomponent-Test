@@ -184,6 +184,8 @@ struct PKParams: Sendable {
     
     let F_fast: Double
     let F_slow: Double
+    let lagFastH: Double
+    let lagSlowH: Double
 }
 
 // MARK: – Resolver -----------------------------------------------------------
@@ -191,7 +193,7 @@ struct PKParams: Sendable {
 struct ParameterResolver {
     public static func resolve(event: DoseEvent, bodyWeightKG: Double) -> PKParams {
         guard let hormone = event.simulatedHormone else {
-            return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: 0, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0)
+            return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: 0, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0, lagFastH: 0, lagSlowH: 0)
         }
 
         let core = CorePK.params(for: hormone)
@@ -216,15 +218,18 @@ struct ParameterResolver {
                 F:         F,
                 rateMGh:   0,
                 F_fast:    F,
-                F_slow:    F
+                F_slow:    F,
+                lagFastH:  0,
+                lagSlowH:  0
             )
         case .patchApply:
             if let rUG = event.extras[.releaseRateUGPerDay] {          // zero‑order
                 let rateMGh = rUG / 24_000.0                           // µg/day → mg/h
                 return PKParams(Frac_fast: 1.0, k1_fast: 0, k1_slow: 0,
                                 k2: 0, k3: k3,
-                                F: 1.0, rateMGh: rateMGh,
-                                F_fast: 1.0, F_slow: 1.0)
+                                F: core.patchReleaseScale, rateMGh: rateMGh,
+                                F_fast: core.patchReleaseScale, F_slow: core.patchReleaseScale,
+                                lagFastH: 0, lagSlowH: 0)
             } else {                                                   // first‑order
                 let k1: Double = {
                     if case let .firstOrder(k1Val) = PatchPK.generic(for: hormone) { return k1Val }
@@ -233,7 +238,8 @@ struct ParameterResolver {
                 return PKParams(Frac_fast: 1.0, k1_fast: k1, k1_slow: 0,
                                 k2: 0, k3: k3,
                                 F: 1.0, rateMGh: 0,
-                                F_fast: 1.0, F_slow: 1.0)
+                                F_fast: 1.0, F_slow: 1.0,
+                                lagFastH: 0, lagSlowH: 0)
             }
         case .gel:
             let area = event.extras[.areaCM2] ?? 750
@@ -241,7 +247,8 @@ struct ParameterResolver {
             return PKParams(Frac_fast: 1.0, k1_fast: tuple.k1, k1_slow: 0,
                             k2: 0, k3: k3,
                             F: tuple.F, rateMGh: 0,
-                            F_fast: tuple.F, F_slow: tuple.F)
+                            F_fast: tuple.F, F_slow: tuple.F,
+                            lagFastH: 0, lagSlowH: 0)
         case .oral:
             if let dual = OralPK.dualAbsorption(for: event.compound) {
                 return PKParams(
@@ -253,7 +260,9 @@ struct ParameterResolver {
                     F: dual.bioavailabilityFast,
                     rateMGh: 0,
                     F_fast: dual.bioavailabilityFast,
-                    F_slow: dual.bioavailabilitySlow
+                    F_slow: dual.bioavailabilitySlow,
+                    lagFastH: dual.lagHoursFast,
+                    lagSlowH: dual.lagHoursSlow
                 )
             }
             let k1Value = OralPK.kAbs(for: event.compound)
@@ -262,15 +271,17 @@ struct ParameterResolver {
             return PKParams(Frac_fast: 1.0, k1_fast: k1Value, k1_slow: 0,
                             k2: k2Value, k3: k3,
                             F: bioavailability, rateMGh: 0,
-                            F_fast: bioavailability, F_slow: bioavailability)
+                            F_fast: bioavailability, F_slow: bioavailability,
+                            lagFastH: 0, lagSlowH: 0)
         case .patchRemove:
              return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0,
                              k2: 0, k3: k3,
                              F: 0, rateMGh: 0,
-                             F_fast: 0, F_slow: 0)
+                             F_fast: 0, F_slow: 0,
+                             lagFastH: 0, lagSlowH: 0)
         case .sublingual:
             guard hormone == .estradiol else {
-                return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: k3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0)
+                return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: k3, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0, lagFastH: 0, lagSlowH: 0)
             }
             // θ resolver: prefer explicit theta; otherwise map from UI tier code.
             // UI should set one of:
@@ -316,7 +327,9 @@ struct ParameterResolver {
                 F:         1.0,
                 rateMGh:   0,
                 F_fast:    F_fast,
-                F_slow:    F_slow
+                F_slow:    F_slow,
+                lagFastH:  0,
+                lagSlowH:  0
             )
         }
     }
@@ -340,7 +353,9 @@ fileprivate struct PrecomputedEventModel: Sendable {
             F: params.F,
             rateMGh: params.rateMGh,
             F_fast: params.F,
-            F_slow: params.F
+            F_slow: params.F,
+            lagFastH: params.lagFastH,
+            lagSlowH: params.lagSlowH
         )
 
         switch event.route {
@@ -404,8 +419,8 @@ struct ThreeCompartmentModel {
         let f  = max(0.0, min(1.0, p.Frac_fast))
         let doseF = doseMG * f
         let doseS = doseMG * (1.0 - f)
-        let amtF = _analytic3C(tau: tau, doseMG: doseF, F: p.F_fast, k1: p.k1_fast, k2: p.k2, k3: p.k3)
-        let amtS = _analytic3C(tau: tau, doseMG: doseS, F: p.F_slow, k1: p.k1_slow, k2: p.k2, k3: p.k3)
+        let amtF = _analytic3C(tau: tau - p.lagFastH, doseMG: doseF, F: p.F_fast, k1: p.k1_fast, k2: p.k2, k3: p.k3)
+        let amtS = _analytic3C(tau: tau - p.lagSlowH, doseMG: doseS, F: p.F_slow, k1: p.k1_slow, k2: p.k2, k3: p.k3)
         return amtF + amtS
     }
 
@@ -417,8 +432,8 @@ struct ThreeCompartmentModel {
         let doseF = doseMG * f
         let doseS = doseMG * (1.0 - f)
 
-        let amtF = _analytic3C(tau: tau, doseMG: doseF, F: p.F_fast, k1: p.k1_fast, k2: p.k2, k3: p.k3)
-        let amtS = _batemanAmount(doseMG: doseS, F: p.F_slow, ka: p.k1_slow, ke: p.k3, t: tau)
+        let amtF = _analytic3C(tau: tau - p.lagFastH, doseMG: doseF, F: p.F_fast, k1: p.k1_fast, k2: p.k2, k3: p.k3)
+        let amtS = _batemanAmount(doseMG: doseS, F: p.F_slow, ka: p.k1_slow, ke: p.k3, t: tau - p.lagSlowH)
         return amtF + amtS
     }
 
@@ -429,8 +444,8 @@ struct ThreeCompartmentModel {
         let f  = max(0.0, min(1.0, p.Frac_fast))
         let doseF = doseMG * f
         let doseS = doseMG * (1.0 - f)
-        let amtF = _batemanAmount(doseMG: doseF, F: p.F_fast, ka: p.k1_fast, ke: p.k3, t: tau)
-        let amtS = _batemanAmount(doseMG: doseS, F: p.F_slow, ka: p.k1_slow, ke: p.k3, t: tau)
+        let amtF = _batemanAmount(doseMG: doseF, F: p.F_fast, ka: p.k1_fast, ke: p.k3, t: tau - p.lagFastH)
+        let amtS = _batemanAmount(doseMG: doseS, F: p.F_slow, ka: p.k1_slow, ke: p.k3, t: tau - p.lagSlowH)
         return amtF + amtS
     }
     
@@ -530,17 +545,18 @@ struct ThreeCompartmentModel {
     static func patchAmount(tau: Double, doseMG: Double, wearH: Double, p: PKParams) -> Double {
         // zero‑order input
         if p.rateMGh > 0 {
+            let effectiveRateMGh = p.rateMGh * p.F
             if tau <= wearH {
-                let amt = p.rateMGh / p.k3 * (1 - exp(-p.k3 * tau))
+                let amt = effectiveRateMGh / p.k3 * (1 - exp(-p.k3 * tau))
                 return amt
             } else {
-                let amtAtRemoval = p.rateMGh / p.k3 * (1 - exp(-p.k3 * wearH))
+                let amtAtRemoval = effectiveRateMGh / p.k3 * (1 - exp(-p.k3 * wearH))
                 let dt = tau - wearH
                 return amtAtRemoval * exp(-p.k3 * dt)
             }
         }
         // first‑order legacy (uses oneCompAmount)
-        let oneCompParams = PKParams(Frac_fast: 1.0, k1_fast: p.k1_fast, k1_slow: 0, k2: p.k2, k3: p.k3, F: p.F, rateMGh: p.rateMGh, F_fast: p.F, F_slow: p.F)
+        let oneCompParams = PKParams(Frac_fast: 1.0, k1_fast: p.k1_fast, k1_slow: 0, k2: p.k2, k3: p.k3, F: p.F, rateMGh: p.rateMGh, F_fast: p.F, F_slow: p.F, lagFastH: p.lagFastH, lagSlowH: p.lagSlowH)
         let amountUnderPatch = oneCompAmount(tau: tau, doseMG: doseMG, p: oneCompParams)
         if tau > wearH {
             let amountAtRemoval = oneCompAmount(tau: wearH, doseMG: doseMG, p: oneCompParams)
@@ -551,7 +567,7 @@ struct ThreeCompartmentModel {
     }
 
     private static func _batemanAmount(doseMG: Double, F: Double, ka: Double, ke: Double, t: Double) -> Double {
-        guard doseMG > 0, ka > 0 else { return 0 }
+        guard t >= 0, doseMG > 0, ka > 0 else { return 0 }
         if abs(ka - ke) < 1e-9 {
             return doseMG * F * ka * t * exp(-ke * t)
         }

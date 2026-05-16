@@ -154,6 +154,7 @@ class TestosteroneAnchorRegressionTests(unittest.TestCase):
                     group["anchors"][2]["windowStartHours"],
                     group["anchors"][2]["windowEndHours"],
                 ),
+                "series": series,
             }
 
         if route == "patch_first_order":
@@ -167,6 +168,23 @@ class TestosteroneAnchorRegressionTests(unittest.TestCase):
             return {
                 "tmax": tmax_h,
                 "post_remove_half_life": math.log(2.0) / ke,
+            }
+
+        if route == "patch_zero_order":
+            ke = self.catalog["hormones"][hormone]["kClear"]
+            release_scale = self.catalog["hormones"][hormone]["patchReleaseScale"]
+            rate_mg_h = group["releaseRateUGPerDay"] / 24_000.0 * release_scale
+            wear_h = group["wearHours"]
+            series = []
+            for index in range(0, int(wear_h * 4) + 1):
+                t = index * 0.25
+                amount = rate_mg_h / ke * (1.0 - math.exp(-ke * t))
+                series.append((t, amount * scale))
+            _, cmax_value = series_max(series)
+            return {
+                "cmax": cmax_value,
+                "cavg": cavg(series, 0.25, wear_h),
+                "series": series,
             }
 
         if route == "gel_steady_state":
@@ -188,29 +206,36 @@ class TestosteroneAnchorRegressionTests(unittest.TestCase):
         if route == "oral":
             dual = self.catalog["oral"]["dualAbsorption"][compound]
             ke = dual["kClear"]
+            lag_fast = dual.get("lagHoursFast", 0.0)
+            lag_slow = dual.get("lagHoursSlow", 0.0)
+            dose_times = group.get("doseTimesHours", [0.0])
             series = []
             for index in range(0, 24 * 4 + 1):
                 t = index * 0.25
-                amount = bateman_amount(
-                    dose_active_eq_mg * dual["fracFast"],
-                    dual["bioavailabilityFast"],
-                    dual["kAbsFast"],
-                    ke,
-                    t,
-                )
-                amount += bateman_amount(
-                    dose_active_eq_mg * (1.0 - dual["fracFast"]),
-                    dual["bioavailabilitySlow"],
-                    dual["kAbsSlow"],
-                    ke,
-                    t,
-                )
+                amount = 0.0
+                for dose_time_h in dose_times:
+                    tau = t - dose_time_h
+                    amount += bateman_amount(
+                        dose_active_eq_mg * dual["fracFast"],
+                        dual["bioavailabilityFast"],
+                        dual["kAbsFast"],
+                        ke,
+                        tau - lag_fast,
+                    )
+                    amount += bateman_amount(
+                        dose_active_eq_mg * (1.0 - dual["fracFast"]),
+                        dual["bioavailabilitySlow"],
+                        dual["kAbsSlow"],
+                        ke,
+                        tau - lag_slow,
+                    )
                 series.append((t, amount * scale))
             tmax_h, cmax_value = series_max(series)
             return {
                 "cmax": cmax_value,
                 "tmax": tmax_h,
                 "cavg": cavg(series, 0.25, 24.0),
+                "series": series,
             }
 
         raise AssertionError(f"Unsupported route in anchor file: {route}")
@@ -249,6 +274,41 @@ class TestosteroneAnchorRegressionTests(unittest.TestCase):
                 )
                 continue
 
+            if kind == "cmax_window":
+                target = anchor["target"]
+                tolerance = anchor["tolerance"]
+                points = [
+                    (t, c)
+                    for t, c in results["series"]
+                    if anchor["windowStartHours"] <= t <= anchor["windowEndHours"]
+                ]
+                tmax_h, cmax_value = series_max(points)
+                self.assertLessEqual(
+                    abs(cmax_value - target) / target,
+                    tolerance,
+                    msg=(
+                        f"{group['name']} cmax_window mismatch: "
+                        f"expected {target}, got {cmax_value} at {tmax_h} h"
+                    ),
+                )
+                continue
+
+            if kind == "tmax_window":
+                target_hours = anchor["targetHours"]
+                tolerance_hours = anchor["toleranceHours"]
+                points = [
+                    (t, c)
+                    for t, c in results["series"]
+                    if anchor["windowStartHours"] <= t <= anchor["windowEndHours"]
+                ]
+                tmax_h, _ = series_max(points)
+                self.assertLessEqual(
+                    abs(tmax_h - target_hours),
+                    tolerance_hours,
+                    msg=f"{group['name']} tmax_window mismatch: expected {target_hours} h, got {tmax_h} h",
+                )
+                continue
+
             if kind == "terminal_half_life":
                 target_hours = anchor["targetHours"]
                 tolerance = anchor["tolerance"]
@@ -258,6 +318,22 @@ class TestosteroneAnchorRegressionTests(unittest.TestCase):
                     msg=(
                         f"{group['name']} terminal half-life mismatch: "
                         f"expected {target_hours} h, got {results['terminal_half_life']} h"
+                    ),
+                )
+                continue
+
+            if kind == "concentration_at":
+                target = anchor["target"]
+                target_hours = anchor["targetHours"]
+                tolerance = anchor["tolerance"]
+                points = results["series"]
+                closest_time_h, actual = min(points, key=lambda point: abs(point[0] - target_hours))
+                self.assertLessEqual(
+                    abs(actual - target) / target,
+                    tolerance,
+                    msg=(
+                        f"{group['name']} concentration_at mismatch: "
+                        f"expected {target} at {target_hours} h, got {actual} at {closest_time_h} h"
                     ),
                 )
                 continue

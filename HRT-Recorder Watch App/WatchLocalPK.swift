@@ -6,6 +6,7 @@ private struct WatchHormoneCoreParams {
     let kClear: Double
     let kClearInjection: Double
     let depotK1Corr: Double
+    let patchReleaseScale: Double
 }
 
 private enum WatchCorePK {
@@ -17,7 +18,8 @@ private enum WatchCorePK {
                     vdPerKG: config.vdPerKG,
                     kClear: config.kClear,
                     kClearInjection: config.kClearInjection,
-                    depotK1Corr: config.depotK1Corr
+                    depotK1Corr: config.depotK1Corr,
+                    patchReleaseScale: config.patchReleaseScale
                 )
             )
         }
@@ -79,6 +81,8 @@ private enum WatchOralPK {
         let bioavailabilityFast: Double
         let bioavailabilitySlow: Double
         let kClear: Double
+        let lagHoursFast: Double
+        let lagHoursSlow: Double
     }
 
     static let kAbs = WatchPKSharedCatalogResource.current.oralKAbs
@@ -93,7 +97,9 @@ private enum WatchOralPK {
                     kAbsSlow: config.kAbsSlow,
                     bioavailabilityFast: config.bioavailabilityFast,
                     bioavailabilitySlow: config.bioavailabilitySlow,
-                    kClear: config.kClear
+                    kClear: config.kClear,
+                    lagHoursFast: config.lagHoursFast,
+                    lagHoursSlow: config.lagHoursSlow
                 )
             )
         }
@@ -110,12 +116,14 @@ private struct WatchPKParams {
     let rateMGh: Double
     let fFast: Double
     let fSlow: Double
+    let lagFastH: Double
+    let lagSlowH: Double
 }
 
 private enum WatchParameterResolver {
     static func resolve(event: WatchDoseEvent) -> WatchPKParams {
         guard let hormone = event.simulatedHormone else {
-            return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: 0, rateMGh: 0, fFast: 0, fSlow: 0)
+            return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: 0, rateMGh: 0, fFast: 0, fSlow: 0, lagFastH: 0, lagSlowH: 0)
         }
 
         let core = WatchCorePK.params(for: hormone)
@@ -137,7 +145,9 @@ private enum WatchParameterResolver {
                 k3: k3,
                 rateMGh: 0,
                 fFast: formationFraction,
-                fSlow: formationFraction
+                fSlow: formationFraction,
+                lagFastH: 0,
+                lagSlowH: 0
             )
 
         case .patchApply:
@@ -149,15 +159,17 @@ private enum WatchParameterResolver {
                     k2: 0,
                     k3: k3,
                     rateMGh: releaseRateUGPerDay / 24_000.0,
-                    fFast: 1.0,
-                    fSlow: 1.0
+                    fFast: core.patchReleaseScale,
+                    fSlow: core.patchReleaseScale,
+                    lagFastH: 0,
+                    lagSlowH: 0
                 )
             }
             let fallbackK1 = WatchPKSharedCatalogResource.current.hormones[hormone]?.patchFallbackK1 ?? 0
-            return WatchPKParams(fracFast: 1.0, k1Fast: fallbackK1, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 1.0, fSlow: 1.0)
+            return WatchPKParams(fracFast: 1.0, k1Fast: fallbackK1, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 1.0, fSlow: 1.0, lagFastH: 0, lagSlowH: 0)
 
         case .patchRemove:
-            return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0)
+            return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0, lagFastH: 0, lagSlowH: 0)
 
         case .gel:
             let config = WatchPKSharedCatalogResource.current.hormones[hormone]
@@ -169,7 +181,9 @@ private enum WatchParameterResolver {
                 k3: k3,
                 rateMGh: 0,
                 fFast: config?.gelFmax ?? 0,
-                fSlow: config?.gelFmax ?? 0
+                fSlow: config?.gelFmax ?? 0,
+                lagFastH: 0,
+                lagSlowH: 0
             )
 
         case .oral:
@@ -182,17 +196,19 @@ private enum WatchParameterResolver {
                     k3: dual.kClear,
                     rateMGh: 0,
                     fFast: dual.bioavailabilityFast,
-                    fSlow: dual.bioavailabilitySlow
+                    fSlow: dual.bioavailabilitySlow,
+                    lagFastH: dual.lagHoursFast,
+                    lagSlowH: dual.lagHoursSlow
                 )
             }
             let k1 = WatchOralPK.kAbs[event.compound] ?? 0
             let k2 = (hormone == .estradiol && event.compound == .EV) ? (WatchCompoundHydrolysisPK.k2[.EV] ?? 0) : 0
             let bioavailability = WatchOralPK.bioavailability[event.compound] ?? 0
-            return WatchPKParams(fracFast: 1.0, k1Fast: k1, k1Slow: 0, k2: k2, k3: k3, rateMGh: 0, fFast: bioavailability, fSlow: bioavailability)
+            return WatchPKParams(fracFast: 1.0, k1Fast: k1, k1Slow: 0, k2: k2, k3: k3, rateMGh: 0, fFast: bioavailability, fSlow: bioavailability, lagFastH: 0, lagSlowH: 0)
 
         case .sublingual:
             guard hormone == .estradiol else {
-                return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0)
+                return WatchPKParams(fracFast: 0, k1Fast: 0, k1Slow: 0, k2: 0, k3: k3, rateMGh: 0, fFast: 0, fSlow: 0, lagFastH: 0, lagSlowH: 0)
             }
             let theta: Double
             if let explicit = event.extras[.sublingualTheta] {
@@ -212,7 +228,9 @@ private enum WatchParameterResolver {
                 k3: k3,
                 rateMGh: 0,
                 fFast: 1.0,
-                fSlow: WatchOralPK.bioavailability[event.compound] ?? 0
+                fSlow: WatchOralPK.bioavailability[event.compound] ?? 0,
+                lagFastH: 0,
+                lagSlowH: 0
             )
         }
     }
@@ -324,20 +342,27 @@ private enum WatchPKModel {
                     return 24 * 7
                 }()
                 if p.rateMGh > 0 {
+                    let effectiveRateMGh = p.rateMGh * p.fFast
                     if tau <= wearH {
-                        totalAmountMG += p.rateMGh / p.k3 * (1 - exp(-p.k3 * tau))
+                        totalAmountMG += effectiveRateMGh / p.k3 * (1 - exp(-p.k3 * tau))
                     } else {
-                        let amountAtRemoval = p.rateMGh / p.k3 * (1 - exp(-p.k3 * wearH))
+                        let amountAtRemoval = effectiveRateMGh / p.k3 * (1 - exp(-p.k3 * wearH))
                         totalAmountMG += amountAtRemoval * exp(-p.k3 * (tau - wearH))
                     }
                 } else {
-                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    let amountUnderPatch = oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    if tau > wearH {
+                        let amountAtRemoval = oneComp(tau: wearH, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                        totalAmountMG += amountAtRemoval * exp(-p.k3 * (tau - wearH))
+                    } else {
+                        totalAmountMG += amountUnderPatch
+                    }
                 }
 
             case .gel, .oral:
                 if event.route == .oral, p.k1Slow > 0 {
-                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
-                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau - p.lagFastH, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau - p.lagSlowH, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
                 } else {
                     totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG, f: p.fFast, ka: p.k1Fast, ke: p.k3)
                 }
@@ -346,11 +371,11 @@ private enum WatchPKModel {
                 if p.k2 > 0 {
                     let doseFast = event.doseMG * p.fracFast
                     let doseSlow = event.doseMG * (1.0 - p.fracFast)
-                    totalAmountMG += analytic3C(tau: tau, doseMG: doseFast, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
-                    totalAmountMG += oneComp(tau: tau, doseMG: doseSlow, f: p.fSlow, ka: p.k1Slow, ke: p.k3)
+                    totalAmountMG += analytic3C(tau: tau - p.lagFastH, doseMG: doseFast, f: p.fFast, k1: p.k1Fast, k2: p.k2, k3: p.k3)
+                    totalAmountMG += oneComp(tau: tau - p.lagSlowH, doseMG: doseSlow, f: p.fSlow, ka: p.k1Slow, ke: p.k3)
                 } else {
-                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
-                    totalAmountMG += oneComp(tau: tau, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau - p.lagFastH, doseMG: event.doseMG * p.fracFast, f: p.fFast, ka: p.k1Fast, ke: p.k3)
+                    totalAmountMG += oneComp(tau: tau - p.lagSlowH, doseMG: event.doseMG * (1 - p.fracFast), f: p.fSlow, ka: p.k1Slow, ke: p.k3)
                 }
 
             case .patchRemove:

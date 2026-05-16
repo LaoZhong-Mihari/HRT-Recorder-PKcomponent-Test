@@ -19,6 +19,7 @@
       "kClearInjection": 0.03,
       "depotK1Corr": 1.0,
       "patchFallbackK1": 0.0051,
+      "patchReleaseScale": 3.5078419552373226,
       "gelK1": 0.05534590723252352,
       "gelFmax": 0.22613930825011333
     }
@@ -95,7 +96,7 @@
     "EN": { "fracFast": 0.05, "k1Fast": 0.001, "k1Slow": 0.005 },
     "TC": { "fracFast": 0.35, "k1Fast": 0.016, "k1Slow": 0.0018 },
     "TE": { "fracFast": 0.35, "k1Fast": 0.022, "k1Slow": 0.0035 },
-    "TU": { "fracFast": 0.3, "k1Fast": 0.005, "k1Slow": 0.0006 }
+    "TU": { "fracFast": 0.3, "k1Fast": 0.005, "k1Slow": 0.001127743154530867 }
   },
   "formationFraction": {
     "EB": 0.10922376473734707,
@@ -104,7 +105,7 @@
     "EN": 0.12,
     "TC": 0.06775603562678995,
     "TE": 0.09963018136697789,
-    "TU": 0.06354733784809269
+    "TU": 0.12940928580278235
   },
   "hydrolysisK2": {
     "EB": 0.09,
@@ -128,12 +129,14 @@
     },
     "dualAbsorption": {
       "TU": {
-        "fracFast": 0.9490548401292037,
-        "kAbsFast": 0.2162055136986597,
+        "fracFast": 1.0,
+        "kAbsFast": 0.450550912583251,
         "kAbsSlow": 0.0142806935343998,
-        "bioavailabilityFast": 0.02698781505574721,
-        "bioavailabilitySlow": 0.028306460893205026,
-        "kClear": 0.21774120522339674
+        "bioavailabilityFast": 0.025919316335729803,
+        "bioavailabilitySlow": 0.0,
+        "kClear": 0.44024417908217306,
+        "lagHoursFast": 2.75,
+        "lagHoursSlow": 0.0
       }
     },
     "kAbsSL": 1.8

@@ -264,6 +264,7 @@ struct HormoneCoreParams: Sendable {
     let kClear: Double
     let kClearInjection: Double
     let depotK1Corr: Double
+    let patchReleaseScale: Double
 }
 
 struct CorePK {
@@ -275,7 +276,8 @@ struct CorePK {
                     vdPerKG: config.vdPerKG,
                     kClear: config.kClear,
                     kClearInjection: config.kClearInjection,
-                    depotK1Corr: config.depotK1Corr
+                    depotK1Corr: config.depotK1Corr,
+                    patchReleaseScale: config.patchReleaseScale
                 )
             )
         }
@@ -289,6 +291,7 @@ struct CorePK {
     static let kClear: Double = byHormone[.estradiol]!.kClear
     static let kClearInjection: Double = byHormone[.estradiol]!.kClearInjection
     static let depotK1Corr: Double = byHormone[.estradiol]!.depotK1Corr
+    static let patchReleaseScale: Double = byHormone[.estradiol]!.patchReleaseScale
 }
 
 struct TwoPartDepotParams: Sendable {
@@ -349,6 +352,8 @@ struct OralPK {
         let bioavailabilityFast: Double
         let bioavailabilitySlow: Double
         let kClear: Double
+        let lagHoursFast: Double
+        let lagHoursSlow: Double
     }
 
     static let kAbsByCompound: [Compound: Double] = PKSharedCatalogResource.current.oralKAbs
@@ -363,7 +368,9 @@ struct OralPK {
                     kAbsSlow: config.kAbsSlow,
                     bioavailabilityFast: config.bioavailabilityFast,
                     bioavailabilitySlow: config.bioavailabilitySlow,
-                    kClear: config.kClear
+                    kClear: config.kClear,
+                    lagHoursFast: config.lagHoursFast,
+                    lagHoursSlow: config.lagHoursSlow
                 )
             )
         }

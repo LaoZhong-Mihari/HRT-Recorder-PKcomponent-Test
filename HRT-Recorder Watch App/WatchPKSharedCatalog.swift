@@ -9,6 +9,7 @@ struct WatchPKSharedCatalogResource {
         let kClearInjection: Double
         let depotK1Corr: Double
         let patchFallbackK1: Double
+        let patchReleaseScale: Double
         let gelK1: Double
         let gelFmax: Double
     }
@@ -34,6 +35,8 @@ struct WatchPKSharedCatalogResource {
         let bioavailabilityFast: Double
         let bioavailabilitySlow: Double
         let kClear: Double
+        let lagHoursFast: Double
+        let lagHoursSlow: Double
     }
 
     let hormones: [WatchSimulatedHormone: HormoneConfig]
@@ -63,6 +66,7 @@ private extension WatchPKSharedCatalogResource {
             let kClearInjection: Double
             let depotK1Corr: Double
             let patchFallbackK1: Double
+            let patchReleaseScale: Double?
             let gelK1: Double
             let gelFmax: Double
         }
@@ -89,6 +93,8 @@ private extension WatchPKSharedCatalogResource {
                 let bioavailabilityFast: Double
                 let bioavailabilitySlow: Double
                 let kClear: Double
+                let lagHoursFast: Double?
+                let lagHoursSlow: Double?
             }
 
             let kAbs: [String: Double]
@@ -153,6 +159,7 @@ private extension WatchPKSharedCatalogResource {
                     kClearInjection: value.kClearInjection,
                     depotK1Corr: value.depotK1Corr,
                     patchFallbackK1: value.patchFallbackK1,
+                    patchReleaseScale: value.patchReleaseScale ?? 1.0,
                     gelK1: value.gelK1,
                     gelFmax: value.gelFmax
                 )
@@ -211,7 +218,9 @@ private extension WatchPKSharedCatalogResource {
                     kAbsSlow: value.kAbsSlow,
                     bioavailabilityFast: value.bioavailabilityFast,
                     bioavailabilitySlow: value.bioavailabilitySlow,
-                    kClear: value.kClear
+                    kClear: value.kClear,
+                    lagHoursFast: value.lagHoursFast ?? 0,
+                    lagHoursSlow: value.lagHoursSlow ?? 0
                 )
             )
         })

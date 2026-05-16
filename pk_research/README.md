@@ -1,16 +1,17 @@
 # PK Research Workflow
 
-This folder is the offline calibration workspace for PK parameter updates, especially testosterone.
+This folder is the offline calibration workspace for PK parameter updates, especially source-backed testosterone anchors.
 
 ## Layout
 
 - `data/`
   - normalized literature / label / trial anchors
   - templates and manually curated source tables
-  - `testosterone_anchor_targets.json` for the approved runtime regression anchors
+  - `testosterone_anchor_targets.json` for approved runtime regression anchors
 - `scripts/`
   - validation and fitting helpers
   - regression checks that compare runtime constants against documented leaflet anchors
+  - fit report generator for reviewing per-anchor residuals
 - `results/`
   - generated summaries, parameter candidates, plots
 
@@ -30,7 +31,13 @@ This folder is the offline calibration workspace for PK parameter updates, espec
    python3 pk_research/scripts/test_testosterone_anchor_regression.py
    ```
 
-5. Run route fitting:
+5. Generate a reviewable residual report:
+
+   ```bash
+   python3 pk_research/scripts/report_testosterone_anchor_fit.py
+   ```
+
+6. Run route fitting:
 
    ```bash
    python3 pk_research/scripts/fit_route_parameters.py \
@@ -40,8 +47,8 @@ This folder is the offline calibration workspace for PK parameter updates, espec
      --iterations 4000
    ```
 
-6. Review residuals and candidate parameters under `results/`.
-7. Only after review, copy approved constants into `PKSharedCatalog.json`.
+7. Review residuals and candidate parameters under `results/`.
+8. Only after review, copy approved constants into `PKSharedCatalog.json`.
 
 ## Acceptance Rules
 

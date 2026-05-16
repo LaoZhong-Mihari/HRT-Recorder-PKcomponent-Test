@@ -25,6 +25,12 @@ def main() -> int:
     hormones = set(payload.get("hormones", {}).keys())
     if hormones != REQUIRED_HORMONES:
         errors.append(f"hormones mismatch: expected {sorted(REQUIRED_HORMONES)}, got {sorted(hormones)}")
+    for hormone, config in payload.get("hormones", {}).items():
+        if "patchReleaseScale" in config and config["patchReleaseScale"] <= 0:
+            errors.append(f"hormone '{hormone}' patchReleaseScale must be positive")
+    testosterone_config = payload.get("hormones", {}).get("testosterone", {})
+    if "patchReleaseScale" not in testosterone_config:
+        errors.append("hormone 'testosterone' missing patchReleaseScale")
 
     compounds = set(payload.get("compounds", {}).keys())
     missing_compounds = REQUIRED_COMPOUNDS - compounds

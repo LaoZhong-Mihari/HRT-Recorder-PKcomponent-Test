@@ -2,7 +2,7 @@
 
 This README explains the algorithms used for each drug/route, key parameters and units, what was tuned, why we tuned it, how Estradiol / Testosterone now share one engine, and how the implementation evolved.
 
-> 本文档已按当前代码重新同步，基准时间为 **2026-03-30**。本 README 以仓库内现行实现为准，尤其以 `PKSharedCatalog.json`、`PKparameter.swift`、`PKcore.swift` 和 Watch 端同名镜像实现为准。
+> 本文档已按当前代码重新同步，基准时间为 **2026-04-24**。本 README 以仓库内现行实现为准，尤其以 `PKSharedCatalog.json`、`PKparameter.swift`、`PKcore.swift` 和 Watch 端同名镜像实现为准。
 
 ---
 
@@ -60,10 +60,10 @@ This README explains the algorithms used for each drug/route, key parameters and
 
 ### 1.1 hormone 级常量（当前实现）
 
-| 激素 | 浓度单位 | `vdPerKG` | `kClear` | 对应 t½ | `kClearInjection` | 对应 t½ | `patchFallbackK1` | `gelK1` | `gelFmax` |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Estradiol | `pg/mL` | 2.0 L·kg⁻¹ | 0.41 h⁻¹ | 1.69 h | 0.041 h⁻¹ | 16.91 h | 0.0075 h⁻¹ | 0.022 h⁻¹ | 0.05 |
-| Testosterone | `ng/dL` | 2.0 L·kg⁻¹ | 0.60 h⁻¹ | 1.16 h | 0.03 h⁻¹ | 23.10 h | 0.0051 h⁻¹ | 0.0553 h⁻¹ | 0.226 |
+| 激素 | 浓度单位 | `vdPerKG` | `kClear` | 对应 t½ | `kClearInjection` | 对应 t½ | `patchFallbackK1` | `patchReleaseScale` | `gelK1` | `gelFmax` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Estradiol | `pg/mL` | 2.0 L·kg⁻¹ | 0.41 h⁻¹ | 1.69 h | 0.041 h⁻¹ | 16.91 h | 0.0075 h⁻¹ | 1.000（默认） | 0.022 h⁻¹ | 0.06 |
+| Testosterone | `ng/dL` | 2.0 L·kg⁻¹ | 0.60 h⁻¹ | 1.16 h | 0.03 h⁻¹ | 23.10 h | 0.0051 h⁻¹ | 3.770 | 0.0553 h⁻¹ | 0.226 |
 
 > 这里的 `kClear` / `kClearInjection` 都是**模型参数**。尤其是 injection 路由的 `kClearInjection`，其主要职责是配合 depot 吸收复现曲线形状，**不是**直接可外推的人体生理清除率。
 
@@ -76,7 +76,7 @@ This README explains the algorithms used for each drug/route, key parameters and
 
 **Testosterone**
 - `patch` 与 `gel` 继续使用 hormone 级 `kClear = 0.60 h⁻¹`，这样贴片移除后的约 70 min 回落能被保住。
-- `oral TU` 现在改用 route-specific 的有效 `k3 ≈ 0.218 h⁻¹`，因为单靠 `0.60 h⁻¹` 无法同时命中 TLANDO 的 `Tmax / Cmax / Cavg0-24h`。
+- `oral TU` 现在改用 route-specific 的有效 `k3 ≈ 0.440 h⁻¹`，并加入约 **2.75 h** 的有效吸收滞后，因为单靠 `0.60 h⁻¹` 或无滞后 Bateman 无法同时命中 TLANDO 的 BID `Tmax / Cmax / Cavg0-24h`。
 - 因此，`0.60 h⁻¹` 仍是 Testosterone 非注射路由的默认 prior，但不再假设所有 route 共享完全相同的有效清除。
 
 ### 1.3 注射专用 `kClearInjection`（有效参数说明）
@@ -146,13 +146,13 @@ This README explains the algorithms used for each drug/route, key parameters and
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | TC | 0.35 | 0.016 | 43.32 | 0.0018 | 385.08 | 0.060 | 11.55 |
 | TE | 0.35 | 0.022 | 31.51 | 0.0035 | 198.04 | 0.120 | 5.78 |
-| TU | 0.30 | 0.005 | 138.63 | 0.0006 | 1155.25 | 0.015 | 46.21 |
+| TU | 0.30 | 0.005 | 138.63 | 0.001127743 | 614.63 | 0.015 | 46.21 |
 
 *注：Testosterone 注射路径当前使用 `k3 = kClearInjection = 0.03 h⁻¹`。*
 
 ### 2.5 Testosterone 注射 `formationFraction`
 
-- 当前 `TC / TE / TU` 的 `formationFraction` 分别为 **0.0678 / 0.0996 / 0.0635**。
+- 当前 `TC / TE / TU` 的 `formationFraction` 分别为 **0.0678 / 0.0996 / 0.1294**。
 - 这里的 `formationFraction` 现在明确承担 **经验暴露缩放项** 的角色：输入仍是 **T 当量 mg**，但 simplified 3C depot 模型仍需要一个额外 `F` 才能把 leaflet 里的 `Cmax` 拉回真实量级。
 - 换句话说，它不再表示“酯换算是否已经做过”，而是表示“在 active-equivalent 输入口径下，为命中监管锚点所需的有效系统暴露分数”。
 
@@ -185,13 +185,14 @@ This README explains the algorithms used for each drug/route, key parameters and
 
 **TU（Testosterone Undecanoate, injection）**
 - 主锚点来自两类一手来源：
-  - AVEED DailyMed：750 mg IM 后，血清 T 的 `Tmax` 中位数约 **7 天**，范围 **4–42 天**；前药 TU 的浓度在 **Day 4** 达峰且在 **Day 42** 近乎不可检出。
-  - Zhang et al., 1998：TU 注射的终末半衰期约 **18.3 ± 2.3 d**（500 mg）到 **23.7 ± 2.7 d**（1000 mg），并可把血清 T 维持到 **Day 50–60** 的低正常范围附近。
+  - 说明书 / Zhang et al., 1998：4 名克兰菲特综合征患者单次 IM **500 mg** 后，给药前平均 T 低于 10 nmol/L，1 周平均 T 为 **47.8 ± 10.1 nmol/L**，`t1/2β = 18.3 ± 2.3 d`，`MRT = 21.7 ± 1.1 d`，约 50–60 天回到成年男性正常值下限附近。
+  - AVEED / Nebido 类标签仍可作为给药间隔、长尾和给药方案外部校验，但当前 v1 的 TU 单次曲线优先按上面的 500 mg 说明书锚点标定。
 - 当前参数取舍：
   - 快库 t½ ≈ 5.78 d，用于把峰位推到 7 天附近
-  - 慢库 t½ ≈ 48.1 d，对齐 20 天以上的长尾
+  - 慢库 t½ ≈ 25.6 d，配合整体终末窗口复现约 18.3 d 的表观半衰期
   - `k2 = 0.015 h⁻¹`（t½ ≈ 46.2 h）
-  - `formationFraction ≈ 0.0635`
+  - `formationFraction ≈ 0.1294`
+  - 当前 500 mg 锚点下，模型在 7.2 d 达到约 47.8 nmol/L，14–60 d 窗口估算终末半衰期约 18.3 d；第 50 天外源贡献约 8.0 nmol/L。由于 App 不叠加给药前基础 T，50–60 天“回到 10 nmol/L 下限”只作为宽松校验。
 
 ### 2.7 数学形式（概念）
 - 两个并联吸收库按 `Frac_fast` 和 `1 − Frac_fast` 分药量，分别以 `k1_fast` 与 `k1_slow` 进入“酯”室，水解为活性激素后以 `k3` 清除。
@@ -223,8 +224,10 @@ This README explains the algorithms used for each drug/route, key parameters and
 佩戴期（`0 ≤ t ≤ wearH`）：
 
 $$
-A(t) = \frac{\text{rateMGh}}{k_3} \,(1 - e^{-k_3 t})
+A(t) = \frac{\text{rateMGh}\cdot\text{patchReleaseScale}}{k_3} \,(1 - e^{-k_3 t})
 $$
+
+`patchReleaseScale` 没有显式配置时默认是 1.0；本轮只为 Testosterone zero-order patch 配置非 1.0 的锚点缩放。
 
 移除后（`t > wearH`）：
 
@@ -249,6 +252,8 @@ $$
   - “24 h 持续吸收”
   - `Tmax` 中位数约 **8 h**
   - 移除后表观半衰期约 **70 min**
+  - 4 mg/day 系统 Day 28 平均 `Cavg ≈ 696 ng/dL`
+- `patchReleaseScale ≈ 3.770`，用于把标称 4 mg/day 释放率映射到本引擎的有效中心室暴露。
 - 因为手动录入时常常没有完整品牌速率信息，当前策略是：
   - **有释放率就优先零阶**
   - **无释放率才用一阶后备**
@@ -268,7 +273,7 @@ $$
 ### 4.2 Estradiol 凝胶（当前实现）
 - **当前实现（稳定优先的简化版）**
   - `k1 = 0.022 h⁻¹`（t½ ≈ 31.5 h）
-  - `F = 0.05`
+  - `F = 0.06`
   - 当前实现暂时忽略涂抹面积与剂量密度，直接返回固定 `(k1, F)`
 - **本次 README 修正**
   - 旧 README 在探索历程中仍残留过时的 `k1 = 0.045` 说法；当前代码实际为 **`0.022`**
@@ -321,21 +326,21 @@ $$
 ### 5.3 Testosterone 口服 TU（当前实现，v1）
 - **模型**：双吸收通路的有效 oral 模型
 - **当前默认参数**
-  - `Frac_fast ≈ 0.949`
-  - `kAbs_fast ≈ 0.216 h⁻¹`
-  - `kAbs_slow ≈ 0.0143 h⁻¹`
-  - `F_fast ≈ 0.027`
-  - `F_slow ≈ 0.028`
-  - `k3 ≈ 0.218 h⁻¹`
+  - `Frac_fast = 1.0`
+  - `kAbs_fast ≈ 0.451 h⁻¹`
+  - `lag_fast ≈ 2.75 h`
+  - `F_fast ≈ 0.0259`
+  - `F_slow = 0`
+  - `k3 ≈ 0.440 h⁻¹`
 - **主锚点来源**
   - TLANDO 官方标签：
-    - 225 mg 口服，**`Tmax` 中位数约 5 h**
-    - 平均 `Cmax` 约 **979–989 ng/dL**
+    - 225 mg 早晚各一次随餐口服，**`Tmax` 中位数约 5 h**
+    - 早/晚剂量后的平均 `Cmax` 约 **979 / 989 ng/dL**
     - 24 h 平均浓度 `Cavg0-24h ≈ 476 ng/dL`
     - 与食物同服时暴露显著高于空腹
 - **当前模型的解释**
-- 标签说明口服 TU 主要经淋巴吸收、避免明显肝首过；单一 Bateman 很难同时命中 `Tmax / Cmax / Cavg0-24h`。
-- 当前实现因此改成“快吸收 + 慢吸收”双通路：快支负责峰位，慢支负责把 24 h 平均浓度抬到 leaflet 量级，同时仍保留线性叠加。
+- 标签说明口服 TU 主要经淋巴吸收、避免明显肝首过；无滞后的单一 Bateman 很难同时命中 BID `Tmax / Cmax / Cavg0-24h`。
+- 当前实现因此在 oral dual 配置中加入可选 `lagHoursFast / lagHoursSlow`。TLANDO v1 参数实际退化为“单一延迟吸收通路”：吸收滞后负责把峰位推到约 5 h，较快有效清除负责避免早晚两次给药时 24 h 平均暴露被过度抬高。
 - **限制**
   - 还没有把“餐食脂肪含量”“双日 dosing”“前体 TU 与活性 T 分离显示”单独建模进去。
 
@@ -435,7 +440,7 @@ $$
 - **2025‑07‑末**：注射改为两库模型（`TwoPartDepotPK`），分别用 `k1_fast` 与 `k1_slow` 控制峰与尾；`formationFraction` 引入经验标定。
 - **2025‑08‑初**：
   - 尝试“浓度反馈清除”（早期 hill/抑制式 k），在多事件叠加时出现不稳定与过拟合风险，回退为常数 `k3`。
-  - 凝胶在“剂量/面积”非线性修正中出现系统性偏差，临时回退为常量实现；后续又把 E2 凝胶常数进一步收敛到当前的 `k1 = 0.022, F = 0.05`。
+  - 凝胶在“剂量/面积”非线性修正中出现系统性偏差，临时回退为常量实现；后续又把 E2 凝胶常数进一步收敛到当前的 `k1 = 0.022, F = 0.06`。
 - **2025‑08‑中**：统一由 `ParameterResolver` 把各路由映射到 `PKParams`，`SimulationEngine` 负责事件窗口裁剪与 AUC 梯形法积分。
 - **2025‑09‑03**：
   - 为 Estradiol 注射路径加入专用 `kClearInjection`
@@ -454,6 +459,13 @@ $$
   - iPhone 与 Watch 的 PK 常量收敛为同一份 **`PKSharedCatalog.json`**
   - 新增 Testosterone 的 `TC / TE / TU injection`、`gel`、`patch`、`oral TU` 支持
   - 在仓库内建立 `pk_research/` 作为离线锚点与拟合工作区
+- **2026‑04‑24**：
+  - 将 oral TU 锚点从“单次 225 mg 近似”修正为 TLANDO 标签的 **225 mg BID** 曲线
+  - 为 oral dual 模型加入可选吸收滞后参数，并重新标定 TLANDO 的 `Tmax / Cmax / Cavg0-24h`
+  - 补充 testosterone anchor 的结构化来源字段与拟合报告脚本
+  - 修正 Watch 一阶贴片后备在 `patchRemove` 后未截断输入的问题
+  - 发现 TE 锚点链接与实际使用的 Bayer 250 mg SmPC 不一致，改为指向 Bayer 原始 SmPC
+  - 按 ANDRODERM 标签为 Testosterone zero-order patch 增加 `patchReleaseScale`，修正浓度量级
 
 ### 8.1 本次 Testosterone 扩展：锚点确定与调参流程
 
@@ -492,59 +504,57 @@ $$
 ### 9.1 Estradiol：既有来源（保留并继续有效）
 
 **社区与技术文档**
-- mtf.wiki：雌二醇凝胶（含经皮半衰期、实用注意事项）  
+- mtf.wiki：雌二醇凝胶（含经皮半衰期、实用注意事项）
   <https://mtf.wiki/zh-cn/docs/medicine/estrogen/gel>
-- Transfem Science：注射、舌下、不同路由比较等  
-  <https://transfemscience.org/articles/injectable-e2-meta-analysis/>  
-  <https://transfemscience.org/articles/sublingual-e2-transfem/>  
-  <https://transfemscience.org/articles/e2-equivalent-doses/>  
+- Transfem Science：注射、舌下、不同路由比较等
+  <https://transfemscience.org/articles/injectable-e2-meta-analysis/>
+  <https://transfemscience.org/articles/sublingual-e2-transfem/>
+  <https://transfemscience.org/articles/e2-equivalent-doses/>
   <https://transfemscience.org/articles/oral-vs-transdermal-e2/>
-- estrannai.se：Injection 三室模型与 Patch 算法参考  
+- estrannai.se：Injection 三室模型与 Patch 算法参考
   <https://estrannai.se/docs/ingredients/>
 
 **官方说明书 / 监管资料**
-- Climara®（FDA 标签）：移除贴片后的回落与表观半衰期描述  
+- Climara®（FDA 标签）：移除贴片后的回落与表观半衰期描述
   <https://www.accessdata.fda.gov/drugsatfda_docs/label/2001/20375s16lbl.pdf>
-- FDA 临床药理综述 / 产品手册示例  
-  <https://www.accessdata.fda.gov/drugsatfda_docs/nda/99/020994_clinphrmr.pdf>  
+- FDA 临床药理综述 / 产品手册示例
+  <https://www.accessdata.fda.gov/drugsatfda_docs/nda/99/020994_clinphrmr.pdf>
   <https://www.accessdata.fda.gov/drugsatfda_docs/label/2008/020375s026lbl.pdf>
 
 **期刊 / 综述**
-- Ginsburg ES et al. *Half-life of estradiol in postmenopausal women.* Fertil Steril. 1998  
+- Ginsburg ES et al. *Half-life of estradiol in postmenopausal women.* Fertil Steril. 1998
   <https://pubmed.ncbi.nlm.nih.gov/9473164/>
-- Kuhl H. *Pharmacology of estrogens and progestogens: influence of different routes of administration.* Climacteric. 2005  
+- Kuhl H. *Pharmacology of estrogens and progestogens: influence of different routes of administration.* Climacteric. 2005
   <https://pubmed.ncbi.nlm.nih.gov/16112947/>
-- Oinonen et al. *Absorption and bioavailability of oestradiol from a gel, a patch and a tablet.* Eur J Pharm Biopharm. 1999  
+- Oinonen et al. *Absorption and bioavailability of oestradiol from a gel, a patch and a tablet.* Eur J Pharm Biopharm. 1999
   <https://pubmed.ncbi.nlm.nih.gov/10465378/>
 
 ### 9.2 Testosterone：本次扩展使用的一手来源
 
 **注射：TC**
-- FDA 标签：*Testosterone Cypionate Injection*（单次 200 mg IM 后的 `Cmax / Tmax / t½`）  
+- FDA 标签：*Testosterone Cypionate Injection*（单次 200 mg IM 后的 `Cmax / Tmax / t½`）
   <https://www.accessdata.fda.gov/drugsatfda_docs/label/2022/216318s000lbl.pdf>
 
 **注射：TE**
-- Bayer / Jenapharm SmPC：*Testoviron Depot 250*（depot 半衰期约 4.5 d，1.5–3 d 峰位）  
-  <https://www.bayer.com/sites/default/files/testoviron-depot-smpc-sep-2020.pdf>
-- 监管摘要检索结果：*Testosterone Enantate solution for injection*（检索时可见“24 h 左右达峰、半衰期约 4.2 d”的表述，作为更早峰位的补充锚点）  
-  <https://docetp.mpa.se/LMF/Testosterone%20enantate%20solution%20for%20injection%20ENG%20SmPC_09001bee82d5410f.pdf>
+- Bayer / Jenapharm SmPC：*Testoviron Depot 250*（depot 半衰期约 4.5 d，1.5–3 d 峰位）
+  <https://www.bayer.com/sites/default/files/testoviron-depot-smpc-sep-2020-1.pdf>
 
 **注射：TU**
-- AVEED DailyMed：750 mg IM 后血清 T `Tmax` 中位数约 7 天；TU 前药浓度 Day 4 达峰  
+- AVEED DailyMed：750 mg IM 后血清 T `Tmax` 中位数约 7 天；TU 前药浓度 Day 4 达峰
   <https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=f80f025b-17d8-40af-8739-20ce07902045>
-- Zhang et al. 1998：TU 注射终末半衰期约 18–24 d，并可维持到 Day 50–60  
+- Zhang et al. 1998：TU 注射终末半衰期约 18–24 d，并可维持到 Day 50–60
   <https://pubmed.ncbi.nlm.nih.gov/9876028/>
 
 **凝胶**
-- AndroGel 1.62% DailyMed：Day 7 曲线、Day 112 / Day 364 稳态曲线  
+- AndroGel 1.62% DailyMed：Day 7 曲线、Day 112 / Day 364 稳态曲线
   <https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=f4e8d29b-8707-4d47-e053-2a95a90aecee&version=129>
 
 **贴片**
-- ANDRODERM DailyMed PDF：24 h 持续吸收、`Tmax` 中位数约 8 h、移除后表观半衰期约 70 min  
+- ANDRODERM DailyMed PDF：24 h 持续吸收、`Tmax` 中位数约 8 h、移除后表观半衰期约 70 min
   <https://dailymed.nlm.nih.gov/dailymed/downloadpdffile.cfm?setId=e58a5328-fdd9-40cb-a19f-8ed798989b9c>
 
 **口服 TU**
-- TLANDO DailyMed：225 mg 口服的 `Tmax ≈ 5 h`、`Cmax` 与 `Cavg0-24h`  
+- TLANDO DailyMed：225 mg 早晚两次口服的 `Tmax ≈ 5 h`、`Cmax` 与 `Cavg0-24h`
   <https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=4b0b92e9-6d3c-a0e5-e1c7-342999f72580>
 
 ### 9.3 研究与拟合流程（仓库内）
@@ -553,6 +563,7 @@ $$
 - `pk_research/data/anchors_template.csv`
 - `pk_research/scripts/validate_pk_shared_catalog.py`
 - `pk_research/scripts/fit_route_parameters.py`
+- `pk_research/scripts/report_testosterone_anchor_fit.py`
 
 > 说明：当前 Testosterone 常量已经进入引擎并支持 UI / Watch 端使用，但仍应视作 **v1 engineering defaults**。后续应继续补充更多论文、标签与临床试验数据，再做 route-by-route 冻结。
 
@@ -581,15 +592,15 @@ $$
 | Estradiol 注射（EB/EV/EC/EN） | 解析 | E2 当量 mg | 两库吸收 + `k2` 水解 + `k3 = 0.041` 清除 | `Frac_fast, k1_fast, k1_slow, k2, k3` | `formationFraction` |
 | Testosterone 注射（TC/TE/TU） | 解析 | T 当量 mg | 两库吸收 + `k2` 水解 + `k3 = 0.03` 清除 | `Frac_fast, k1_fast, k1_slow, k2, k3` | 经验 `formationFraction`，按 leaflet 锚点拟合 |
 | Estradiol 贴片（零阶） | 解析 | `µg/day → mg/h` | 零阶恒速输入 + `k3 = 0.41` | `rateMGh, wearH, k3` | 固定 1.0 |
-| Testosterone 贴片（零阶） | 解析 | `µg/day → mg/h` | 零阶恒速输入 + `k3 = 0.60` | `rateMGh, wearH, k3` | 固定 1.0 |
+| Testosterone 贴片（零阶） | 解析 | `µg/day → mg/h` | 零阶恒速输入 + `k3 = 0.60` | `rateMGh, wearH, k3, patchReleaseScale = 3.770` | ANDRODERM `Cavg` 锚点 |
 | Estradiol 贴片（一阶后备） | 解析 | E2 当量 mg | 一阶“假库” + `k3 = 0.41` | `k1 = 0.0075, k3` | 固定 1.0 |
 | Testosterone 贴片（一阶后备） | 解析 | T 当量 mg | 一阶“假库” + `k3 = 0.60` | `k1 = 0.0051, k3` | 固定 1.0 |
-| Estradiol 凝胶 | 解析 | E2 当量 mg | 单室 Bateman（简化常量版） | `k1 = 0.022, F = 0.05, k3 = 0.41` | 常量 0.05 |
+| Estradiol 凝胶 | 解析 | E2 当量 mg | 单室 Bateman（简化常量版） | `k1 = 0.022, F = 0.06, k3 = 0.41` | 常量 0.06 |
 | Testosterone 凝胶 | 解析 | T 当量 mg | 单室 Bateman（leaflet-calibrated） | `k1 = 0.0553, F = 0.226, k3 = 0.60` | 常量 0.226 |
 | 口服 E2 | 解析 | E2 当量 mg | 单室 Bateman | `kAbs = 0.32, F = 0.03, k3 = 0.41` | 常量 0.03 |
 | 口服 EV | 解析 | E2 当量 mg | 单室 Bateman（有效 oral EV） | `kAbs = 0.05, F = 0.03, k3 = 0.41` | 常量 0.03 |
-| 口服 TU | 解析 | T 当量 mg | 双吸收 oral TU | `Frac_fast, kAbs_fast, kAbs_slow, F_fast, F_slow, k3` | 双通路 `F_fast/F_slow` |
-| 舌下 E2 / EV | 解析 | E2 当量 mg | 双通路：快 = 黏膜，慢 = 吞咽→oral；E2 用 `dualAbsAmount`，EV 用 `dualAbsMixedAmount` | `θ, kAbsSL = 1.8, kAbs oral, k2(EV 快支), k3 = 0.41` | 快 1.0；慢 0.03 |
+| 口服 TU | 解析 | T 当量 mg | 延迟吸收 oral TU | `lag_fast = 2.75 h, kAbs_fast = 0.451, F_fast = 0.0259, k3 = 0.440` | TLANDO BID 锚点拟合 |
+| 舌下 E2 / EV | 解析 | E2 当量 mg | 双通路：快 = 黏膜，慢 = 吞咽→oral；E2 用 `dualAbsAmount`，EV 用 `dualAbsMixedAmount` | `θ, kAbsSL = 1.8, kAbs oral, k2(EV 快支), k3 = 0.41` | 快 1.0；慢按 oral F |
 | Testosterone sublingual | 未实现 | — | — | — | — |
 | Anti-androgen oral | 不模拟 | 记录剂量 | 仅记录 / 提醒 | `recordOnlyOralMedication` | 不参与 PK |
 
