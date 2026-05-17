@@ -1414,13 +1414,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dose (%@)"
+            "value" : "Dose (%@, mg)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "剂量 (%@)"
+            "value" : "剂量 (%@, mg)"
           }
         }
       }

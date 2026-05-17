@@ -278,6 +278,7 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
     enum ExtraKey: String, Codable, CaseIterable {
         case concentrationMGmL
         case areaCM2
+        case rawCompoundDoseMG
         case releaseRateUGPerDay
         case sublingualTheta
         case sublingualTier
@@ -328,6 +329,10 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
     var rawDoseMG: Double {
         if recordOnlyOralMedication != nil || route == .patchApply {
             return doseMG
+        }
+
+        if let rawDose = extras[.rawCompoundDoseMG], rawDose > 0 {
+            return rawDose
         }
 
         let factor = compound.info.toActiveFactor

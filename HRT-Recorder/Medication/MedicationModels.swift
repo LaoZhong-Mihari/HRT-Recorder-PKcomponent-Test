@@ -108,6 +108,10 @@ extension MedicationDoseTemplate {
             return doseMG
         }
 
+        if let rawDose = extras[.rawCompoundDoseMG], rawDose > 0 {
+            return rawDose
+        }
+
         let factor = CompoundInfo.by(compound: compound).toActiveFactor
         guard doseMG > 0, factor > 0 else { return doseMG }
         return doseMG / factor

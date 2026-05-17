@@ -92,6 +92,7 @@ private struct DraftDoseEvent {
 struct InputEventView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: DraftDoseEvent
+    @State private var activeEquivalentWasManuallyEdited: Bool
     @FocusState private var focusedField: FocusedDoseField?
 
     private let showsDatePicker: Bool
@@ -118,8 +119,19 @@ struct InputEventView: View {
         self.onCancel = onCancel
         if let event = eventToEdit {
             let recordOnlyOralMedication = event.recordOnlyOralMedication
-            let compoundInfo = CompoundInfo.by(compound: event.compound)
-            let rawDose = event.doseMG / compoundInfo.toActiveFactor
+            let rawDose = Self.initialRawCompoundDoseMG(
+                activeDoseMG: event.doseMG,
+                compound: event.compound,
+                extras: event.extras
+            )
+            let usesCustomDoseRelation = recordOnlyOralMedication == nil
+                && event.compound != .E2
+                && event.compound != .T
+                && Self.hasCustomDoseRelation(
+                    rawDoseMG: rawDose,
+                    activeDoseMG: event.doseMG,
+                    compound: event.compound
+                )
 
             var initialDraft = DraftDoseEvent(
                 id: event.id,
@@ -155,8 +167,22 @@ struct InputEventView: View {
             }
 
             _draft = State(initialValue: initialDraft)
+            _activeEquivalentWasManuallyEdited = State(initialValue: usesCustomDoseRelation)
         } else if let seed {
             let recordOnlyOralMedication = seed.template.recordOnlyOralMedication
+            let rawDose = Self.initialRawCompoundDoseMG(
+                activeDoseMG: seed.template.doseMG,
+                compound: seed.template.compound,
+                extras: seed.template.extras
+            )
+            let usesCustomDoseRelation = recordOnlyOralMedication == nil
+                && seed.template.compound != .E2
+                && seed.template.compound != .T
+                && Self.hasCustomDoseRelation(
+                    rawDoseMG: rawDose,
+                    activeDoseMG: seed.template.doseMG,
+                    compound: seed.template.compound
+                )
             var initialDraft = DraftDoseEvent(
                 id: nil,
                 date: seed.date,
@@ -172,7 +198,7 @@ struct InputEventView: View {
                 rawEsterDoseText: recordOnlyOralMedication == nil && seed.template.compound != .E2 && seed.template.compound != .T ? String(
                     format: "%.2f",
                     locale: Locale.current,
-                    seed.template.doseMG / CompoundInfo.by(compound: seed.template.compound).toActiveFactor
+                    rawDose
                 ) : "",
                 e2EquivalentDoseText: recordOnlyOralMedication == nil && seed.template.doseMG > 0
                     ? String(format: "%.2f", locale: Locale.current, seed.template.doseMG)
@@ -198,6 +224,7 @@ struct InputEventView: View {
             }
 
             _draft = State(initialValue: initialDraft)
+            _activeEquivalentWasManuallyEdited = State(initialValue: usesCustomDoseRelation)
         } else {
             let initialCategory = DraftMedicationCategory(category: preferredCategory)
             var initialDraft = DraftDoseEvent(medicationCategory: initialCategory)
@@ -205,7 +232,33 @@ struct InputEventView: View {
             initialDraft.route = routes.first ?? .oral
             initialDraft.ester = CompoundSupport.availableCompounds(for: preferredCategory, route: initialDraft.route).first ?? .EV
             _draft = State(initialValue: initialDraft)
+            _activeEquivalentWasManuallyEdited = State(initialValue: false)
         }
+    }
+
+    private static func initialRawCompoundDoseMG(
+        activeDoseMG: Double,
+        compound: Compound,
+        extras: [DoseEvent.ExtraKey: Double]
+    ) -> Double {
+        if let rawDose = extras[.rawCompoundDoseMG], rawDose > 0 {
+            return rawDose
+        }
+
+        let factor = CompoundInfo.by(compound: compound).toActiveFactor
+        guard factor > 0 else { return activeDoseMG }
+        return activeDoseMG / factor
+    }
+
+    private static func hasCustomDoseRelation(
+        rawDoseMG: Double,
+        activeDoseMG: Double,
+        compound: Compound
+    ) -> Bool {
+        guard rawDoseMG > 0, activeDoseMG > 0 else { return false }
+        let expectedActiveDose = rawDoseMG * CompoundInfo.by(compound: compound).toActiveFactor
+        let tolerance = max(0.005, abs(activeDoseMG) * 0.001)
+        return abs(expectedActiveDose - activeDoseMG) > tolerance
     }
     
     private static func routes(for category: DraftMedicationCategory) -> [DoseEvent.Route] {
@@ -252,6 +305,13 @@ struct InputEventView: View {
             return parsedDouble(draft.recordOnlyDoseText)
         }
 
+        if showsRawCompoundDose,
+           !activeEquivalentWasManuallyEdited,
+           let rawDose = parsedDouble(draft.rawEsterDoseText) {
+            let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
+            return rawDose * factor
+        }
+
         if let e2Dose = parsedDouble(draft.e2EquivalentDoseText) {
             return e2Dose
         }
@@ -274,6 +334,18 @@ struct InputEventView: View {
         case .antiAndrogen:
             return String(localized: "Dose (mg)")
         }
+    }
+
+    private var activeEquivalentDoseBinding: Binding<String> {
+        Binding(
+            get: { draft.e2EquivalentDoseText },
+            set: { newValue in
+                draft.e2EquivalentDoseText = newValue
+                if showsRawCompoundDose {
+                    activeEquivalentWasManuallyEdited = true
+                }
+            }
+        )
     }
 
     private var showsRawCompoundDose: Bool {
@@ -345,6 +417,7 @@ struct InputEventView: View {
                             draft.slTierIndex = 2
                             draft.useCustomTheta = false
                             draft.customThetaText = ""
+                            activeEquivalentWasManuallyEdited = false
                         }
                     } else {
                         Text("input.record_only.help")
@@ -402,13 +475,14 @@ struct InputEventView: View {
                                     }
                                 }
                                 .onChange(of: draft.ester) { _ in
+                                    activeEquivalentWasManuallyEdited = false
                                     syncDoseTextsAfterEsterChange()
                                 }
                             }
 
                             if draft.route == .patchApply {
                                 if draft.patchMode == .totalDose {
-                                    TextField(activeEquivalentDosePlaceholder, text: $draft.e2EquivalentDoseText)
+                                    TextField(activeEquivalentDosePlaceholder, text: activeEquivalentDoseBinding)
                                         .keyboardType(.decimalPad)
                                         .submitLabel(.done)
                                         .focused($focusedField, equals: .patchTotal)
@@ -435,7 +509,7 @@ struct InputEventView: View {
                                     .focused($focusedField, equals: .raw)
                                     .onSubmit { handleSubmit(for: .raw) }
                                 }
-                                TextField(activeEquivalentDosePlaceholder, text: $draft.e2EquivalentDoseText)
+                                TextField(activeEquivalentDosePlaceholder, text: activeEquivalentDoseBinding)
                                     .keyboardType(.decimalPad)
                                     .submitLabel(.done)
                                     .focused($focusedField, equals: .activeEquivalent)
@@ -535,9 +609,12 @@ struct InputEventView: View {
     private func handleSubmit(for field: FocusedDoseField?) {
         switch field {
         case .raw:
-            convertToE2Equivalent()
-        case .activeEquivalent, .patchTotal:
-            convertToRawEster()
+            updateActiveEquivalentFromRaw(overwrite: !activeEquivalentWasManuallyEdited)
+        case .activeEquivalent:
+            activeEquivalentWasManuallyEdited = true
+            updateRawCompoundDoseFromActiveIfMissing()
+        case .patchTotal:
+            break
         case .recordOnlyDose:
             break
         case .customTheta, .patchRelease, .none:
@@ -545,15 +622,17 @@ struct InputEventView: View {
         }
     }
 
-    private func convertToE2Equivalent() {
+    private func updateActiveEquivalentFromRaw(overwrite: Bool) {
         guard !draft.isRecordOnlyOralMedication else { return }
+        guard overwrite || isBlank(draft.e2EquivalentDoseText) else { return }
         guard let rawDose = parsedDouble(draft.rawEsterDoseText) else { return }
         let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
         draft.e2EquivalentDoseText = String(format: "%.2f", locale: Locale.current, rawDose * factor)
     }
 
-    private func convertToRawEster() {
+    private func updateRawCompoundDoseFromActiveIfMissing() {
         guard !draft.isRecordOnlyOralMedication else { return }
+        guard isBlank(draft.rawEsterDoseText) else { return }
         guard showsRawCompoundDose, let e2Dose = parsedDouble(draft.e2EquivalentDoseText) else { return }
         let factor = CompoundInfo.by(compound: draft.ester).toActiveFactor
         draft.rawEsterDoseText = String(format: "%.2f", locale: Locale.current, e2Dose / factor)
@@ -567,10 +646,15 @@ struct InputEventView: View {
         }
 
         if let _ = parsedDouble(draft.e2EquivalentDoseText), !draft.e2EquivalentDoseText.isEmpty {
-            convertToRawEster()
+            draft.rawEsterDoseText = ""
+            updateRawCompoundDoseFromActiveIfMissing()
         } else if let _ = parsedDouble(draft.rawEsterDoseText), !draft.rawEsterDoseText.isEmpty {
-            convertToE2Equivalent()
+            updateActiveEquivalentFromRaw(overwrite: true)
         }
+    }
+
+    private func isBlank(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func parsedDouble(_ text: String) -> Double? {
@@ -586,6 +670,7 @@ struct InputEventView: View {
             if let firstValidEster = availableEsters.first {
                 draft.ester = firstValidEster
             }
+            activeEquivalentWasManuallyEdited = false
         case .antiAndrogen:
             draft.route = .oral
             draft.ester = .E2
@@ -596,6 +681,7 @@ struct InputEventView: View {
             draft.slTierIndex = 2
             draft.useCustomTheta = false
             draft.customThetaText = ""
+            activeEquivalentWasManuallyEdited = false
         }
     }
 
@@ -613,6 +699,14 @@ struct InputEventView: View {
             if let rateUG = parsedDouble(draft.releaseRateText) {
                 extras[.releaseRateUGPerDay] = rateUG
             }
+        }
+
+        if !draft.isRecordOnlyOralMedication,
+           draft.route != .patchApply,
+           showsRawCompoundDose,
+           let rawDose = parsedDouble(draft.rawEsterDoseText),
+           rawDose > 0 {
+            extras[.rawCompoundDoseMG] = rawDose
         }
 
         // sublingual behavior: either tier code or explicit theta

@@ -31,6 +31,7 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     }
     enum ExtraKey: String, Codable {
         case concentrationMGmL, areaCM2
+        case rawCompoundDoseMG      // original compound dose entered by the user
         case releaseRateUGPerDay      // for zero‑order patch: µg day⁻¹
         case sublingualTheta
         case sublingualTier          // 0: quick, 1: casual, 2: standard, 3: strict
@@ -143,6 +144,10 @@ extension DoseEvent {
     nonisolated var rawDoseMG: Double {
         if recordOnlyOralMedication != nil || route == .patchApply {
             return doseMG
+        }
+
+        if let rawDose = extras[.rawCompoundDoseMG], rawDose > 0 {
+            return rawDose
         }
 
         let factor = compound.info.toActiveFactor
