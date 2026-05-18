@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import HealthKit
 import UserNotifications
 
 @MainActor
@@ -225,7 +226,7 @@ final class MedicationPlanVM: ObservableObject {
     }
 
     private static func makeImportService() -> any MedicationImportServicing {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), HKHealthStore.isHealthDataAvailable() {
             return HealthMedicationImportService()
         }
 

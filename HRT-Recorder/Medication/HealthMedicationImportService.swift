@@ -48,7 +48,7 @@ struct UnsupportedMedicationImportService: MedicationImportServicing {
 @MainActor
 @available(iOS 26.0, *)
 final class HealthMedicationImportService: MedicationImportServicing {
-    private let store = HKHealthStore()
+    private var store: HKHealthStore?
     private let queryTimeout: Duration = .seconds(12)
 
     var isSupported: Bool { true }
@@ -768,7 +768,9 @@ final class HealthMedicationImportService: MedicationImportServicing {
         timeout: Duration,
         makeQuery: @escaping (@escaping @Sendable (Result<Value, Error>) -> Void) -> HKQuery
     ) async throws -> Value {
-        try await withCheckedThrowingContinuation { continuation in
+        let store = try healthStore()
+
+        return try await withCheckedThrowingContinuation { continuation in
             let state = QueryExecutionState<Value>(continuation: continuation)
             let query = makeQuery { result in
                 switch result {
@@ -782,15 +784,28 @@ final class HealthMedicationImportService: MedicationImportServicing {
             state.setQuery(query)
             store.execute(query)
 
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 try? await Task.sleep(for: timeout)
-                guard let self,
-                      let queryToStop = state.resumeIfNeeded(throwing: HealthMedicationImportError.queryTimedOut) else {
+                guard let queryToStop = state.resumeIfNeeded(throwing: HealthMedicationImportError.queryTimedOut) else {
                     return
                 }
-                self.store.stop(queryToStop)
+                store.stop(queryToStop)
             }
         }
+    }
+
+    private func healthStore() throws -> HKHealthStore {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw HealthMedicationImportError.healthDataUnavailable
+        }
+
+        if let store {
+            return store
+        }
+
+        let createdStore = HKHealthStore()
+        store = createdStore
+        return createdStore
     }
 }
 

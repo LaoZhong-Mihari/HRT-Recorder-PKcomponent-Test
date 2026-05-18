@@ -37,16 +37,17 @@ enum BodyWeightSyncSource: String {
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
         didSet {
-            refreshDayGroups()
             onChange?(events)
         }
     }
     @Published var result: SimulationResult? = nil
-    @Published private(set) var dayGroups: [TimelineDayGroup] = []
+    var dayGroups: [TimelineDayGroup] {
+        let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
+        return makeTimelineDayGroups(from: visibleEvents)
+    }
     @Published var selectedHormone: SimulatedHormone = .estradiol {
         didSet {
             UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
-            refreshDayGroups()
             let preferredUnit = preferredConcentrationUnit(for: selectedHormone)
             if selectedConcentrationUnit != preferredUnit {
                 selectedConcentrationUnit = preferredUnit
@@ -106,7 +107,6 @@ final class DoseTimelineVM: ObservableObject {
             self.bodyWeightSyncSource = nil
         }
         self.onChange = nil
-        self.dayGroups = []
         setupSubscriptions()
         runSimulation()
     }
@@ -136,8 +136,6 @@ final class DoseTimelineVM: ObservableObject {
         } else {
             self.bodyWeightSyncSource = nil
         }
-        self.dayGroups = []
-        refreshDayGroups()
         setupSubscriptions()
         if !initialEvents.isEmpty {
             runSimulation()
@@ -165,28 +163,26 @@ final class DoseTimelineVM: ObservableObject {
         return Date().timeIntervalSince1970
     }
 
-    private func refreshDayGroups() {
-        let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
-        dayGroups = makeTimelineDayGroups(from: visibleEvents)
-    }
-
     // **NEW**: A single function to handle both adding and updating events.
     func save(_ event: DoseEvent, modifiedAt: TimeInterval? = nil) {
         eventsModifiedAt = resolvedModifiedAt(modifiedAt)
+        var updatedEvents = events
         if let index = events.firstIndex(where: { $0.id == event.id }) {
             // 更新已有事件 —— 保持绝对小时不变（1970-epoch）
-            events[index] = event
+            updatedEvents[index] = event
         } else {
             // 新增事件 —— 直接存绝对小时
-            events.append(event)
-            events.sort { $0.timeH < $1.timeH }
+            updatedEvents.append(event)
         }
+        events = updatedEvents.sorted { $0.timeH < $1.timeH }
         runSimulation()
     }
 
     func remove(at offsets: IndexSet, modifiedAt: TimeInterval? = nil) {
         eventsModifiedAt = resolvedModifiedAt(modifiedAt)
-        events.remove(atOffsets: offsets)
+        var updatedEvents = events
+        updatedEvents.remove(atOffsets: offsets)
+        events = updatedEvents
         runSimulation()
     }
 

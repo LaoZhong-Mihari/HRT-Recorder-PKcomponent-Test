@@ -208,6 +208,7 @@ struct TimelineScreen: View {
                 case .add(_):
                     InputEventView(eventToEdit: nil, preferredCategory: vm.selectedHormone.category) { event in
                         vm.save(event)
+                        activeSheet = nil
                     }
 
                 case .scheduledDose(let seed):
@@ -219,6 +220,7 @@ struct TimelineScreen: View {
                         onSave: { event in
                             vm.save(event)
                             medicationVM.consumePendingDoseSeed()
+                            activeSheet = nil
                         },
                         onCancel: {
                             medicationVM.consumePendingDoseSeed()
@@ -256,6 +258,7 @@ struct TimelineScreen: View {
                 case .edit(let event):
                     InputEventView(eventToEdit: event, preferredCategory: event.category) { updated in
                         vm.save(updated)
+                        activeSheet = nil
                     }
                 }
             }

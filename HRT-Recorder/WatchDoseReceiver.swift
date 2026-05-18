@@ -48,12 +48,15 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
             return nil
         }
 
-        guard let compound = Compound(rawValue: bridge.compoundRawValue ?? bridge.esterRawValue ?? "") else {
-            return nil
-        }
-
         let extras = bridge.extras.compactMapKeys { DoseEvent.ExtraKey(rawValue: $0) }
         let category = bridge.categoryRawValue.flatMap(MedicationCategory.init(rawValue:))
+        let recordOnly = bridge.recordOnlyOralMedicationRawValue.flatMap(RecordOnlyOralMedication.init(rawValue:))
+        let compound = (bridge.compoundRawValue ?? bridge.esterRawValue).flatMap(Compound.init(rawValue:))
+            ?? Compound.fallback(
+                for: category,
+                route: route,
+                recordOnlyOralMedication: recordOnly
+            )
         return DoseEvent(
             id: bridge.id,
             category: category,
@@ -62,7 +65,7 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
             doseMG: bridge.doseMG,
             compound: compound,
             extras: extras,
-            recordOnlyOralMedication: bridge.recordOnlyOralMedicationRawValue.flatMap(RecordOnlyOralMedication.init(rawValue:))
+            recordOnlyOralMedication: recordOnly
         )
     }
 

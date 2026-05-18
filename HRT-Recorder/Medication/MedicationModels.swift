@@ -58,11 +58,18 @@ struct MedicationDoseTemplate: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let recordOnly = try container.decodeIfPresent(RecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
+        let category = try container.decodeIfPresent(MedicationCategory.self, forKey: .category)
+        let route = try container.decode(DoseEvent.Route.self, forKey: .route)
         let compound = try container.decodeIfPresent(Compound.self, forKey: .compound)
-            ?? container.decode(Compound.self, forKey: .ester)
+            ?? container.decodeIfPresent(Compound.self, forKey: .ester)
+            ?? Compound.fallback(
+                for: category,
+                route: route,
+                recordOnlyOralMedication: recordOnly
+            )
         self.init(
-            category: try container.decodeIfPresent(MedicationCategory.self, forKey: .category),
-            route: try container.decode(DoseEvent.Route.self, forKey: .route),
+            category: category,
+            route: route,
             doseMG: try container.decode(Double.self, forKey: .doseMG),
             compound: compound,
             extras: try container.decodeIfPresent([DoseEvent.ExtraKey: Double].self, forKey: .extras) ?? [:],
@@ -442,7 +449,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
             fallbackTemplate: template,
             recurrence: recurrence
         )
-        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         reminderTemplates = try container.decodeIfPresent([ReminderMessageTemplate].self, forKey: .reminderTemplates) ?? ReminderMessageTemplate.defaultTemplates
         sourceMedicationName = try container.decodeIfPresent(String.self, forKey: .sourceMedicationName)
         sourceMedicationGeneralForm = try container.decodeIfPresent(String.self, forKey: .sourceMedicationGeneralForm)

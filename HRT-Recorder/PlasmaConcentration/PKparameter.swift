@@ -259,6 +259,33 @@ struct CompoundInfo: Sendable {
     }
 }
 
+extension Compound {
+    static func fallback(
+        for category: MedicationCategory?,
+        route: DoseEvent.Route,
+        recordOnlyOralMedication: RecordOnlyOralMedication?
+    ) -> Compound {
+        if recordOnlyOralMedication != nil {
+            return .E2
+        }
+
+        let resolvedCategory = category ?? .estradiol
+        if let supportedCompound = CompoundSupport.availableCompounds(
+            for: resolvedCategory,
+            route: route
+        ).first {
+            return supportedCompound
+        }
+
+        switch resolvedCategory {
+        case .estradiol, .antiAndrogen:
+            return .E2
+        case .testosterone:
+            return .T
+        }
+    }
+}
+
 struct HormoneCoreParams: Sendable {
     let vdPerKG: Double
     let kClear: Double

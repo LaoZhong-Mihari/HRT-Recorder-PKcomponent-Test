@@ -5,7 +5,7 @@ import HealthKit
 final class HealthKitService {
     static let shared = HealthKitService()
 
-    private let store = HKHealthStore()
+    private var store: HKHealthStore?
     private var bodyMassObserverQuery: HKObserverQuery?
     private var bodyMassUpdateHandler: ((Double, Date) -> Void)?
     private let bodyMassAnchorKey = "healthkit.bodyMass.anchor"
@@ -44,7 +44,7 @@ final class HealthKitService {
     func requestMedicationAuthorizationIfNeeded() async throws {
         guard #available(iOS 26.0, *) else { return }
         guard try await shouldRequestMedicationAuthorization() else { return }
-        try await MedicationAuthorizationCoordinator.requestIfNeeded(using: store)
+        try await MedicationAuthorizationCoordinator.requestIfNeeded(using: try healthStore())
     }
 
     func canAccessBodyMassWithoutPrompt() async -> Bool {
@@ -76,14 +76,7 @@ final class HealthKitService {
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            throw NSError(
-                domain: "HealthKitService",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.unavailable")]
-            )
-        }
-
+        let store = try healthStore()
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
     }
 
@@ -91,6 +84,11 @@ final class HealthKitService {
         toShare shareTypes: Set<HKSampleType>,
         read readTypes: Set<HKObjectType>
     ) async throws -> HKAuthorizationRequestStatus {
+        let store = try healthStore()
+        return try await store.statusForAuthorizationRequest(toShare: shareTypes, read: readTypes)
+    }
+
+    private func healthStore() throws -> HKHealthStore {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw NSError(
                 domain: "HealthKitService",
@@ -99,7 +97,13 @@ final class HealthKitService {
             )
         }
 
-        return try await store.statusForAuthorizationRequest(toShare: shareTypes, read: readTypes)
+        if let store {
+            return store
+        }
+
+        let createdStore = HKHealthStore()
+        store = createdStore
+        return createdStore
     }
 
     func fetchLatestBodyMassKG() async throws -> Double {
@@ -114,6 +118,7 @@ final class HealthKitService {
                 userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_read_unavailable")]
             )
         }
+        let store = try healthStore()
 
         return try await withCheckedThrowingContinuation { continuation in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
@@ -147,6 +152,7 @@ final class HealthKitService {
                 userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_write_unavailable")]
             )
         }
+        let store = try healthStore()
 
         let quantity = HKQuantity(unit: HKUnit.gramUnit(with: .kilo), doubleValue: weightKG)
         let sample = HKQuantitySample(type: bodyMassType, quantity: quantity, start: date, end: date)
@@ -179,6 +185,7 @@ final class HealthKitService {
                 userInfo: [NSLocalizedDescriptionKey: String(localized: "healthkit.error.body_mass_subscription_unavailable")]
             )
         }
+        let store = try healthStore()
 
         bodyMassUpdateHandler = onUpdate
 
@@ -218,6 +225,7 @@ final class HealthKitService {
         guard let bodyMassType else {
             return ([], nil)
         }
+        let store = try healthStore()
 
         return try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(

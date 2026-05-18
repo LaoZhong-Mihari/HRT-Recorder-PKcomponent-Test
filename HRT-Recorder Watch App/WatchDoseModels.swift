@@ -373,11 +373,16 @@ struct WatchDoseEvent: Identifiable, Codable, Equatable {
         let route = try container.decode(Route.self, forKey: .route)
         let date = try container.decode(Date.self, forKey: .date)
         let doseMG = try container.decode(Double.self, forKey: .doseMG)
-        let compound = try container.decodeIfPresent(WatchCompound.self, forKey: .compound)
-            ?? container.decode(WatchCompound.self, forKey: .ester)
-        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
         let recordOnly = try container.decodeIfPresent(WatchRecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
         let category = try container.decodeIfPresent(WatchMedicationCategory.self, forKey: .category)
+        let compound = try container.decodeIfPresent(WatchCompound.self, forKey: .compound)
+            ?? container.decodeIfPresent(WatchCompound.self, forKey: .ester)
+            ?? WatchCompound.fallback(
+                for: category,
+                route: route,
+                recordOnlyOralMedication: recordOnly
+            )
+        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
 
         self.init(
             id: id,
@@ -422,6 +427,33 @@ enum WatchCompoundSupport {
             case .oral: return [.TU]
             case .sublingual: return []
             }
+        }
+    }
+}
+
+extension WatchCompound {
+    static func fallback(
+        for category: WatchMedicationCategory?,
+        route: WatchDoseEvent.Route,
+        recordOnlyOralMedication: WatchRecordOnlyOralMedication?
+    ) -> WatchCompound {
+        if recordOnlyOralMedication != nil {
+            return .E2
+        }
+
+        let resolvedCategory = category ?? .estradiol
+        if let supportedCompound = WatchCompoundSupport.availableCompounds(
+            for: resolvedCategory,
+            route: route
+        ).first {
+            return supportedCompound
+        }
+
+        switch resolvedCategory {
+        case .estradiol, .antiAndrogen:
+            return .E2
+        case .testosterone:
+            return .T
         }
     }
 }
@@ -696,13 +728,16 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
         guard let route = WatchDoseEvent.Route(rawValue: payload.routeRawValue) else {
             return nil
         }
-        guard let compound = WatchCompound(rawValue: payload.compoundRawValue ?? payload.esterRawValue ?? "") else {
-            return nil
-        }
 
         let extras = payload.extras.compactMapKeys { WatchDoseEvent.ExtraKey(rawValue: $0) }
         let category = payload.categoryRawValue.flatMap(WatchMedicationCategory.init(rawValue:))
         let recordOnly = payload.recordOnlyOralMedicationRawValue.flatMap(WatchRecordOnlyOralMedication.init(rawValue:))
+        let compound = (payload.compoundRawValue ?? payload.esterRawValue).flatMap(WatchCompound.init(rawValue:))
+            ?? WatchCompound.fallback(
+                for: category,
+                route: route,
+                recordOnlyOralMedication: recordOnly
+            )
         let date = Date(timeIntervalSince1970: payload.timeH * 3600.0)
         return WatchDoseEvent(
             id: payload.id,

@@ -3,3 +3,10 @@ build/
 DerivedData/
 *.xcuserstate
 **/xcuserdata/
+.build/
+.build-obj-ios/
+.derived-data*/
+*.xcresult
+*.xccrashpoint
+*.ipa
+*.dSYM/

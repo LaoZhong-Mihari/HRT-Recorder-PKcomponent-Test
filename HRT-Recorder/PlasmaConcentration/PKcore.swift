@@ -21,11 +21,7 @@ import Accelerate
 
 struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     let id: UUID
-    
-    static func == (lhs: DoseEvent, rhs: DoseEvent) -> Bool {
-        return lhs.id == rhs.id
-    }
-    
+
     enum Route: String, Codable {
         case injection, patchApply, patchRemove, gel, oral, sublingual
     }
@@ -107,11 +103,16 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
         let route = try container.decode(Route.self, forKey: .route)
         let timeH = try container.decode(Double.self, forKey: .timeH)
         let doseMG = try container.decode(Double.self, forKey: .doseMG)
-        let compound = try container.decodeIfPresent(Compound.self, forKey: .compound)
-            ?? container.decode(Compound.self, forKey: .ester)
-        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
         let recordOnly = try container.decodeIfPresent(RecordOnlyOralMedication.self, forKey: .recordOnlyOralMedication)
         let category = try container.decodeIfPresent(MedicationCategory.self, forKey: .category)
+        let compound = try container.decodeIfPresent(Compound.self, forKey: .compound)
+            ?? container.decodeIfPresent(Compound.self, forKey: .ester)
+            ?? Compound.fallback(
+                for: category,
+                route: route,
+                recordOnlyOralMedication: recordOnly
+            )
+        let extras = try container.decodeIfPresent([ExtraKey: Double].self, forKey: .extras) ?? [:]
 
         self.init(
             id: id,
