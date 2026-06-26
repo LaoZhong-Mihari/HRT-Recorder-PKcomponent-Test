@@ -245,6 +245,21 @@ final class MedicationPlanVM: ObservableObject {
         )
     }
 
+    @discardableResult
+    func prepareDoseSeed(forWidgetOptionID optionID: String, requestedAt: Date = Date()) -> Bool {
+        guard let parsedID = WidgetDoseOption.parseID(optionID),
+              let plan = plans.first(where: { $0.id == parsedID.planID }) else {
+            return false
+        }
+
+        pendingDoseSeed = makeSeed(
+            for: plan,
+            at: requestedAt,
+            doseSlotID: parsedID.doseSlotID
+        )
+        return true
+    }
+
     private func apply(plans updatedPlans: [MedicationPlan]) {
         plans = Self.sortedPlans(updatedPlans)
         onChange?(plans)

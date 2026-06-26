@@ -48,6 +48,8 @@ struct HRTRecorderApp: App {
             TimelineScreen(vm: timelineVM, medicationVM: medicationVM)
                 .task {
                     await medicationVM.configure()
+                    refreshWidgetSnapshot(reloadTimelines: false)
+                    scheduleWidgetDoseHandoffConsumption()
                     watchDoseReceiver.start(
                         onReceiveDoseEvent: { event, modifiedAt in
                             timelineVM.save(event, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
@@ -78,6 +80,7 @@ struct HRTRecorderApp: App {
                         bodyWeightKG: timelineVM.bodyWeightKG,
                         eventsModifiedAt: timelineVM.eventsModifiedAt
                     )
+                    refreshWidgetSnapshot()
                 }
                 .onReceive(timelineVM.$result) { result in
                     watchDoseReceiver.syncToWatch(
@@ -94,6 +97,7 @@ struct HRTRecorderApp: App {
                         bodyWeightKG: bodyWeightKG,
                         eventsModifiedAt: timelineVM.eventsModifiedAt
                     )
+                    refreshWidgetSnapshot()
                 }
                 .onReceive(timelineVM.$eventsModifiedAt) { eventsModifiedAt in
                     watchDoseReceiver.syncToWatch(
@@ -103,18 +107,57 @@ struct HRTRecorderApp: App {
                         eventsModifiedAt: eventsModifiedAt
                     )
                 }
+                .onReceive(timelineVM.$selectedConcentrationUnit) { _ in
+                    refreshWidgetSnapshot()
+                }
+                .onReceive(medicationVM.$plans) { _ in
+                    refreshWidgetSnapshot()
+                }
         }
         .onChange(of: phase) { newPhase in
             if newPhase == .active {
+                scheduleWidgetDoseHandoffConsumption()
                 Task {
                     await timelineVM.beginBodyWeightHealthKitSync()
                     await timelineVM.refreshLatestBodyWeightSilently()
                     await medicationVM.refreshSystemState()
+                    scheduleWidgetDoseHandoffConsumption()
+                    refreshWidgetSnapshot()
                 }
             } else if newPhase == .inactive || newPhase == .background {
                 store.saveSync()
                 medicationPlanStore.saveSync()
+                refreshWidgetSnapshot(reloadTimelines: false)
             }
         }
+    }
+
+    private func refreshWidgetSnapshot(reloadTimelines: Bool = true) {
+        WidgetSnapshotCoordinator.writeSnapshot(
+            events: timelineVM.events,
+            bodyWeightKG: timelineVM.bodyWeightKG,
+            plans: medicationVM.plans,
+            reloadTimelines: reloadTimelines
+        )
+    }
+
+    private func scheduleWidgetDoseHandoffConsumption() {
+        Task { @MainActor in
+            for delay in [UInt64(0), 250_000_000, 1_000_000_000, 2_000_000_000] {
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: delay)
+                }
+                consumeWidgetDoseHandoffIfNeeded()
+            }
+        }
+    }
+
+    @MainActor
+    private func consumeWidgetDoseHandoffIfNeeded() {
+        guard let handoff = WidgetSharedStore.consumeDoseHandoff() else { return }
+        _ = medicationVM.prepareDoseSeed(
+            forWidgetOptionID: handoff.optionID,
+            requestedAt: handoff.requestedAt
+        )
     }
 }

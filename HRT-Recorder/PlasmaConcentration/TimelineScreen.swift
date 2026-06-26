@@ -242,6 +242,13 @@ struct TimelineScreen: View {
                         HealthSettingsView(
                             weightStatusText: vm.bodyWeightHealthStatusText,
                             medicationVM: medicationVM,
+                            onWidgetSettingsChanged: {
+                                WidgetSnapshotCoordinator.writeSnapshot(
+                                    events: vm.events,
+                                    bodyWeightKG: vm.bodyWeightKG,
+                                    plans: medicationVM.plans
+                                )
+                            },
                             onEditWeight: { activeSheet = .weight },
                             onImportWeight: {
                                 activeSheet = nil
@@ -273,6 +280,10 @@ struct TimelineScreen: View {
             .onChange(of: medicationVM.pendingDoseSeed) { newSeed in
                 guard let newSeed else { return }
                 activeSheet = .scheduledDose(newSeed)
+            }
+            .onAppear {
+                guard let pendingDoseSeed = medicationVM.pendingDoseSeed else { return }
+                activeSheet = .scheduledDose(pendingDoseSeed)
             }
             .fullScreenCover(isPresented: $isChartFullscreenPresented) {
                 Group {
@@ -582,11 +593,23 @@ private struct TimelineEmptyStateView: View {
 private struct HealthSettingsView: View {
     let weightStatusText: String
     @ObservedObject var medicationVM: MedicationPlanVM
+    let onWidgetSettingsChanged: () -> Void
     let onEditWeight: () -> Void
     let onImportWeight: () -> Void
 
     var body: some View {
         Form {
+            Section("Widget") {
+                NavigationLink {
+                    WidgetThresholdSettingsView(onThresholdsChanged: onWidgetSettingsChanged)
+                } label: {
+                    SettingsRow(
+                        title: "Widget & Thresholds",
+                        subtitle: "Set low, medium, and high color markers"
+                    )
+                }
+            }
+
             Section("settings.section.weight") {
                 Button(action: onEditWeight) {
                     SettingsRow(
