@@ -11,9 +11,9 @@
 		550EBB5F2ECEE3B500D3C38A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */; };
 		550EBB602ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
-		550EBB652ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		550EBB632ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
 		550EBB642ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
+		550EBB652ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		557D83D22F5D33B300CDF791 /* HRT-Recorder Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 557D83C82F5D33B100CDF791 /* HRT-Recorder Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A0000032F6D000000000001 /* HRT-Recorder Widgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 7A0000012F6D000000000001 /* HRT-Recorder Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -605,16 +605,8 @@
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 3A977T7MMU;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "HRT-Recorder-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -645,16 +637,8 @@
 				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 3A977T7MMU;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "HRT-Recorder-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

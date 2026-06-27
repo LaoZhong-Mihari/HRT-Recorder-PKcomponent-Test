@@ -95,7 +95,7 @@ enum WidgetSnapshotCoordinator {
         )
     }
 
-    private static func makeDoseOptions(from plans: [MedicationPlan]) -> [WidgetDoseOption] {
+    static func makeDoseOptions(from plans: [MedicationPlan]) -> [WidgetDoseOption] {
         var options: [WidgetDoseOption] = []
 
         for (planIndex, plan) in plans.enumerated() {
