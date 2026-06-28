@@ -377,7 +377,7 @@ struct ResultChartView: View {
     }
 
     private var chartInterpolationMethod: InterpolationMethod {
-        isInteracting ? .linear : .catmullRom
+        .catmullRom
     }
 
     private var xAxisValues: [Double] {
