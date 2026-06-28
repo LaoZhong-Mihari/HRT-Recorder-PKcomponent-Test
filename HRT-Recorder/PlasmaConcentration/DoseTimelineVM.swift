@@ -40,7 +40,14 @@ final class DoseTimelineVM: ObservableObject {
             onChange?(events)
         }
     }
+    @Published var labSamples: [LabSample] = [] {
+        didSet {
+            onLabSamplesChange?(labSamples)
+            runSimulation()
+        }
+    }
     @Published var result: SimulationResult? = nil
+    @Published private(set) var calibrationResult = CalibrationResult()
     var dayGroups: [TimelineDayGroup] {
         let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
         return makeTimelineDayGroups(from: visibleEvents)
@@ -83,6 +90,7 @@ final class DoseTimelineVM: ObservableObject {
     /// First event time used as zero reference (hours)
     private var baseT0: Double? = nil
     private var onChange: (([DoseEvent]) -> Void)?
+    private var onLabSamplesChange: (([LabSample]) -> Void)?
     init() {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         let saved = UserDefaults.standard.double(forKey: weightKey)
@@ -107,14 +115,22 @@ final class DoseTimelineVM: ObservableObject {
             self.bodyWeightSyncSource = nil
         }
         self.onChange = nil
+        self.onLabSamplesChange = nil
         setupSubscriptions()
         runSimulation()
     }
 
-    init(initialEvents: [DoseEvent], onChange: (([DoseEvent]) -> Void)? = nil) {
+    init(
+        initialEvents: [DoseEvent],
+        initialLabSamples: [LabSample] = [],
+        onChange: (([DoseEvent]) -> Void)? = nil,
+        onLabSamplesChange: (([LabSample]) -> Void)? = nil
+    ) {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         self.events = initialEvents
+        self.labSamples = initialLabSamples
         self.onChange = onChange
+        self.onLabSamplesChange = onLabSamplesChange
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
@@ -192,8 +208,52 @@ final class DoseTimelineVM: ObservableObject {
         runSimulation()
     }
 
+    func saveLabSample(_ sample: LabSample) {
+        saveLabSamples([sample])
+    }
+
+    func saveLabSamples(_ samples: [LabSample]) {
+        guard !samples.isEmpty else { return }
+        var updatedSamples = labSamples
+        for sample in samples {
+            if let index = updatedSamples.firstIndex(where: { $0.id == sample.id }) {
+                updatedSamples[index] = sample
+            } else {
+                updatedSamples.append(sample)
+            }
+        }
+        labSamples = updatedSamples.sorted { $0.timeH < $1.timeH }
+    }
+
+    func removeLabSamples(withIDs ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        labSamples.removeAll { ids.contains($0.id) }
+    }
+
     var availableConcentrationUnits: [ConcentrationUnit] {
         selectedHormone.supportedConcentrationUnits
+    }
+
+    var labResultsSettingsSummary: String {
+        guard !labSamples.isEmpty else {
+            return String(localized: "No saved hormone lab results")
+        }
+
+        let countText = String.localizedStringWithFormat(
+            String(localized: "%d saved result(s)"),
+            labSamples.count
+        )
+
+        if let info = calibrationResult.infoByHormone[selectedHormone] {
+            return String.localizedStringWithFormat(
+                String(localized: "%@ · %@ calibrated from %d sample(s)"),
+                countText,
+                selectedHormone.displayName,
+                info.sampleCount
+            )
+        }
+
+        return countText
     }
 
     func setSelectedConcentrationUnit(_ unit: ConcentrationUnit) {
@@ -217,18 +277,31 @@ final class DoseTimelineVM: ObservableObject {
             return
         }
 
+        let allSimulatedEvents = events.filter(\.participatesInSimulation)
         let sortedEvents = simulatedEvents
         let weight = self.bodyWeightKG
+        let labSamples = self.labSamples
         
         isSimulating = true
         simulationGeneration &+= 1
         let generation = simulationGeneration
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let simulationResult = simulateTimelineResult(events: sortedEvents, hormone: selectedHormone, bodyWeightKG: weight)
+            let calibration = PKCalibrator.fit(
+                events: allSimulatedEvents,
+                labs: labSamples,
+                bodyWeightKG: weight
+            )
+            let simulationResult = simulateTimelineResult(
+                events: sortedEvents,
+                hormone: selectedHormone,
+                bodyWeightKG: weight,
+                calibration: calibration
+            )
 
             DispatchQueue.main.async {
                 guard generation == self.simulationGeneration else { return }
+                self.calibrationResult = calibration
                 self.result = simulationResult.converted(to: self.selectedConcentrationUnit)
                 self.isSimulating = false
             }

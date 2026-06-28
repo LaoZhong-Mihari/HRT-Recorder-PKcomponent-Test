@@ -11,6 +11,7 @@ import SwiftUI
 struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
     @StateObject private var store: PersistedStore<[DoseEvent]>
+    @StateObject private var labSampleStore: PersistedStore<[LabSample]>
     @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
     @StateObject private var notificationCoordinator: NotificationCoordinator
     @StateObject private var timelineVM: DoseTimelineVM
@@ -22,17 +23,31 @@ struct HRTRecorderApp: App {
             filename: "dose_events.json",
             defaultValue: []
         )
+        let persistedLabSamples = PersistedStore<[LabSample]>(
+            filename: "lab_samples.json",
+            defaultValue: []
+        )
         let persistedMedicationPlans = PersistedStore<[MedicationPlan]>(
             filename: "medication_plans.json",
             defaultValue: []
         )
         let notificationCoordinator = NotificationCoordinator()
         _store = StateObject(wrappedValue: persistedStore)
+        _labSampleStore = StateObject(wrappedValue: persistedLabSamples)
         _medicationPlanStore = StateObject(wrappedValue: persistedMedicationPlans)
         _notificationCoordinator = StateObject(wrappedValue: notificationCoordinator)
-        _timelineVM = StateObject(wrappedValue: DoseTimelineVM(initialEvents: persistedStore.value) { updated in
-            persistedStore.value = updated
-        })
+        _timelineVM = StateObject(
+            wrappedValue: DoseTimelineVM(
+                initialEvents: persistedStore.value,
+                initialLabSamples: persistedLabSamples.value,
+                onChange: { updated in
+                    persistedStore.value = updated
+                },
+                onLabSamplesChange: { updated in
+                    persistedLabSamples.value = updated
+                }
+            )
+        )
         _medicationVM = StateObject(
             wrappedValue: MedicationPlanVM(
                 initialPlans: persistedMedicationPlans.value,
@@ -99,6 +114,9 @@ struct HRTRecorderApp: App {
                     )
                     refreshWidgetSnapshot()
                 }
+                .onReceive(timelineVM.$labSamples) { _ in
+                    refreshWidgetSnapshot()
+                }
                 .onReceive(timelineVM.$eventsModifiedAt) { eventsModifiedAt in
                     watchDoseReceiver.syncToWatch(
                         events: timelineVM.events,
@@ -126,6 +144,7 @@ struct HRTRecorderApp: App {
                 }
             } else if newPhase == .inactive || newPhase == .background {
                 store.saveSync()
+                labSampleStore.saveSync()
                 medicationPlanStore.saveSync()
                 refreshWidgetSnapshot(reloadTimelines: false)
             }
@@ -136,6 +155,7 @@ struct HRTRecorderApp: App {
         WidgetSnapshotCoordinator.writeSnapshot(
             events: timelineVM.events,
             bodyWeightKG: timelineVM.bodyWeightKG,
+            labSamples: timelineVM.labSamples,
             plans: medicationVM.plans,
             reloadTimelines: reloadTimelines
         )

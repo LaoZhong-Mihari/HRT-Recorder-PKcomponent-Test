@@ -241,11 +241,13 @@ struct TimelineScreen: View {
                     NavigationStack {
                         HealthSettingsView(
                             weightStatusText: vm.bodyWeightHealthStatusText,
+                            timelineVM: vm,
                             medicationVM: medicationVM,
                             onWidgetSettingsChanged: {
                                 WidgetSnapshotCoordinator.writeSnapshot(
                                     events: vm.events,
                                     bodyWeightKG: vm.bodyWeightKG,
+                                    labSamples: vm.labSamples,
                                     plans: medicationVM.plans
                                 )
                             },
@@ -592,6 +594,7 @@ private struct TimelineEmptyStateView: View {
 
 private struct HealthSettingsView: View {
     let weightStatusText: String
+    @ObservedObject var timelineVM: DoseTimelineVM
     @ObservedObject var medicationVM: MedicationPlanVM
     let onWidgetSettingsChanged: () -> Void
     let onEditWeight: () -> Void
@@ -626,6 +629,17 @@ private struct HealthSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+            }
+
+            Section("Lab Results") {
+                NavigationLink {
+                    LabResultsView(vm: timelineVM)
+                } label: {
+                    DynamicSettingsRow(
+                        title: "Hormone Lab Results",
+                        subtitle: timelineVM.labResultsSettingsSummary
+                    )
+                }
             }
 
             Section("about.settings.section") {

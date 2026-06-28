@@ -12,6 +12,7 @@ enum WidgetSnapshotCoordinator {
     static func makeSnapshot(
         events: [DoseEvent],
         bodyWeightKG: Double,
+        labSamples: [LabSample] = [],
         plans: [MedicationPlan],
         at date: Date = Date()
     ) -> WidgetSnapshot {
@@ -23,6 +24,7 @@ enum WidgetSnapshotCoordinator {
                     hormone: $0,
                     events: events,
                     bodyWeightKG: bodyWeightKG,
+                    labSamples: labSamples,
                     at: date
                 )
             },
@@ -33,10 +35,16 @@ enum WidgetSnapshotCoordinator {
     static func writeSnapshot(
         events: [DoseEvent],
         bodyWeightKG: Double,
+        labSamples: [LabSample] = [],
         plans: [MedicationPlan],
         reloadTimelines: Bool = true
     ) {
-        let snapshot = makeSnapshot(events: events, bodyWeightKG: bodyWeightKG, plans: plans)
+        let snapshot = makeSnapshot(
+            events: events,
+            bodyWeightKG: bodyWeightKG,
+            labSamples: labSamples,
+            plans: plans
+        )
         WidgetSharedStore.writeSnapshot(snapshot)
 
         if reloadTimelines {
@@ -52,6 +60,7 @@ enum WidgetSnapshotCoordinator {
         hormone: SimulatedHormone,
         events: [DoseEvent],
         bodyWeightKG: Double,
+        labSamples: [LabSample],
         at date: Date
     ) -> WidgetHormoneSnapshot {
         let kind = WidgetHormoneKind(rawValue: hormone.rawValue) ?? .estradiol
@@ -70,13 +79,20 @@ enum WidgetSnapshotCoordinator {
             )
         }
 
+        let calibration = PKCalibrator.fit(
+            events: events.filter(\.participatesInSimulation),
+            labs: labSamples,
+            bodyWeightKG: bodyWeightKG
+        )
         let engine = SimulationEngine(
             events: simulatedEvents,
             hormone: hormone,
             bodyWeightKG: bodyWeightKG,
             startTimeH: nowH - windowPaddingHours,
             endTimeH: nowH + widgetTimelineHorizonHours + windowPaddingHours,
-            numberOfSteps: chartPointCount
+            numberOfSteps: chartPointCount,
+            vdPerKGOverride: calibration.vdPerKGOverride(for: hormone),
+            kaMultiplier: calibration.kaMultiplier(for: hormone)
         )
         let result = engine.run().converted(to: unit)
         let points = zip(result.timeH, result.concentrations).map {

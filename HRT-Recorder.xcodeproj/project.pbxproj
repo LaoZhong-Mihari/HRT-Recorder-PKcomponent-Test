@@ -608,6 +608,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan hormone lab reports and extract test result values on device.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -648,6 +649,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HRT-Recorder";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan hormone lab reports and extract test result values on device.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
