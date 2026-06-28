@@ -194,6 +194,25 @@ struct PKParams: Sendable {
     let lagSlowH: Double
 }
 
+extension PKParams {
+    nonisolated func applying(kaMultiplier: Double) -> PKParams {
+        let multiplier = kaMultiplier.isFinite ? max(kaMultiplier, 0) : 1.0
+        return PKParams(
+            Frac_fast: Frac_fast,
+            k1_fast: k1_fast * multiplier,
+            k1_slow: k1_slow * multiplier,
+            k2: k2,
+            k3: k3,
+            F: F,
+            rateMGh: rateMGh,
+            F_fast: F_fast,
+            F_slow: F_slow,
+            lagFastH: lagFastH,
+            lagSlowH: lagSlowH
+        )
+    }
+}
+
 // MARK: – Resolver -----------------------------------------------------------
 
 struct ParameterResolver {
@@ -346,8 +365,9 @@ struct ParameterResolver {
 fileprivate struct PrecomputedEventModel: Sendable {
     private let model: @Sendable (Double) -> Double
 
-    init(event: DoseEvent, allEvents: [DoseEvent], bodyWeightKG: Double) {
+    init(event: DoseEvent, allEvents: [DoseEvent], bodyWeightKG: Double, kaMultiplier: Double = 1.0) {
         let params = ParameterResolver.resolve(event: event, bodyWeightKG: bodyWeightKG)
+            .applying(kaMultiplier: kaMultiplier)
         let startTime = event.timeH
         let dose = event.doseMG
         let oneCompParams = PKParams(
@@ -651,7 +671,8 @@ func simulateTimelineResult(
     bodyWeightKG: Double,
     historyPaddingHours: Double = 24.0,
     forecastHours: Double = 24.0 * 14.0,
-    numberOfSteps: Int = 1000
+    numberOfSteps: Int = 1000,
+    calibration: CalibrationResult? = nil
 ) -> SimulationResult {
     let simulatedEvents = events.filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
     let startTime = (simulatedEvents.first?.timeH ?? 0) - historyPaddingHours
@@ -663,7 +684,9 @@ func simulateTimelineResult(
         bodyWeightKG: bodyWeightKG,
         startTimeH: startTime,
         endTimeH: endTime,
-        numberOfSteps: numberOfSteps
+        numberOfSteps: numberOfSteps,
+        vdPerKGOverride: calibration?.vdPerKGOverride(for: hormone),
+        kaMultiplier: calibration?.kaMultiplier(for: hormone) ?? 1.0
     )
 
     return engine.run()
@@ -677,18 +700,42 @@ struct SimulationEngine: Sendable {
     let endTimeH: Double
     let numberOfSteps: Int
 
-    init(events: [DoseEvent], hormone: SimulatedHormone, bodyWeightKG: Double, startTimeH: Double, endTimeH: Double, numberOfSteps: Int) {
+    init(
+        events: [DoseEvent],
+        hormone: SimulatedHormone,
+        bodyWeightKG: Double,
+        startTimeH: Double,
+        endTimeH: Double,
+        numberOfSteps: Int,
+        vdPerKGOverride: Double? = nil,
+        kaMultiplier: Double = 1.0
+    ) {
         self.precomputedModels = events.compactMap { event -> PrecomputedEventModel? in
             guard event.route != .patchRemove else { return nil }
-            return PrecomputedEventModel(event: event, allEvents: events, bodyWeightKG: bodyWeightKG)
+            return PrecomputedEventModel(
+                event: event,
+                allEvents: events,
+                bodyWeightKG: bodyWeightKG,
+                kaMultiplier: kaMultiplier
+            )
         }
 
         let core = CorePK.params(for: hormone)
-        self.plasmaVolumeML = core.vdPerKG * bodyWeightKG * 1000
+        let effectiveVdPerKG = vdPerKGOverride ?? core.vdPerKG
+        self.plasmaVolumeML = effectiveVdPerKG * bodyWeightKG * 1000
         self.displayMetadata = SimulationDisplayMetadata(hormone: hormone, concentrationUnit: hormone.concentrationUnit)
         self.startTimeH = startTimeH
         self.endTimeH = endTimeH
         self.numberOfSteps = numberOfSteps
+    }
+
+    func predictedConcentration(atTimeH timeH: Double) -> Double {
+        guard plasmaVolumeML > 0 else { return 0 }
+        let totalAmountMG = precomputedModels.reduce(0.0) { total, model in
+            total + model.amount(at: timeH)
+        }
+        let concentrationScale = displayMetadata.concentrationUnit.concentrationScale(for: displayMetadata.hormone)
+        return totalAmountMG * concentrationScale / plasmaVolumeML
     }
 
     func run() -> SimulationResult {
@@ -702,18 +749,11 @@ struct SimulationEngine: Sendable {
         timeArr.reserveCapacity(numberOfSteps)
         concArr.reserveCapacity(numberOfSteps)
         var auc = 0.0
-        let concentrationScale = displayMetadata.concentrationUnit.concentrationScale(for: displayMetadata.hormone) / plasmaVolumeML
         var previousConc = 0.0
 
         for i in 0..<numberOfSteps {
             let t = startTimeH + Double(i) * stepSize
-            var totalAmountMG = 0.0
-            
-            for model in precomputedModels {
-                totalAmountMG += model.amount(at: t)
-            }
-            
-            let currentConc = totalAmountMG * concentrationScale
+            let currentConc = predictedConcentration(atTimeH: t)
             
             timeArr.append(t)
             concArr.append(currentConc)
@@ -725,5 +765,249 @@ struct SimulationEngine: Sendable {
         }
         
         return SimulationResult(timeH: timeArr, concentrations: concArr, auc: auc, displayMetadata: displayMetadata)
+    }
+}
+
+// MARK: - Lab calibration
+
+struct LabSample: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    let hormone: SimulatedHormone
+    let timeH: Double
+    let concentration: Double
+    let unit: ConcentrationUnit
+
+    init(
+        id: UUID = UUID(),
+        hormone: SimulatedHormone,
+        timeH: Double,
+        concentration: Double,
+        unit: ConcentrationUnit
+    ) {
+        self.id = id
+        self.hormone = hormone
+        self.timeH = timeH
+        self.concentration = concentration
+        self.unit = unit
+    }
+
+    init(
+        id: UUID = UUID(),
+        hormone: SimulatedHormone,
+        collectedAt date: Date,
+        concentration: Double,
+        unit: ConcentrationUnit
+    ) {
+        self.init(
+            id: id,
+            hormone: hormone,
+            timeH: date.timeIntervalSince1970 / 3600.0,
+            concentration: concentration,
+            unit: unit
+        )
+    }
+
+    nonisolated var collectedAt: Date {
+        Date(timeIntervalSince1970: timeH * 3600.0)
+    }
+}
+
+struct CalibrationSettings: Equatable, Sendable {
+    var vdFactorBounds: ClosedRange<Double> = 0.25...4.0
+    var minPredictedConcentration: Double = 1.0
+    var kaFitMinLabs: Int = 3
+    var kaMultiplierBounds: ClosedRange<Double> = 0.6...1.65
+    var kaGridSteps: Int = 11
+    var vdLogPriorPrecision: Double = 0.5
+    var kaLogPriorPrecision: Double = 2.0
+}
+
+struct CalibrationInfo: Codable, Equatable, Sendable {
+    let curveFactor: Double
+    let vdPerKG: Double
+    let vdScale: Double
+    let kaMultiplier: Double
+    let sampleCount: Int
+    let latestLabTimeH: Double
+
+    nonisolated var latestLabDate: Date {
+        Date(timeIntervalSince1970: latestLabTimeH * 3600.0)
+    }
+}
+
+struct CalibrationResult: Equatable, Sendable {
+    let infoByHormone: [SimulatedHormone: CalibrationInfo]
+
+    nonisolated init(infoByHormone: [SimulatedHormone: CalibrationInfo] = [:]) {
+        self.infoByHormone = infoByHormone
+    }
+
+    nonisolated func vdPerKGOverride(for hormone: SimulatedHormone) -> Double? {
+        infoByHormone[hormone]?.vdPerKG
+    }
+
+    nonisolated func kaMultiplier(for hormone: SimulatedHormone) -> Double {
+        infoByHormone[hormone]?.kaMultiplier ?? 1.0
+    }
+}
+
+enum PKCalibrator {
+    nonisolated static func fit(
+        events: [DoseEvent],
+        labs: [LabSample],
+        bodyWeightKG: Double,
+        settings: CalibrationSettings = CalibrationSettings()
+    ) -> CalibrationResult {
+        var infoByHormone: [SimulatedHormone: CalibrationInfo] = [:]
+
+        for hormone in SimulatedHormone.allCases {
+            let hormoneLabs = labs.filter { $0.hormone == hormone && $0.concentration > 0 }
+            guard !hormoneLabs.isEmpty else { continue }
+
+            let unit = hormone.concentrationUnit
+            let labValues = hormoneLabs.map { sample in
+                (
+                    timeH: sample.timeH,
+                    measured: ConcentrationUnit.convert(
+                        sample.concentration,
+                        from: sample.unit,
+                        to: unit,
+                        hormone: hormone
+                    )
+                )
+            }
+            guard let minH = labValues.map(\.timeH).min(),
+                  let maxH = labValues.map(\.timeH).max() else {
+                continue
+            }
+
+            let baseEngine = SimulationEngine(
+                events: events,
+                hormone: hormone,
+                bodyWeightKG: bodyWeightKG,
+                startTimeH: minH - 1,
+                endTimeH: maxH + 1,
+                numberOfSteps: 2
+            )
+
+            let usableLabs = labValues.compactMap { lab -> (timeH: Double, measured: Double)? in
+                let predicted = baseEngine.predictedConcentration(atTimeH: lab.timeH)
+                guard predicted >= settings.minPredictedConcentration else { return nil }
+                return lab
+            }
+            guard !usableLabs.isEmpty,
+                  let latestLabTimeH = usableLabs.map(\.timeH).max() else {
+                continue
+            }
+
+            let core = CorePK.params(for: hormone)
+            let sampleCount = usableLabs.count
+            if sampleCount < settings.kaFitMinLabs {
+                let meanLogRatio = usableLabs.reduce(0.0) { total, lab in
+                    total + log(baseEngine.predictedConcentration(atTimeH: lab.timeH) / lab.measured)
+                } / Double(sampleCount)
+                let vdScale = clamp(exp(meanLogRatio), to: settings.vdFactorBounds)
+                infoByHormone[hormone] = CalibrationInfo(
+                    curveFactor: 1.0 / vdScale,
+                    vdPerKG: core.vdPerKG * vdScale,
+                    vdScale: vdScale,
+                    kaMultiplier: 1.0,
+                    sampleCount: sampleCount,
+                    latestLabTimeH: latestLabTimeH
+                )
+                continue
+            }
+
+            if let gridFit = fitVdAndAbsorption(
+                events: events,
+                hormone: hormone,
+                labs: usableLabs,
+                bodyWeightKG: bodyWeightKG,
+                settings: settings
+            ) {
+                infoByHormone[hormone] = CalibrationInfo(
+                    curveFactor: 1.0 / gridFit.vdScale,
+                    vdPerKG: core.vdPerKG * gridFit.vdScale,
+                    vdScale: gridFit.vdScale,
+                    kaMultiplier: gridFit.kaMultiplier,
+                    sampleCount: sampleCount,
+                    latestLabTimeH: latestLabTimeH
+                )
+            }
+        }
+
+        return CalibrationResult(infoByHormone: infoByHormone)
+    }
+
+    private nonisolated static func fitVdAndAbsorption(
+        events: [DoseEvent],
+        hormone: SimulatedHormone,
+        labs: [(timeH: Double, measured: Double)],
+        bodyWeightKG: Double,
+        settings: CalibrationSettings
+    ) -> (vdScale: Double, kaMultiplier: Double)? {
+        let lowerKa = max(settings.kaMultiplierBounds.lowerBound, Double.leastNonzeroMagnitude)
+        let upperKa = max(settings.kaMultiplierBounds.upperBound, lowerKa)
+        let halfSpan = min(abs(log(lowerKa)), abs(log(upperKa)))
+        let rawSteps = max(3, settings.kaGridSteps)
+        let steps = rawSteps.isMultiple(of: 2) ? rawSteps + 1 : rawSteps
+
+        var bestLogKa = 0.0
+        var bestLogVd = 0.0
+        var bestCost = Double.infinity
+
+        for index in 0..<steps {
+            let fraction = Double(index) / Double(steps - 1)
+            let logKa = -halfSpan + 2.0 * halfSpan * fraction
+            let kaMultiplier = exp(logKa)
+            let engine = SimulationEngine(
+                events: events,
+                hormone: hormone,
+                bodyWeightKG: bodyWeightKG,
+                startTimeH: (labs.map(\.timeH).min() ?? 0) - 1,
+                endTimeH: (labs.map(\.timeH).max() ?? 0) + 1,
+                numberOfSteps: 2,
+                kaMultiplier: kaMultiplier
+            )
+
+            var residuals: [Double] = []
+            residuals.reserveCapacity(labs.count)
+            var collapsed = false
+
+            for lab in labs {
+                let predicted = engine.predictedConcentration(atTimeH: lab.timeH)
+                guard predicted > 0 else {
+                    collapsed = true
+                    break
+                }
+                residuals.append(log(predicted) - log(lab.measured))
+            }
+            if collapsed { continue }
+
+            let logVd = residuals.reduce(0.0, +) / (Double(labs.count) + settings.vdLogPriorPrecision)
+            var cost = settings.kaLogPriorPrecision * logKa * logKa
+                + settings.vdLogPriorPrecision * logVd * logVd
+
+            for residual in residuals {
+                let error = residual - logVd
+                cost += error * error
+            }
+
+            if cost < bestCost {
+                bestCost = cost
+                bestLogKa = logKa
+                bestLogVd = logVd
+            }
+        }
+
+        guard bestCost.isFinite else { return nil }
+        return (
+            vdScale: clamp(exp(bestLogVd), to: settings.vdFactorBounds),
+            kaMultiplier: clamp(exp(bestLogKa), to: settings.kaMultiplierBounds)
+        )
+    }
+
+    private nonisolated static func clamp(_ value: Double, to bounds: ClosedRange<Double>) -> Double {
+        min(max(value, bounds.lowerBound), bounds.upperBound)
     }
 }
