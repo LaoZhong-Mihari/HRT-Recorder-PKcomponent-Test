@@ -962,52 +962,55 @@ private enum LabReportExtractionPipeline {
             defaultHormone: defaultHormone
         )
 
-        if !ruleReport.analytes.isEmpty {
-            return LabReportExtractionOutcome(report: ruleReport, statusMessage: nil)
-        }
-
         #if canImport(FoundationModels)
-        if #available(iOS 27.0, *), isAppleAIExtractionEnabled {
-            if let aiReport = await LabReportAIExtractor.extract(
+        if #available(iOS 27.0, *) {
+            if let aiOutcome = await LabReportAIExtractor.extract(
                 from: text,
                 sourceKind: sourceKind,
                 fallback: ruleReport
-            ), !aiReport.analytes.isEmpty {
-                return LabReportExtractionOutcome(report: aiReport, statusMessage: nil)
+            ) {
+                return aiOutcome
             }
 
-            return LabReportExtractionOutcome(
-                report: ruleReport,
-                statusMessage: "Apple AI was unavailable or could not structure this report; OCR table parsing was used."
-            )
+            let fallbackStatus = ruleReport.analytes.isEmpty
+                ? "Apple on-device model was unavailable or could not structure this report."
+                : "Apple on-device model was unavailable or could not structure this report; OCR table parsing was used."
+            return LabReportExtractionOutcome(report: ruleReport, statusMessage: fallbackStatus)
         }
         #endif
 
         return LabReportExtractionOutcome(
             report: ruleReport,
-            statusMessage: "OCR table parsing was used. Apple AI extraction is guarded for this build to avoid beta model launch crashes."
+            statusMessage: "Apple FoundationModels requires iOS 27 on this build; OCR table parsing was used."
         )
-    }
-
-    private static var isAppleAIExtractionEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "labResults.enableAppleAIExtraction")
     }
 }
 
 #if canImport(FoundationModels)
 @available(iOS 27.0, *)
 private enum LabReportAIExtractor {
-    static func extract(from text: String, sourceKind: LabReportSourceKind, fallback: LabReport) async -> LabReport? {
+    static func extract(
+        from text: String,
+        sourceKind: LabReportSourceKind,
+        fallback: LabReport
+    ) async -> LabReportExtractionOutcome? {
         let prompt = prompt(for: text)
-
-        if let cloud = await generatedJSONUsingPrivateCloud(prompt: prompt),
-           let report = decodeReport(from: cloud, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
-            return report
-        }
 
         if let local = await generatedJSONUsingOnDeviceModel(prompt: prompt),
            let report = decodeReport(from: local, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
-            return report
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: "Structured with Apple on-device FoundationModels."
+            )
+        }
+
+        if UserDefaults.standard.bool(forKey: "labResults.enablePrivateCloudExtraction"),
+           let cloud = await generatedJSONUsingPrivateCloud(prompt: prompt),
+           let report = decodeReport(from: cloud, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: "Structured with Apple Private Cloud Compute FoundationModels."
+            )
         }
 
         return nil
