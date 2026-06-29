@@ -14,6 +14,7 @@ enum LabAnalyteKind: String, CaseIterable, Codable, Hashable, Sendable {
     case progesterone
     case sexHormoneBindingGlobulin
     case freeTestosterone
+    case dehydroepiandrosteroneSulfate
     case other
 
     nonisolated var defaultName: String {
@@ -26,6 +27,7 @@ enum LabAnalyteKind: String, CaseIterable, Codable, Hashable, Sendable {
         case .progesterone: return "Progesterone"
         case .sexHormoneBindingGlobulin: return "SHBG"
         case .freeTestosterone: return "Free Testosterone"
+        case .dehydroepiandrosteroneSulfate: return "DHEA-S"
         case .other: return "Other"
         }
     }

@@ -880,14 +880,57 @@ private enum LabResultOCRService {
                     )
                     try handler.perform([request])
 
-                    let lines = (request.results ?? [])
-                        .compactMap { $0.topCandidates(1).first?.string }
+                    let lines = Self.groupRecognizedRows(from: request.results ?? [])
                     continuation.resume(returning: lines.joined(separator: "\n"))
                 } catch {
                     continuation.resume(throwing: error)
                 }
             }
         }
+    }
+
+    private static func groupRecognizedRows(from observations: [VNRecognizedTextObservation]) -> [String] {
+        struct OCRToken {
+            let text: String
+            let x: CGFloat
+            let midY: CGFloat
+            let height: CGFloat
+        }
+
+        let tokens = observations.compactMap { observation -> OCRToken? in
+            guard let text = observation.topCandidates(1).first?.string.trimmed,
+                  !text.isEmpty else {
+                return nil
+            }
+            return OCRToken(
+                text: text,
+                x: observation.boundingBox.minX,
+                midY: observation.boundingBox.midY,
+                height: observation.boundingBox.height
+            )
+        }
+
+        var rows: [[OCRToken]] = []
+        for token in tokens.sorted(by: { $0.midY > $1.midY }) {
+            let threshold = max(token.height * 0.55, 0.008)
+            if let index = rows.firstIndex(where: { row in
+                guard let baseline = row.first?.midY else { return false }
+                return abs(baseline - token.midY) <= threshold
+            }) {
+                rows[index].append(token)
+            } else {
+                rows.append([token])
+            }
+        }
+
+        return rows
+            .map { row in
+                row.sorted { $0.x < $1.x }
+                    .map(\.text)
+                    .joined(separator: " ")
+                    .trimmed
+            }
+            .filter { !$0.isEmpty }
     }
 
     enum OCRError: LocalizedError {
@@ -919,8 +962,12 @@ private enum LabReportExtractionPipeline {
             defaultHormone: defaultHormone
         )
 
+        if !ruleReport.analytes.isEmpty {
+            return LabReportExtractionOutcome(report: ruleReport, statusMessage: nil)
+        }
+
         #if canImport(FoundationModels)
-        if #available(iOS 27.0, *) {
+        if #available(iOS 27.0, *), isAppleAIExtractionEnabled {
             if let aiReport = await LabReportAIExtractor.extract(
                 from: text,
                 sourceKind: sourceKind,
@@ -938,8 +985,12 @@ private enum LabReportExtractionPipeline {
 
         return LabReportExtractionOutcome(
             report: ruleReport,
-            statusMessage: "Apple AI requires iOS 27 and a supported Apple Intelligence device; OCR table parsing was used."
+            statusMessage: "OCR table parsing was used. Apple AI extraction is guarded for this build to avoid beta model launch crashes."
         )
+    }
+
+    private static var isAppleAIExtractionEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "labResults.enableAppleAIExtraction")
     }
 }
 
@@ -996,7 +1047,7 @@ private enum LabReportAIExtractor {
         """
         Read this OCR text from a hormone lab report and return JSON only.
         Do not use reference range numbers as result values. A result value must be the measured value in the table row.
-        Preserve estradiol, testosterone, LH, FSH, prolactin, progesterone, SHBG, free testosterone, and other hormone rows when present.
+        Preserve estradiol, testosterone, LH, FSH, prolactin, progesterone, SHBG, free testosterone, DHEA-S, and other hormone rows when present.
         Use ISO-like dates when possible.
 
         JSON shape:
@@ -1009,7 +1060,7 @@ private enum LabReportAIExtractor {
           "method": "",
           "analytes": [
             {
-              "kind": "estradiol|testosterone|luteinizingHormone|follicleStimulatingHormone|prolactin|progesterone|sexHormoneBindingGlobulin|freeTestosterone|other",
+              "kind": "estradiol|testosterone|luteinizingHormone|follicleStimulatingHormone|prolactin|progesterone|sexHormoneBindingGlobulin|freeTestosterone|dehydroepiandrosteroneSulfate|other",
               "name": "",
               "value": 0,
               "unit": "",
@@ -1207,7 +1258,7 @@ private enum HormoneLabResultParser {
 
     private static func parseAnalyteLine(_ line: String) -> LabAnalyteResult? {
         guard let kind = detectAnalyteKind(in: line),
-              let value = extractMeasuredValue(from: line) else {
+              let value = extractMeasuredValue(from: line, kind: kind) else {
             return nil
         }
 
@@ -1241,7 +1292,7 @@ private enum HormoneLabResultParser {
 
         let kind: LabAnalyteKind = defaultHormone == .estradiol ? .estradiol : .testosterone
         let analytes = lines.compactMap { line -> LabAnalyteResult? in
-            guard let value = extractMeasuredValue(from: line) else { return nil }
+            guard let value = extractMeasuredValue(from: line, kind: kind) else { return nil }
             let unitSymbol = extractUnitSymbol(from: line)
             guard let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind) else {
                 return nil
@@ -1269,7 +1320,8 @@ private enum HormoneLabResultParser {
             (.luteinizingHormone, #"(?i)(促黄体生成素|黄体生成素|\blh\b)"#),
             (.follicleStimulatingHormone, #"(?i)(促卵泡生成素|卵泡刺激素|\bfsh\b)"#),
             (.prolactin, #"(?i)(泌乳素|\bprolactin\b|\bprl\b)"#),
-            (.progesterone, #"(?i)(孕酮|\bprogesterone\b|^\s*p\b|\bp\s*:)"#)
+            (.progesterone, #"(?i)(孕酮|\bprogesterone\b|^\s*p\b|\bp\s*:)"#),
+            (.dehydroepiandrosteroneSulfate, #"(?i)(硫酸脱氢表雄酮|脱氢表雄酮|dhea\s*-?\s*s|dheas)"#)
         ]
 
         for (kind, pattern) in patterns where firstMatch(pattern: pattern, in: line) != nil {
@@ -1282,17 +1334,21 @@ private enum HormoneLabResultParser {
         let cleanLine = line.trimmed
         if cleanLine.contains("雌二醇") { return "Estradiol" }
         if cleanLine.contains("睾酮") || cleanLine.contains("睪酮") { return kind.defaultName }
+        if cleanLine.lowercased().contains("dhea") || cleanLine.contains("脱氢表雄酮") { return "DHEA-S" }
         return kind.defaultName
     }
 
-    private static func extractMeasuredValue(from line: String) -> Double? {
+    private static func extractMeasuredValue(from line: String, kind: LabAnalyteKind) -> Double? {
         let referenceRanges = referenceRangeMatches(in: line).map(\.range)
-        let numberPattern = #"(?<![\d.])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
+        let analyteRanges = analyteCodeMatches(in: line, kind: kind).map(\.range)
+        let numberPattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
         guard let regex = try? NSRegularExpression(pattern: numberPattern) else { return nil }
         let fullRange = NSRange(line.startIndex..<line.endIndex, in: line)
         let matches = regex.matches(in: line, range: fullRange)
 
-        for match in matches where !referenceRanges.contains(where: { rangesOverlap($0, match.range) }) {
+        for match in matches
+            where !referenceRanges.contains(where: { rangesOverlap($0, match.range) })
+                && !analyteRanges.contains(where: { rangesOverlap($0, match.range) }) {
             guard let valueText = stringCapture(1, in: line, match: match)?
                 .replacingOccurrences(of: "<", with: "")
                 .replacingOccurrences(of: ">", with: "")
@@ -1310,6 +1366,36 @@ private enum HormoneLabResultParser {
         return nil
     }
 
+    private static func analyteCodeMatches(in line: String, kind: LabAnalyteKind) -> [NSTextCheckingResult] {
+        let codePattern: String
+        switch kind {
+        case .estradiol:
+            codePattern = #"(?i)\(?\bE2\b\)?"#
+        case .testosterone:
+            codePattern = #"(?i)\(?\bT\b\)?"#
+        case .luteinizingHormone:
+            codePattern = #"(?i)\(?\bLH\b\)?"#
+        case .follicleStimulatingHormone:
+            codePattern = #"(?i)\(?\bFSH\b\)?"#
+        case .prolactin:
+            codePattern = #"(?i)\(?\bPRL\b\)?"#
+        case .progesterone:
+            codePattern = #"(?i)\(?\bP\b\)?"#
+        case .sexHormoneBindingGlobulin:
+            codePattern = #"(?i)\(?\bSHBG\b\)?"#
+        case .freeTestosterone:
+            codePattern = #"(?i)\(?\bfree\s*T\b\)?"#
+        case .dehydroepiandrosteroneSulfate:
+            codePattern = #"(?i)\(?\bDHEA\s*-?\s*S\b\)?"#
+        case .other:
+            return []
+        }
+        guard let regex = try? NSRegularExpression(pattern: codePattern, options: [.caseInsensitive]) else {
+            return []
+        }
+        return regex.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line))
+    }
+
     private static func extractReferenceRange(from line: String) -> String? {
         guard let match = referenceRangeMatches(in: line).first,
               let range = Range(match.range, in: line) else {
@@ -1325,7 +1411,7 @@ private enum HormoneLabResultParser {
     }
 
     private static func extractUnitSymbol(from line: String) -> String {
-        let pattern = #"(?i)(pg\s*/?\s*m[lL]|pmol\s*/?\s*[lL]|ng\s*/?\s*d[lL]|ng\s*/?\s*m[lL]|nmol\s*/?\s*[lL]|mIU\s*/?\s*m[lL]|uIU\s*/?\s*m[lL]|[µμ]IU\s*/?\s*m[lL]|IU\s*/?\s*[lL]|mIU\s*/?\s*[lL])"#
+        let pattern = #"(?i)(pg\s*/?\s*m[lL]|pmol\s*/?\s*[lL]|ng\s*/?\s*d[lL]|ng\s*/?\s*m[lL]|nmol\s*/?\s*[lL]|u?mol\s*/?\s*[lL]|[µμ]mol\s*/?\s*[lL]|mIU\s*/?\s*m[lL]|uIU\s*/?\s*m[lL]|[µμ]IU\s*/?\s*m[lL]|IU\s*/?\s*[lL]|mIU\s*/?\s*[lL])"#
         guard let match = firstMatch(pattern: pattern, in: line),
               let unit = stringCapture(1, in: line, match: match) else {
             return ""
@@ -1344,13 +1430,16 @@ private enum HormoneLabResultParser {
         case "uiu/ml": return "uIU/mL"
         case "iu/l": return "IU/L"
         case "miu/l": return "mIU/L"
+        case "umol/l": return "umol/L"
+        case "µmol/l": return "µmol/L"
+        case "μmol/l": return "μmol/L"
         default: return compact
         }
     }
 
     private static func extractMethod(from line: String) -> String? {
         let lower = line.lowercased()
-        let tokens = ["lc-ms/ms", "eclia", "clia", "cmia", "elisa", "化学发光", "免疫", "质谱"]
+        let tokens = ["i2000sr", "lc-ms/ms", "eclia", "clia", "cmia", "elisa", "化学发光", "免疫", "质谱"]
         return tokens.first { lower.contains($0.lowercased()) }
     }
 
