@@ -40,14 +40,19 @@ final class DoseTimelineVM: ObservableObject {
             onChange?(events)
         }
     }
-    @Published var labSamples: [LabSample] = [] {
+    @Published var labReports: [LabReport] = [] {
         didSet {
-            onLabSamplesChange?(labSamples)
+            onLabReportsChange?(labReports)
             runSimulation()
         }
     }
     @Published var result: SimulationResult? = nil
     @Published private(set) var calibrationResult = CalibrationResult()
+    var labSamples: [LabSample] {
+        labReports
+            .flatMap(\.calibrationSamples)
+            .sorted { $0.timeH < $1.timeH }
+    }
     var dayGroups: [TimelineDayGroup] {
         let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
         return makeTimelineDayGroups(from: visibleEvents)
@@ -90,7 +95,7 @@ final class DoseTimelineVM: ObservableObject {
     /// First event time used as zero reference (hours)
     private var baseT0: Double? = nil
     private var onChange: (([DoseEvent]) -> Void)?
-    private var onLabSamplesChange: (([LabSample]) -> Void)?
+    private var onLabReportsChange: (([LabReport]) -> Void)?
     init() {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         let saved = UserDefaults.standard.double(forKey: weightKey)
@@ -115,22 +120,22 @@ final class DoseTimelineVM: ObservableObject {
             self.bodyWeightSyncSource = nil
         }
         self.onChange = nil
-        self.onLabSamplesChange = nil
+        self.onLabReportsChange = nil
         setupSubscriptions()
         runSimulation()
     }
 
     init(
         initialEvents: [DoseEvent],
-        initialLabSamples: [LabSample] = [],
+        initialLabReports: [LabReport] = [],
         onChange: (([DoseEvent]) -> Void)? = nil,
-        onLabSamplesChange: (([LabSample]) -> Void)? = nil
+        onLabReportsChange: (([LabReport]) -> Void)? = nil
     ) {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         self.events = initialEvents
-        self.labSamples = initialLabSamples
+        self.labReports = initialLabReports
         self.onChange = onChange
-        self.onLabSamplesChange = onLabSamplesChange
+        self.onLabReportsChange = onLabReportsChange
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
@@ -208,26 +213,61 @@ final class DoseTimelineVM: ObservableObject {
         runSimulation()
     }
 
+    func saveLabReport(_ report: LabReport) {
+        saveLabReports([report])
+    }
+
+    func saveLabReports(_ reports: [LabReport]) {
+        guard !reports.isEmpty else { return }
+        var updatedReports = labReports
+        for report in reports {
+            if let index = updatedReports.firstIndex(where: { $0.id == report.id }) {
+                updatedReports[index] = report
+            } else {
+                updatedReports.append(report)
+            }
+        }
+        labReports = updatedReports.sorted { $0.collectedAt < $1.collectedAt }
+    }
+
+    func removeLabReports(withIDs ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        labReports.removeAll { ids.contains($0.id) }
+    }
+
     func saveLabSample(_ sample: LabSample) {
         saveLabSamples([sample])
     }
 
     func saveLabSamples(_ samples: [LabSample]) {
-        guard !samples.isEmpty else { return }
-        var updatedSamples = labSamples
-        for sample in samples {
-            if let index = updatedSamples.firstIndex(where: { $0.id == sample.id }) {
-                updatedSamples[index] = sample
-            } else {
-                updatedSamples.append(sample)
-            }
+        let reports = samples.map { sample in
+            LabReport(
+                id: sample.reportID ?? UUID(),
+                collectedAt: sample.collectedAt,
+                sourceKind: .manual,
+                analytes: [
+                    LabAnalyteResult(
+                        id: sample.id,
+                        kind: labAnalyteKind(for: sample.hormone),
+                        name: sample.analyteName ?? sample.hormone.displayName,
+                        value: sample.concentration,
+                        unitSymbol: sample.unit.symbol,
+                        concentrationUnit: sample.unit,
+                        sourceLine: sample.sourceLine
+                    )
+                ]
+            )
         }
-        labSamples = updatedSamples.sorted { $0.timeH < $1.timeH }
+        saveLabReports(reports)
     }
 
     func removeLabSamples(withIDs ids: [UUID]) {
         guard !ids.isEmpty else { return }
-        labSamples.removeAll { ids.contains($0.id) }
+        labReports = labReports.compactMap { report in
+            var updated = report
+            updated.analytes.removeAll { ids.contains($0.id) }
+            return updated.analytes.isEmpty ? nil : updated
+        }
     }
 
     var availableConcentrationUnits: [ConcentrationUnit] {
@@ -235,13 +275,15 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     var labResultsSettingsSummary: String {
-        guard !labSamples.isEmpty else {
+        guard !labReports.isEmpty else {
             return String(localized: "No saved hormone lab results")
         }
 
+        let sampleCount = labSamples.count
         let countText = String.localizedStringWithFormat(
-            String(localized: "%d saved result(s)"),
-            labSamples.count
+            String(localized: "%d report(s), %d calibration point(s)"),
+            labReports.count,
+            sampleCount
         )
 
         if let info = calibrationResult.infoByHormone[selectedHormone] {
@@ -388,6 +430,15 @@ final class DoseTimelineVM: ObservableObject {
 
     private static func concentrationUnitKey(for hormone: SimulatedHormone) -> String {
         "timeline.selectedConcentrationUnit.\(hormone.rawValue)"
+    }
+
+    private func labAnalyteKind(for hormone: SimulatedHormone) -> LabAnalyteKind {
+        switch hormone {
+        case .estradiol:
+            return .estradiol
+        case .testosterone:
+            return .testosterone
+        }
     }
 
     var bodyWeightHealthStatusText: String {

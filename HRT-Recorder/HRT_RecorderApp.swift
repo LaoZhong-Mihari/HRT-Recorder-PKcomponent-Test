@@ -11,7 +11,7 @@ import SwiftUI
 struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
     @StateObject private var store: PersistedStore<[DoseEvent]>
-    @StateObject private var labSampleStore: PersistedStore<[LabSample]>
+    @StateObject private var labReportStore: PersistedStore<[LabReport]>
     @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
     @StateObject private var notificationCoordinator: NotificationCoordinator
     @StateObject private var timelineVM: DoseTimelineVM
@@ -23,28 +23,35 @@ struct HRTRecorderApp: App {
             filename: "dose_events.json",
             defaultValue: []
         )
-        let persistedLabSamples = PersistedStore<[LabSample]>(
+        let persistedLabReports = PersistedStore<[LabReport]>(
+            filename: "lab_reports.json",
+            defaultValue: []
+        )
+        let legacyLabSamples = PersistedStore<[LabSample]>(
             filename: "lab_samples.json",
             defaultValue: []
         )
+        if persistedLabReports.value.isEmpty, !legacyLabSamples.value.isEmpty {
+            persistedLabReports.value = Self.legacyReports(from: legacyLabSamples.value)
+        }
         let persistedMedicationPlans = PersistedStore<[MedicationPlan]>(
             filename: "medication_plans.json",
             defaultValue: []
         )
         let notificationCoordinator = NotificationCoordinator()
         _store = StateObject(wrappedValue: persistedStore)
-        _labSampleStore = StateObject(wrappedValue: persistedLabSamples)
+        _labReportStore = StateObject(wrappedValue: persistedLabReports)
         _medicationPlanStore = StateObject(wrappedValue: persistedMedicationPlans)
         _notificationCoordinator = StateObject(wrappedValue: notificationCoordinator)
         _timelineVM = StateObject(
             wrappedValue: DoseTimelineVM(
                 initialEvents: persistedStore.value,
-                initialLabSamples: persistedLabSamples.value,
+                initialLabReports: persistedLabReports.value,
                 onChange: { updated in
                     persistedStore.value = updated
                 },
-                onLabSamplesChange: { updated in
-                    persistedLabSamples.value = updated
+                onLabReportsChange: { updated in
+                    persistedLabReports.value = updated
                 }
             )
         )
@@ -114,7 +121,7 @@ struct HRTRecorderApp: App {
                     )
                     refreshWidgetSnapshot()
                 }
-                .onReceive(timelineVM.$labSamples) { _ in
+                .onReceive(timelineVM.$labReports) { _ in
                     refreshWidgetSnapshot()
                 }
                 .onReceive(timelineVM.$eventsModifiedAt) { eventsModifiedAt in
@@ -144,7 +151,7 @@ struct HRTRecorderApp: App {
                 }
             } else if newPhase == .inactive || newPhase == .background {
                 store.saveSync()
-                labSampleStore.saveSync()
+                labReportStore.saveSync()
                 medicationPlanStore.saveSync()
                 refreshWidgetSnapshot(reloadTimelines: false)
             }
@@ -179,5 +186,26 @@ struct HRTRecorderApp: App {
             forWidgetOptionID: handoff.optionID,
             requestedAt: handoff.requestedAt
         )
+    }
+
+    private static func legacyReports(from samples: [LabSample]) -> [LabReport] {
+        samples.map { sample in
+            LabReport(
+                id: sample.reportID ?? UUID(),
+                collectedAt: sample.collectedAt,
+                sourceKind: .manual,
+                analytes: [
+                    LabAnalyteResult(
+                        id: sample.id,
+                        kind: sample.hormone == .estradiol ? .estradiol : .testosterone,
+                        name: sample.analyteName ?? sample.hormone.displayName,
+                        value: sample.concentration,
+                        unitSymbol: sample.unit.symbol,
+                        concentrationUnit: sample.unit,
+                        sourceLine: sample.sourceLine
+                    )
+                ]
+            )
+        }
     }
 }

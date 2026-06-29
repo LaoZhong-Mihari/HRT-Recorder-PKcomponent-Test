@@ -776,19 +776,28 @@ struct LabSample: Identifiable, Codable, Equatable, Sendable {
     let timeH: Double
     let concentration: Double
     let unit: ConcentrationUnit
+    let reportID: UUID?
+    let analyteName: String?
+    let sourceLine: String?
 
     init(
         id: UUID = UUID(),
         hormone: SimulatedHormone,
         timeH: Double,
         concentration: Double,
-        unit: ConcentrationUnit
+        unit: ConcentrationUnit,
+        reportID: UUID? = nil,
+        analyteName: String? = nil,
+        sourceLine: String? = nil
     ) {
         self.id = id
         self.hormone = hormone
         self.timeH = timeH
         self.concentration = concentration
         self.unit = unit
+        self.reportID = reportID
+        self.analyteName = analyteName
+        self.sourceLine = sourceLine
     }
 
     init(
@@ -796,14 +805,20 @@ struct LabSample: Identifiable, Codable, Equatable, Sendable {
         hormone: SimulatedHormone,
         collectedAt date: Date,
         concentration: Double,
-        unit: ConcentrationUnit
+        unit: ConcentrationUnit,
+        reportID: UUID? = nil,
+        analyteName: String? = nil,
+        sourceLine: String? = nil
     ) {
         self.init(
             id: id,
             hormone: hormone,
             timeH: date.timeIntervalSince1970 / 3600.0,
             concentration: concentration,
-            unit: unit
+            unit: unit,
+            reportID: reportID,
+            analyteName: analyteName,
+            sourceLine: sourceLine
         )
     }
 
