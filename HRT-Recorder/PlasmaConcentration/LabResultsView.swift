@@ -3,6 +3,7 @@
 //  HRT-Recorder
 //
 
+import CoreImage
 import Foundation
 #if canImport(FoundationModels)
 import FoundationModels
@@ -21,7 +22,9 @@ struct LabResultsView: View {
     @State private var isPhotoPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var isRecognizing = false
+    @State private var isRunningAIDiagnostics = false
     @State private var statusMessage: String?
+    @State private var aiDiagnosticReport: AIDiagnosticReport?
 
     private var sortedReports: [LabReport] {
         vm.labReports.sorted { $0.collectedAt > $1.collectedAt }
@@ -90,6 +93,15 @@ struct LabResultsView: View {
                     } label: {
                         Label("Add Manually", systemImage: "plus.circle")
                     }
+
+                    #if DEBUG && canImport(FoundationModels)
+                    Button {
+                        runAIDiagnostics()
+                    } label: {
+                        Label("Apple AI Diagnostics", systemImage: "waveform.path.ecg")
+                    }
+                    .disabled(isRunningAIDiagnostics)
+                    #endif
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 19, weight: .bold))
@@ -130,13 +142,18 @@ struct LabResultsView: View {
                 }
             }
         }
+        .sheet(item: $aiDiagnosticReport) { report in
+            NavigationStack {
+                AIDiagnosticsReportView(report: report.text)
+            }
+        }
         .overlay {
-            if isRecognizing {
+            if isRecognizing || isRunningAIDiagnostics {
                 ZStack {
                     Color.black.opacity(0.16)
                         .ignoresSafeArea()
 
-                    ProgressView("Reading lab report...")
+                    ProgressView(isRunningAIDiagnostics ? "Testing Apple Intelligence..." : "Reading lab report...")
                         .padding(20)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
@@ -190,8 +207,7 @@ struct LabResultsView: View {
                     return
                 }
 
-                let text = try await LabResultOCRService.recognizeText(in: images)
-                await presentReport(from: text, sourceKind: .imageUpload)
+                await presentReport(from: images, sourceKind: .imageUpload)
             } catch {
                 statusMessage = error.localizedDescription
             }
@@ -203,12 +219,7 @@ struct LabResultsView: View {
             isRecognizing = true
             defer { isRecognizing = false }
 
-            do {
-                let text = try await LabResultOCRService.recognizeText(in: images)
-                await presentReport(from: text, sourceKind: sourceKind)
-            } catch {
-                statusMessage = error.localizedDescription
-            }
+            await presentReport(from: images, sourceKind: sourceKind)
         }
     }
 
@@ -229,12 +240,48 @@ struct LabResultsView: View {
         )
 
         guard !outcome.report.analytes.isEmpty else {
-            statusMessage = "No hormone result was found. Apple AI may be unavailable on this device; OCR fallback did not find a supported table row."
+            statusMessage = "No hormone result was found. Apple AI did not return a structured report, and OCR fallback did not find a supported table row."
             return
         }
 
         activeSheet = .review(LabReportDraft(report: outcome.report, extractionStatus: outcome.statusMessage))
     }
+
+    @MainActor
+    private func presentReport(from images: [UIImage], sourceKind: LabReportSourceKind) async {
+        let outcome = await LabReportExtractionPipeline.extract(
+            from: images,
+            sourceKind: sourceKind,
+            defaultHormone: vm.selectedHormone
+        )
+
+        guard !outcome.report.analytes.isEmpty else {
+            statusMessage = "No hormone result was found. Apple AI did not return a structured report, and OCR fallback did not find a supported table row."
+            return
+        }
+
+        activeSheet = .review(LabReportDraft(report: outcome.report, extractionStatus: outcome.statusMessage))
+    }
+
+    #if DEBUG && canImport(FoundationModels)
+    private func runAIDiagnostics() {
+        Task { @MainActor in
+            guard #available(iOS 26.0, *) else {
+                statusMessage = "Apple AI diagnostics require iOS 26 on this build."
+                return
+            }
+
+            isRunningAIDiagnostics = true
+            defer { isRunningAIDiagnostics = false }
+            aiDiagnosticReport = AIDiagnosticReport(text: await LabReportAIDiagnostics.run())
+        }
+    }
+    #endif
+}
+
+private struct AIDiagnosticReport: Identifiable {
+    let id = UUID()
+    var text: String
 }
 
 private enum LabResultSheet: Identifiable {
@@ -273,7 +320,7 @@ private struct LabReportDraft: Identifiable {
         self.hasReportedAt = report.reportedAt != nil
         self.institution = report.institution
         self.location = report.location
-        self.specimen = report.specimen
+        self.specimen = LabReportFieldSanitizer.reviewSpecimen(report.specimen)
         self.method = report.method
         self.sourceKind = report.sourceKind
         self.sourceText = report.sourceText
@@ -311,7 +358,7 @@ private struct LabReportDraft: Identifiable {
             reportedAt: hasReportedAt ? reportedAt : nil,
             institution: institution.trimmed,
             location: location.trimmed,
-            specimen: specimen.trimmed,
+            specimen: LabReportFieldSanitizer.reviewSpecimen(specimen),
             method: method.trimmed,
             sourceKind: sourceKind,
             sourceText: sourceText,
@@ -336,7 +383,7 @@ private struct LabAnalyteDraft: Identifiable {
     init(kind: LabAnalyteKind) {
         self.id = UUID()
         self.kind = kind
-        self.name = kind.defaultName
+        self.name = kind == .other ? "" : kind.defaultName
         self.valueText = ""
         self.concentrationUnit = kind.simulatedHormone?.concentrationUnit
         self.unitSymbol = kind.simulatedHormone?.concentrationUnit.symbol ?? ""
@@ -349,11 +396,11 @@ private struct LabAnalyteDraft: Identifiable {
     init(result: LabAnalyteResult) {
         self.id = result.id
         self.kind = result.kind
-        self.name = result.name
+        self.name = result.kind == .other ? result.name : result.kind.defaultName
         self.valueText = result.value.map { Self.formatValue($0) } ?? ""
         self.unitSymbol = result.unitSymbol
         self.concentrationUnit = result.concentrationUnit
-        self.referenceRange = result.referenceRange ?? ""
+        self.referenceRange = ""
         self.method = result.method ?? ""
         self.sourceLine = result.sourceLine ?? ""
         self.note = result.note ?? ""
@@ -365,7 +412,6 @@ private struct LabAnalyteDraft: Identifiable {
             .replacingOccurrences(of: ",", with: ".")
         let value = Double(normalized)
         let hasDetails = value != nil
-            || !referenceRange.trimmed.isEmpty
             || !method.trimmed.isEmpty
             || !sourceLine.trimmed.isEmpty
             || !note.trimmed.isEmpty
@@ -377,11 +423,11 @@ private struct LabAnalyteDraft: Identifiable {
         return LabAnalyteResult(
             id: id,
             kind: kind,
-            name: name.trimmed.isEmpty ? kind.defaultName : name.trimmed,
+            name: kind == .other ? name.nilIfBlank : nil,
             value: value,
             unitSymbol: resolvedUnitSymbol,
             concentrationUnit: resolvedUnit,
-            referenceRange: referenceRange.nilIfBlank,
+            referenceRange: nil,
             method: method.nilIfBlank,
             sourceLine: sourceLine.nilIfBlank,
             note: note.nilIfBlank
@@ -391,6 +437,22 @@ private struct LabAnalyteDraft: Identifiable {
     private static func formatValue(_ value: Double) -> String {
         String(format: "%.2f", locale: Locale.current, value)
     }
+}
+
+private enum LabReportFieldSanitizer {
+    static func reviewSpecimen(_ rawValue: String) -> String {
+        let value = rawValue.trimmed
+        guard !value.isEmpty else { return "" }
+        if plausibleSpecimenTokens.contains(where: { value.localizedCaseInsensitiveContains($0) }) {
+            return value
+        }
+        return ""
+    }
+
+    private static let plausibleSpecimenTokens = [
+        "血清", "血浆", "血漿", "全血", "血液", "尿", "唾液", "拭子",
+        "serum", "plasma", "whole blood", "blood", "urine", "saliva", "swab"
+    ]
 }
 
 private struct EmptyLabResultsRow: View {
@@ -403,6 +465,34 @@ private struct EmptyLabResultsRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+    }
+}
+
+private struct AIDiagnosticsReportView: View {
+    @Environment(\.dismiss) private var dismiss
+    let report: String
+
+    var body: some View {
+        ScrollView {
+            Text(report)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .padding()
+        }
+        .navigationTitle("AI Diagnostics")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("common.done") {
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Copy") {
+                    UIPasteboard.general.string = report
+                }
+            }
+        }
     }
 }
 
@@ -483,7 +573,7 @@ private struct LabReportDetailView: View {
 
                 optionalContent("Institution", report.institution)
                 optionalContent("Location", report.location)
-                optionalContent("Specimen", report.specimen)
+                optionalContent("Specimen", LabReportFieldSanitizer.reviewSpecimen(report.specimen))
                 optionalContent("Method", report.method)
                 optionalContent("Notes", report.note)
             }
@@ -517,18 +607,12 @@ private struct LabAnalyteDetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(analyte.name)
+                Text(analyte.displayName)
                     .font(.headline)
                 Spacer(minLength: 12)
                 Text(valueText)
                     .font(.headline.weight(.semibold))
                     .monospacedDigit()
-            }
-
-            if let referenceRange = analyte.referenceRange, !referenceRange.trimmed.isEmpty {
-                Text("Reference \(referenceRange)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             if let method = analyte.method, !method.trimmed.isEmpty {
@@ -731,7 +815,11 @@ private struct LabAnalyteDraftRow: View {
                 }
             }
             .onChange(of: draft.kind) { kind in
-                if draft.name.trimmed.isEmpty || LabAnalyteKind.allCases.map(\.defaultName).contains(draft.name) {
+                if kind == .other {
+                    if LabAnalyteKind.allCases.map(\.defaultName).contains(draft.name) {
+                        draft.name = ""
+                    }
+                } else {
                     draft.name = kind.defaultName
                 }
                 if let hormone = kind.simulatedHormone {
@@ -745,7 +833,9 @@ private struct LabAnalyteDraftRow: View {
                 }
             }
 
-            TextField("Name", text: $draft.name)
+            if draft.kind == .other {
+                TextField("Name", text: $draft.name)
+            }
 
             HStack(spacing: 12) {
                 TextField("Value", text: $draft.valueText)
@@ -755,7 +845,6 @@ private struct LabAnalyteDraftRow: View {
                 unitControl
             }
 
-            TextField("Reference range", text: $draft.referenceRange)
             TextField("Method", text: $draft.method)
             TextField("Notes", text: $draft.note, axis: .vertical)
                 .lineLimit(1...3)
@@ -848,6 +937,15 @@ private struct DocumentScannerView: UIViewControllerRepresentable {
 }
 
 private enum LabResultOCRService {
+    private static let recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+    private static let customWords = [
+        "雌二醇", "睾酮", "泌乳素", "促卵泡刺激素", "促黄体生成素", "孕酮",
+        "垂体泌乳素", "硫酸脱氢表雄酮", "采集时间", "接收时间", "报告时间", "打印时间",
+        "E2", "PRL", "FSH", "LH", "T", "P", "DHEA-S",
+        "pg", "ng", "pmol", "nmol", "µmol", "μmol", "umol",
+        "IU", "mIU", "uIU", "mL", "ml", "L", "dL", "dl"
+    ]
+
     static func recognizeText(in images: [UIImage]) async throws -> String {
         var pages: [String] = []
         pages.reserveCapacity(images.count)
@@ -860,18 +958,134 @@ private enum LabResultOCRService {
     }
 
     private static func recognizeText(in image: UIImage) async throws -> String {
-        guard let cgImage = image.cgImage else {
+        guard let preparedImage = preparedImageForOCR(image),
+              let cgImage = preparedImage.cgImage else {
             throw OCRError.missingImageData
         }
 
-        let orientation = CGImagePropertyOrientation(image.imageOrientation)
-        return try await withCheckedThrowingContinuation { continuation in
+        let orientation = CGImagePropertyOrientation(preparedImage.imageOrientation)
+        var candidates: [String] = []
+
+        if #available(iOS 26.0, *) {
+            if let documentText = try? await recognizeDocumentText(in: cgImage, orientation: orientation),
+               !documentText.isEmpty {
+                candidates.append(documentText)
+            }
+        }
+
+        let legacyText = try await recognizeLegacyText(in: cgImage, orientation: orientation)
+        if !legacyText.isEmpty {
+            candidates.append(legacyText)
+        }
+
+        return mergeOCRCandidates(candidates)
+    }
+
+    private static func preparedImageForOCR(_ image: UIImage) -> UIImage? {
+        let pixelSize = CGSize(
+            width: image.size.width * image.scale,
+            height: image.size.height * image.scale
+        )
+        guard pixelSize.width > 0, pixelSize.height > 0 else {
+            return image.cgImage == nil ? nil : image
+        }
+
+        let shortestSide = min(pixelSize.width, pixelSize.height)
+        let longestSide = max(pixelSize.width, pixelSize.height)
+        let minShortSide: CGFloat = 1_300
+        let maxLongSide: CGFloat = 2_600
+
+        var scale: CGFloat = 1
+        if shortestSide < minShortSide {
+            scale = minShortSide / shortestSide
+        }
+        if longestSide * scale > maxLongSide {
+            scale = maxLongSide / longestSide
+        }
+
+        let needsRedraw = image.imageOrientation != .up || abs(scale - 1) > 0.01
+        guard needsRedraw else { return image }
+
+        let targetSize = CGSize(
+            width: max(1, pixelSize.width * scale),
+            height: max(1, pixelSize.height * scale)
+        )
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        return renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func recognizeDocumentText(
+        in cgImage: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) async throws -> String {
+        var request = RecognizeDocumentsRequest()
+        request.textRecognitionOptions.automaticallyDetectLanguage = true
+        request.textRecognitionOptions.recognitionLanguages = recognitionLanguages.map(Locale.Language.init(identifier:))
+        request.textRecognitionOptions.useLanguageCorrection = true
+        request.textRecognitionOptions.customWords = customWords
+        request.textRecognitionOptions.maximumCandidateCount = 1
+
+        let observations = try await request.perform(on: cgImage, orientation: orientation)
+        return documentText(from: observations)
+    }
+
+    @available(iOS 26.0, *)
+    private static func documentText(from observations: [DocumentObservation]) -> String {
+        observations.map(documentText(from:)).joined(separator: "\n")
+    }
+
+    @available(iOS 26.0, *)
+    private static func documentText(from observation: DocumentObservation) -> String {
+        var blocks: [String] = []
+
+        for table in observation.document.tables {
+            for row in table.rows {
+                let rowText = row.map { cell in
+                    cell.content.text.transcript.trimmed
+                }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\t")
+                if !rowText.isEmpty {
+                    blocks.append(rowText)
+                }
+            }
+        }
+
+        for paragraph in observation.document.paragraphs {
+            let paragraphText = paragraph.transcript.trimmed
+            if !paragraphText.isEmpty {
+                blocks.append(paragraphText)
+            }
+        }
+
+        let fullText = observation.document.text.transcript.trimmed
+        if !fullText.isEmpty {
+            blocks.append(fullText)
+        }
+
+        return blocks.joined(separator: "\n")
+    }
+
+    private static func recognizeLegacyText(
+        in cgImage: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
                     request.usesLanguageCorrection = true
-                    request.recognitionLanguages = ["en-US", "zh-Hans", "zh-Hant"]
+                    request.recognitionLanguages = recognitionLanguages
+                    request.customWords = customWords
 
                     let handler = VNImageRequestHandler(
                         cgImage: cgImage,
@@ -887,6 +1101,25 @@ private enum LabResultOCRService {
                 }
             }
         }
+    }
+
+    private static func mergeOCRCandidates(_ candidates: [String]) -> String {
+        var seen = Set<String>()
+        var lines: [String] = []
+
+        for candidate in candidates {
+            for line in candidate.split(whereSeparator: \.isNewline).map({ String($0).trimmed }) where !line.isEmpty {
+                let key = line
+                    .lowercased()
+                    .replacingOccurrences(of: " ", with: "")
+                    .replacingOccurrences(of: "\t", with: "")
+                if seen.insert(key).inserted {
+                    lines.append(line)
+                }
+            }
+        }
+
+        return lines.joined(separator: "\n")
     }
 
     private static func groupRecognizedRows(from observations: [VNRecognizedTextObservation]) -> [String] {
@@ -945,27 +1178,91 @@ private enum LabResultOCRService {
     }
 }
 
-private struct LabReportExtractionOutcome {
+struct LabReportExtractionOutcome {
     var report: LabReport
     var statusMessage: String?
 }
 
-private enum LabReportExtractionPipeline {
+enum LabReportExtractionPipeline {
+    static func extract(
+        from images: [UIImage],
+        sourceKind: LabReportSourceKind,
+        defaultHormone: SimulatedHormone
+    ) async -> LabReportExtractionOutcome {
+        var fallbackSummary = "Apple Intelligence did not return a verified structured result."
+        let ocrText = (try? await LabResultOCRService.recognizeText(in: images)) ?? ""
+        var parserText = ocrText
+
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            parserText = await LabReportAIExtractor.repairOCRLabels(in: ocrText)
+        }
+        #endif
+
+        let ocrReport = parserText.isEmpty
+            ? LabReport(collectedAt: Date(), sourceKind: sourceKind, sourceText: "", analytes: [])
+            : HormoneLabResultParser.parseReport(
+                parserText,
+                sourceKind: sourceKind,
+                defaultHormone: defaultHormone
+            )
+
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            if let aiOutcome = await LabReportAIExtractor.extract(
+                from: images,
+                sourceKind: sourceKind,
+                ocrText: parserText,
+                fallback: ocrReport
+            ) {
+                return aiOutcome
+            }
+            LabReportAIExtractor.logImageDiagnosticSummary()
+            fallbackSummary = LabReportAIExtractor.imageUserFacingFallbackSummary()
+        }
+        #endif
+
+        if !parserText.isEmpty {
+            let status = ocrReport.analytes.isEmpty
+                ? "\(fallbackSummary) No supported hormone rows were found in OCR."
+                : "\(fallbackSummary) Values were filled from OCR table parsing."
+            return LabReportExtractionOutcome(report: ocrReport, statusMessage: status)
+        }
+
+        let emptyReport = LabReport(
+            collectedAt: Date(),
+            sourceKind: sourceKind,
+            sourceText: "",
+            analytes: []
+        )
+        return LabReportExtractionOutcome(
+            report: emptyReport,
+            statusMessage: "\(fallbackSummary) OCR also failed."
+        )
+    }
+
     static func extract(
         from text: String,
         sourceKind: LabReportSourceKind,
         defaultHormone: SimulatedHormone
     ) async -> LabReportExtractionOutcome {
+        var parserText = text
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            parserText = await LabReportAIExtractor.repairOCRLabels(in: text)
+        }
+        #endif
+
         let ruleReport = HormoneLabResultParser.parseReport(
-            text,
+            parserText,
             sourceKind: sourceKind,
             defaultHormone: defaultHormone
         )
 
         #if canImport(FoundationModels)
-        if #available(iOS 27.0, *) {
+        if #available(iOS 26.0, *) {
             if let aiOutcome = await LabReportAIExtractor.extract(
-                from: text,
+                from: parserText,
                 sourceKind: sourceKind,
                 fallback: ruleReport
             ) {
@@ -973,8 +1270,9 @@ private enum LabReportExtractionPipeline {
             }
 
             let fallbackStatus = ruleReport.analytes.isEmpty
-                ? "Apple on-device model was unavailable or could not structure this report."
-                : "Apple on-device model was unavailable or could not structure this report; OCR table parsing was used."
+                ? LabReportAIExtractor.textUserFacingFallbackSummary()
+                : "\(LabReportAIExtractor.textUserFacingFallbackSummary()) Values were filled from OCR table parsing."
+            LabReportAIExtractor.logTextDiagnosticSummary()
             return LabReportExtractionOutcome(report: ruleReport, statusMessage: fallbackStatus)
         }
         #endif
@@ -988,82 +1286,1193 @@ private enum LabReportExtractionPipeline {
 
 #if canImport(FoundationModels)
 @available(iOS 27.0, *)
-private enum LabReportAIExtractor {
+private func appHasPrivateCloudComputeEntitlement() -> Bool {
+    #if targetEnvironment(simulator)
+    return false
+    #else
+    guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+          let data = try? Data(contentsOf: url),
+          let text = String(data: data, encoding: .isoLatin1) ?? String(data: data, encoding: .utf8) else {
+        return false
+    }
+    return text.contains("<key>com.apple.developer.private-cloud-compute</key>")
+        && text.contains("<true/>")
+    #endif
+}
+
+@available(iOS 26.0, *)
+fileprivate enum LabReportAIExtractor {
+    private static let activeAttemptKey = "labResults.activeFoundationModelAttempt"
+    private static let activeAttemptStartedAtKey = "labResults.activeFoundationModelAttemptStartedAt"
+    private static let crashDisabledUntilPrefix = "labResults.foundationModelAttemptDisabledUntil."
+    private static let lastAttemptErrorPrefix = "labResults.foundationModelAttemptLastError."
+    private static let attemptStaleInterval: TimeInterval = 15 * 60
+    private static let crashDisableInterval: TimeInterval = 10 * 60
+
+    private enum ModelAttempt: String {
+        case privateCloudVision
+        case onDeviceVision
+        case privateCloudUniversal
+        case onDeviceUniversal
+        case privateCloudLabelRepair
+        case onDeviceLabelRepair
+        case privateCloudMetadata
+        case onDeviceMetadata
+        // Kept for reading old diagnostic keys after earlier builds.
+        case textJSON
+        case structuredText
+    }
+
+    static func repairOCRLabels(in text: String) async -> String {
+        guard !text.trimmed.isEmpty else { return text }
+        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+        let candidates = labelCandidates(in: lines)
+        guard !candidates.isEmpty else { return text }
+
+        var repairedLines = lines
+        let deterministicMappings = candidates.compactMap { candidate -> LabelRepairMapping? in
+                guard let kind = deterministicKind(forLabel: candidate.text) else { return nil }
+                return LabelRepairMapping(id: candidate.id, kind: kind.rawValue)
+        }
+        applyLabelMappings(
+            deterministicMappings,
+            candidates: candidates,
+            lines: &repairedLines
+        )
+
+        let deterministicIDs = Set(deterministicMappings.map(\.id))
+        let uncertainCandidates = candidates.filter { !deterministicIDs.contains($0.id) }
+        if let aiMappings = await aiLabelMappings(for: uncertainCandidates), !aiMappings.isEmpty {
+            applyLabelMappings(aiMappings, candidates: candidates, lines: &repairedLines)
+        }
+        return repairedLines.joined(separator: "\n")
+    }
+
+    static func extract(
+        from images: [UIImage],
+        sourceKind: LabReportSourceKind,
+        ocrText: String,
+        fallback: LabReport
+    ) async -> LabReportExtractionOutcome? {
+        #if canImport(FoundationModels)
+        if #available(iOS 27.0, *),
+           let payload = await generatedPayloadUsingPrivateCloudVision(
+                images: images,
+                ocrText: ocrText,
+                fallback: fallback
+           ),
+           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: ocrText, fallback: fallback) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: anchoredStatus(
+                    "Private Cloud Compute read the report image; table values were verified against OCR anchors.",
+                    fallback: fallback
+                )
+            )
+        }
+
+        if #available(iOS 27.0, *),
+           let payload = await generatedPayloadUsingOnDeviceVision(
+                images: images,
+                ocrText: ocrText,
+                fallback: fallback
+           ),
+           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: ocrText, fallback: fallback) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: anchoredStatus(
+                    "On-device Apple Intelligence read the report image; table values were verified against OCR anchors.",
+                    fallback: fallback
+                )
+            )
+        }
+        #endif
+
+        guard !ocrText.trimmed.isEmpty else { return nil }
+        guard let outcome = await extract(from: ocrText, sourceKind: sourceKind, fallback: fallback) else {
+            return nil
+        }
+
+        return LabReportExtractionOutcome(
+            report: outcome.report,
+            statusMessage: anchoredStatus(
+                "OCR read the image; Apple Intelligence organized verified OCR metadata.",
+                fallback: fallback
+            )
+        )
+    }
+
     static func extract(
         from text: String,
         sourceKind: LabReportSourceKind,
         fallback: LabReport
     ) async -> LabReportExtractionOutcome? {
-        let prompt = prompt(for: text)
-
-        if let local = await generatedJSONUsingOnDeviceModel(prompt: prompt),
-           let report = decodeReport(from: local, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
-            return LabReportExtractionOutcome(
-                report: report,
-                statusMessage: "Structured with Apple on-device FoundationModels."
-            )
+        if shouldAttemptUniversalExtraction(for: fallback) {
+            if let outcome = await universalExtractionOutcome(
+                from: text,
+                sourceKind: sourceKind,
+                fallback: fallback
+            ) {
+                return outcome
+            }
+        } else {
+            clearAttemptError(.privateCloudUniversal)
+            clearAttemptError(.onDeviceUniversal)
         }
 
-        if UserDefaults.standard.bool(forKey: "labResults.enablePrivateCloudExtraction"),
-           let cloud = await generatedJSONUsingPrivateCloud(prompt: prompt),
-           let report = decodeReport(from: cloud, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
+        guard !fallback.analytes.isEmpty else { return nil }
+        guard metadataNeedsModel(fallback) else {
+            clearAttemptError(.privateCloudMetadata)
+            clearAttemptError(.onDeviceMetadata)
+            return nil
+        }
+        let prompt = metadataPrompt(for: metadataEvidenceText(sourceText: text, fallback: fallback))
+
+        #if canImport(FoundationModels)
+        if #available(iOS 27.0, *),
+           let payload = await metadataPayloadUsingPrivateCloud(prompt: prompt),
+           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
             return LabReportExtractionOutcome(
                 report: report,
-                statusMessage: "Structured with Apple Private Cloud Compute FoundationModels."
+                statusMessage: anchoredStatus("Private Cloud Compute filled verified report metadata.", fallback: fallback)
+            )
+        }
+        #endif
+
+        if let payload = await metadataPayloadUsingOnDeviceModel(prompt: prompt),
+           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: anchoredStatus("On-device Apple Intelligence filled verified report metadata.", fallback: fallback)
             )
         }
 
         return nil
     }
 
-    private static func generatedJSONUsingPrivateCloud(prompt: String) async -> String? {
+    static func logImageDiagnosticSummary() {
+        #if DEBUG
+        NSLog("LAB_FOUNDATION_MODEL_SUMMARY %@", detailedImageDiagnosticSummary())
+        #endif
+    }
+
+    static func logTextDiagnosticSummary() {
+        #if DEBUG
+        NSLog("LAB_FOUNDATION_MODEL_SUMMARY %@", detailedTextDiagnosticSummary())
+        #endif
+    }
+
+    static func imageUserFacingFallbackSummary() -> String {
+        userFacingFallbackSummary(kind: "image OCR evidence")
+    }
+
+    static func textUserFacingFallbackSummary() -> String {
+        userFacingFallbackSummary(kind: "OCR text")
+    }
+
+    static func detailedTextDiagnosticSummary() -> String {
+        detailedDiagnosticSummary(for: [
+            .privateCloudUniversal,
+            .onDeviceUniversal,
+            .privateCloudMetadata,
+            .onDeviceMetadata,
+            .privateCloudLabelRepair,
+            .onDeviceLabelRepair
+        ])
+    }
+
+    static func detailedImageDiagnosticSummary() -> String {
+        detailedDiagnosticSummary(for: [
+            .privateCloudVision,
+            .onDeviceVision,
+            .privateCloudUniversal,
+            .onDeviceUniversal,
+            .privateCloudMetadata,
+            .onDeviceMetadata,
+            .privateCloudLabelRepair,
+            .onDeviceLabelRepair
+        ])
+    }
+
+    private struct LabelCandidate {
+        var id: Int
+        var lineIndex: Int
+        var text: String
+        var context: String
+    }
+
+    private struct LabelRepairPayload: Decodable {
+        var labels: [LabelRepairMapping]
+    }
+
+    private struct LabelRepairMapping: Decodable {
+        var id: Int
+        var kind: String
+    }
+
+    private static var localContentTransformModel: SystemLanguageModel {
+        SystemLanguageModel(
+            useCase: .contentTagging,
+            guardrails: .permissiveContentTransformations
+        )
+    }
+
+    private static var labelRepairOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 320)
+    }
+
+    private static var metadataGenerationOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 520)
+    }
+
+    private static var universalGenerationOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_200)
+    }
+
+    private static func labelCandidates(in lines: [String]) -> [LabelCandidate] {
+        var candidates: [LabelCandidate] = []
+        for (lineIndex, line) in lines.enumerated() {
+            guard let label = sanitizedLabelCandidate(from: line, lineIndex: lineIndex, lines: lines) else { continue }
+            candidates.append(LabelCandidate(
+                id: candidates.count,
+                lineIndex: lineIndex,
+                text: label,
+                context: labelContext(around: lineIndex, lines: lines)
+            ))
+        }
+        return candidates
+    }
+
+    private static func sanitizedLabelCandidate(
+        from line: String,
+        lineIndex: Int,
+        lines: [String]
+    ) -> String? {
+        guard !isAdministrativeLabelLine(line) else { return nil }
+        var label = line
+        label = label.replacingOccurrences(
+            of: #"\d{1,4}\s*[:：]\s*\d{1,2}(?:\s*[:：]\s*\d{1,2})?"#,
+            with: " ",
+            options: .regularExpression
+        )
+        label = label.replacingOccurrences(
+            of: #"[<>≤≥]?\s*\d+(?:[\.,]\d+)?\s*(?:-|~|至|到)\s*[<>≤≥]?\s*\d+(?:[\.,]\d+)?"#,
+            with: " ",
+            options: .regularExpression
+        )
+        label = label.replacingOccurrences(of: labelUnitPattern, with: " ", options: [.regularExpression, .caseInsensitive])
+        label = label.replacingOccurrences(of: #"(?<![A-Za-z])\d+(?:[\.,]\d+)?"#, with: " ", options: .regularExpression)
+        label = label.replacingOccurrences(of: #"^[\s#•·↑↓+\-¥￥]+"#, with: " ", options: .regularExpression)
+        label = label.replacingOccurrences(of: #"\bTanner\s*\S*"#, with: " ", options: [.regularExpression, .caseInsensitive])
+
+        let noise = ["项目", "结果", "参考范围", "单位", "审核", "检验", "核对", "时间", "标本", "种类"]
+        for token in noise {
+            label = label.replacingOccurrences(of: token, with: " ")
+        }
+        label = label
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmed
+
+        guard !label.isEmpty, label.count <= 48 else { return nil }
+        if containsHormoneLabelSignal(label) {
+            return label
+        }
+
+        guard isPossibleLabLabelFragment(label),
+              hasMeasurementEvidenceNearLine(lineIndex, lines: lines) else {
+            return nil
+        }
+        return label
+    }
+
+    private static func containsHormoneLabelSignal(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let latinSignals = ["e2", "prl", "testo", "testosterone", "fsh", "lh", "dhea", "shbg"]
+        if latinSignals.contains(where: { lower.contains($0) }) {
+            return true
+        }
+        let chineseSignals = ["雌二醇", "泌乳素", "卵泡", "黄体", "睾", "睪", "孕酮", "脱氢表雄酮"]
+        return chineseSignals.contains { text.contains($0) }
+    }
+
+    private static func isPossibleLabLabelFragment(_ label: String) -> Bool {
+        let lower = label.lowercased()
+        let noise = [
+            "项目", "结果", "参考", "范围", "单位", "审核", "检验", "核对", "时间",
+            "标本", "样本", "备注", "姓名", "性别", "年龄", "报告", "打印",
+            "临床诊断", "标本编号", "病员号", "床号", "送检医生", "送检科室",
+            "reference", "result", "unit", "sample", "specimen", "collected", "reported"
+        ]
+        guard !noise.contains(where: { lower.contains($0.lowercased()) }) else {
+            return false
+        }
+        let hasLetter = label.rangeOfCharacter(from: .letters) != nil
+        let hasCJK = label.unicodeScalars.contains { scalar in
+            (0x4E00...0x9FFF).contains(Int(scalar.value))
+        }
+        return hasLetter || hasCJK
+    }
+
+    private static func isAdministrativeLabelLine(_ line: String) -> Bool {
+        let lower = line.lowercased()
+        let signals = [
+            "临床诊断", "标本编号", "病员号", "床号", "送检医生", "送检科室",
+            "diagnosis", "specimen id", "accession", "provider", "doctor", "patient"
+        ]
+        return signals.contains { lower.contains($0.lowercased()) }
+    }
+
+    private static func hasMeasurementEvidenceNearLine(_ index: Int, lines: [String]) -> Bool {
+        let nearbyIndices = (index - 2...index + 2).filter { lines.indices.contains($0) }
+        return nearbyIndices.contains { candidateIndex in
+            let line = lines[candidateIndex]
+            if containsReferenceRangeText(line) {
+                return true
+            }
+            if line.range(of: labelUnitPattern, options: [.regularExpression, .caseInsensitive]) != nil {
+                return true
+            }
+            return false
+        }
+    }
+
+    private static func labelContext(around index: Int, lines: [String]) -> String {
+        (index - 2...index + 2)
+            .filter { lines.indices.contains($0) }
+            .map { candidateIndex in
+                let marker = candidateIndex == index ? "*" : " "
+                return "\(marker)\(candidateIndex): \(lines[candidateIndex])"
+            }
+            .joined(separator: "\n")
+    }
+
+    private static func containsReferenceRangeText(_ line: String) -> Bool {
+        line.range(
+            of: #"[<>≤≥]?\s*\d+(?:[\.,]\d+)?\s*(?:-|~|至|到)\s*[<>≤≥]?\s*\d+(?:[\.,]\d+)?"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static var labelUnitPattern: String {
+        #"(?i)\b(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|p\s*mol|n\s*mol|u\s*mol|µ\s*mol|μ\s*mol|m\s*IU|IU|IV|U)\s*/?\s*(?:m\s*[lL1]|d\s*[lL1]|[lL1])\b"#
+    }
+
+    private static func deterministicKind(forLabel label: String) -> LabAnalyteKind? {
+        let lower = label.lowercased()
+        if lower.contains("testo") || lower.contains("testosterone") || label.contains("睾酮") || label.contains("睪酮") {
+            return .testosterone
+        }
+        if lower.contains("e2") || lower.contains("estradiol") || label.contains("雌二醇") {
+            return .estradiol
+        }
+        if lower.contains("prl") || lower.contains("prolactin") || label.contains("泌乳素") {
+            return .prolactin
+        }
+        if lower.contains("fsh") || label.contains("卵泡") {
+            return .follicleStimulatingHormone
+        }
+        if lower.contains("lh") || label.contains("黄体") {
+            return .luteinizingHormone
+        }
+        if lower.contains("dhea") || label.contains("脱氢表雄酮") {
+            return .dehydroepiandrosteroneSulfate
+        }
+        if lower.contains("shbg") || label.contains("性激素结合") {
+            return .sexHormoneBindingGlobulin
+        }
+        if label.contains("孕酮") || lower.contains("progesterone") {
+            return .progesterone
+        }
+        return nil
+    }
+
+    private static func aiLabelMappings(for candidates: [LabelCandidate]) async -> [LabelRepairMapping]? {
+        guard !candidates.isEmpty else {
+            clearAttemptError(.privateCloudLabelRepair)
+            clearAttemptError(.onDeviceLabelRepair)
+            return nil
+        }
+        #if canImport(FoundationModels)
+        if #available(iOS 27.0, *),
+           let cloudMappings = await privateCloudLabelMappings(for: candidates),
+           !cloudMappings.isEmpty {
+            return cloudMappings
+        }
+        #endif
+        return await onDeviceLabelMappings(for: candidates)
+    }
+
+    @available(iOS 27.0, *)
+    private static func privateCloudLabelMappings(for candidates: [LabelCandidate]) async -> [LabelRepairMapping]? {
+        let attempt = ModelAttempt.privateCloudLabelRepair
+        guard shouldAttempt(attempt) else { return nil }
+        guard appHasPrivateCloudComputeEntitlement() else {
+            recordAttemptError("missing com.apple.developer.private-cloud-compute entitlement", attempt: attempt)
+            return nil
+        }
         let model = PrivateCloudComputeLanguageModel()
-        guard model.isAvailable else { return nil }
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(privateCloudAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
 
         do {
-            let session = LanguageModelSession(
-                model: model,
-                instructions: "Extract structured hormone lab report data. Return only strict JSON."
+            let session = LanguageModelSession(model: model, instructions: labelRepairInstructions())
+            session.prewarm()
+            let response = try await session.respond(
+                to: labelRepairPrompt(for: candidates),
+                generating: GeneratedLabelRepairPayload.self,
+                includeSchemaInPrompt: true,
+                options: labelRepairOptions
             )
-            return try await session.respond(to: prompt).content
+            return labelMappings(from: response.content)
         } catch {
+            logModelError(error, attempt: attempt)
             return nil
         }
     }
 
-    private static func generatedJSONUsingOnDeviceModel(prompt: String) async -> String? {
+    private static func onDeviceLabelMappings(for candidates: [LabelCandidate]) async -> [LabelRepairMapping]? {
+        let attempt = ModelAttempt.onDeviceLabelRepair
+        guard shouldAttempt(attempt) else { return nil }
+        let model = localContentTransformModel
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(systemAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: labelRepairInstructions())
+            session.prewarm()
+            let response = try await session.respond(
+                to: labelRepairPrompt(for: candidates),
+                generating: GeneratedLabelRepairPayload.self,
+                includeSchemaInPrompt: true,
+                options: labelRepairOptions
+            )
+            return labelMappings(from: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func labelRepairPrompt(for candidates: [LabelCandidate]) -> String {
+        let candidateText = candidates.prefix(24)
+            .map { candidate in
+                """
+                id=\(candidate.id)
+                fragment=\(candidate.text)
+                context:
+                \(candidate.context)
+                """
+            }
+            .joined(separator: "\n\n")
+        return """
+        OCR label fragments and nearby rows:
+        \(candidateText)
+        """
+    }
+
+    private static func labelMappings(from payload: GeneratedLabelRepairPayload) -> [LabelRepairMapping] {
+        payload.labels.compactMap { mapping in
+            guard HormoneLabResultParser.kind(fromAIValue: mapping.kind) != nil else { return nil }
+            return LabelRepairMapping(id: mapping.id, kind: mapping.kind)
+        }
+    }
+
+    private static func labelRepairInstructions() -> String {
+        """
+        Classify short OCR table label fragments into item codes.
+        Use the fragment plus nearby row context to resolve OCR confusions, visually similar characters, mixed Chinese/English labels, and abbreviations.
+        Return mappings only when the context visibly supports one item.
+        Use these codes: E2, T, PRL, FSH, LH, P, SHBG, freeT, DHEAS, other.
+        Treat a strange-looking fragment as possible OCR text when its table position, value, unit, or reference interval makes a hormone label likely.
+        Omit uncertain fragments instead of guessing.
+        Do not infer FSH or LH unless the fragment itself contains an FSH/LH abbreviation or matching words.
+        """
+    }
+
+    private static func applyLabelMappings(
+        _ mappings: [LabelRepairMapping],
+        candidates: [LabelCandidate],
+        lines: inout [String]
+    ) {
+        let candidatesByID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+        for mapping in mappings {
+            guard mapping.kind.lowercased() != LabAnalyteKind.other.rawValue.lowercased() else {
+                continue
+            }
+            guard let candidate = candidatesByID[mapping.id],
+                  let kind = HormoneLabResultParser.kind(fromAIValue: mapping.kind),
+                  lines.indices.contains(candidate.lineIndex) else {
+                continue
+            }
+            let hint = "[analyte:\(kind.rawValue) \(kind.defaultName)]"
+            if !lines[candidate.lineIndex].contains(hint) {
+                lines[candidate.lineIndex] += " \(hint)"
+            }
+        }
+    }
+
+    private static func jsonEscaped(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"\"#, with: #"\\"#)
+            .replacingOccurrences(of: #"""#, with: #"\""#)
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    @available(iOS 27.0, *)
+    private static func generatedPayloadUsingPrivateCloudVision(
+        images: [UIImage],
+        ocrText: String,
+        fallback: LabReport
+    ) async -> AIReportPayload? {
+        let attempt = ModelAttempt.privateCloudVision
+        guard shouldAttempt(attempt) else { return nil }
+        guard appHasPrivateCloudComputeEntitlement() else {
+            recordAttemptError("missing com.apple.developer.private-cloud-compute entitlement", attempt: attempt)
+            return nil
+        }
+        let model = PrivateCloudComputeLanguageModel()
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(privateCloudAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+        guard let prompt = visionPrompt(images: images, ocrText: ocrText, fallback: fallback) else {
+            recordAttemptError("image prompt could not be built", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: visionInstructionsText())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedAIReportPayload.self,
+                includeSchemaInPrompt: true,
+                options: textGenerationOptions
+            )
+            return AIReportPayload(generated: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    @available(iOS 27.0, *)
+    private static func generatedPayloadUsingOnDeviceVision(
+        images: [UIImage],
+        ocrText: String,
+        fallback: LabReport
+    ) async -> AIReportPayload? {
+        let attempt = ModelAttempt.onDeviceVision
+        guard shouldAttempt(attempt) else { return nil }
+        let model = localContentTransformModel
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(systemAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+        guard let prompt = visionPrompt(images: images, ocrText: ocrText, fallback: fallback) else {
+            recordAttemptError("image prompt could not be built", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: visionInstructionsText())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedAIReportPayload.self,
+                includeSchemaInPrompt: true,
+                options: textGenerationOptions
+            )
+            return AIReportPayload(generated: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func visionInstructionsText() -> String {
+        """
+        Extract visible hormone lab report data from the attached image.
+        Use OCR anchors when they are clearer than the image.
+        Copy measured result values only, never reference range numbers.
+        Do not include patient identity, IDs, billing fields, or medical interpretation.
+        Leave uncertain fields empty.
+        """
+    }
+
+    @available(iOS 27.0, *)
+    private static func visionPrompt(
+        images: [UIImage],
+        ocrText: String,
+        fallback: LabReport
+    ) -> FoundationModels.Prompt? {
+        guard let image = images.first,
+              let cgImage = cgImageForModel(from: image) else {
+            return nil
+        }
+
+        let orientation = CGImagePropertyOrientation(image.imageOrientation)
+        let attachment = FoundationModels.Attachment(cgImage, orientation: orientation)
+            .label("hormone lab report image")
+        let anchors = evidenceTextForAI(sourceText: ocrText, fallback: fallback)
+
+        return FoundationModels.Prompt {
+            """
+            Extract a hormone lab report from the image.
+            Preserve only visible institution, location, specimen, method, collection/report times, and hormone analyte rows.
+            If OCR anchors list table rows, treat those rows as the value/unit anchors.
+            For specimen, return a normalized plausible lab specimen/material term rather than raw OCR noise; leave it empty when uncertain.
+            OCR anchors:
+            \(anchors)
+            """
+            attachment
+        }
+    }
+
+    private static func cgImageForModel(from image: UIImage) -> CGImage? {
+        if let cgImage = image.cgImage {
+            return cgImage
+        }
+        guard let ciImage = image.ciImage else {
+            return nil
+        }
+        return CIContext().createCGImage(ciImage, from: ciImage.extent)
+    }
+
+    @available(iOS 27.0, *)
+    private static func metadataPayloadUsingPrivateCloud(prompt: String) async -> AIMetadataPayload? {
+        let attempt = ModelAttempt.privateCloudMetadata
+        guard shouldAttempt(attempt) else { return nil }
+        guard appHasPrivateCloudComputeEntitlement() else {
+            recordAttemptError("missing com.apple.developer.private-cloud-compute entitlement", attempt: attempt)
+            return nil
+        }
+        let model = PrivateCloudComputeLanguageModel()
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(privateCloudAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: metadataInstructionsText())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedAIMetadataPayload.self,
+                includeSchemaInPrompt: true,
+                options: metadataGenerationOptions
+            )
+            return AIMetadataPayload(generated: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func metadataPayloadUsingOnDeviceModel(prompt: String) async -> AIMetadataPayload? {
+        let attempt = ModelAttempt.onDeviceMetadata
+        guard shouldAttempt(attempt) else { return nil }
+        let model = localContentTransformModel
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(systemAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: metadataInstructionsText())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedAIMetadataPayload.self,
+                includeSchemaInPrompt: true,
+                options: metadataGenerationOptions
+            )
+            return AIMetadataPayload(generated: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func metadataInstructionsText() -> String {
+        """
+        Extract document header metadata from OCR evidence.
+        Fill collection time, report time, institution, location, specimen, and method when visible.
+        For specimen, return a normalized plausible lab specimen/material term, not raw OCR characters. Use the document language when confident.
+        If a specimen value looks like OCR noise or is not a plausible biological specimen/material, return an empty string.
+        Normalize obvious OCR confusions only when the field context makes the intended medical/lab term clear.
+        Ignore names, IDs, billing fields, reviewers, and diagnoses.
+        Use empty strings for unknown fields.
+        """
+    }
+
+    private static func universalExtractionOutcome(
+        from text: String,
+        sourceKind: LabReportSourceKind,
+        fallback: LabReport
+    ) async -> LabReportExtractionOutcome? {
+        let evidenceLines = universalEvidenceLines(from: text)
+        guard !evidenceLines.isEmpty else {
+            clearAttemptError(.privateCloudUniversal)
+            clearAttemptError(.onDeviceUniversal)
+            return nil
+        }
+        let prompt = universalExtractionPrompt(for: evidenceLines, fallback: fallback)
+
+        #if canImport(FoundationModels)
+        if #available(iOS 27.0, *),
+           let payload = await universalPayloadUsingPrivateCloud(prompt: prompt),
+           let report = decodeReport(
+                from: payload,
+                evidenceLines: evidenceLines,
+                sourceKind: sourceKind,
+                sourceText: text,
+                fallback: fallback
+           ) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: anchoredStatus("Private Cloud Compute extracted verified OCR measurement rows.", fallback: report)
+            )
+        }
+        #endif
+
+        if let payload = await universalPayloadUsingOnDeviceModel(prompt: prompt),
+           let report = decodeReport(
+                from: payload,
+                evidenceLines: evidenceLines,
+                sourceKind: sourceKind,
+                sourceText: text,
+                fallback: fallback
+           ) {
+            return LabReportExtractionOutcome(
+                report: report,
+                statusMessage: anchoredStatus("On-device Apple Intelligence extracted verified OCR measurement rows.", fallback: report)
+            )
+        }
+
+        return nil
+    }
+
+    @available(iOS 27.0, *)
+    private static func universalPayloadUsingPrivateCloud(prompt: String) async -> GeneratedUniversalReportPayload? {
+        let attempt = ModelAttempt.privateCloudUniversal
+        guard shouldAttempt(attempt) else { return nil }
+        guard appHasPrivateCloudComputeEntitlement() else {
+            recordAttemptError("missing com.apple.developer.private-cloud-compute entitlement", attempt: attempt)
+            return nil
+        }
+        let model = PrivateCloudComputeLanguageModel()
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(privateCloudAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: universalExtractionInstructions())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedUniversalReportPayload.self,
+                includeSchemaInPrompt: true,
+                options: universalGenerationOptions
+            )
+            return response.content
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func universalPayloadUsingOnDeviceModel(prompt: String) async -> GeneratedUniversalReportPayload? {
+        let attempt = ModelAttempt.onDeviceUniversal
+        guard shouldAttempt(attempt) else { return nil }
+        let model = localContentTransformModel
+        guard model.isAvailable else {
+            recordAttemptError("availability=\(systemAvailabilityDescription(model.availability))", attempt: attempt)
+            return nil
+        }
+
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: universalExtractionInstructions())
+            session.prewarm()
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedUniversalReportPayload.self,
+                includeSchemaInPrompt: true,
+                options: universalGenerationOptions
+            )
+            return response.content
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func jsonPayloadUsingOnDeviceModel(prompt: String) async -> AIReportPayload? {
+        let attempt = ModelAttempt.textJSON
+        guard shouldAttempt(attempt) else { return nil }
         let model = SystemLanguageModel.default
         guard model.isAvailable else { return nil }
 
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
         do {
             let session = LanguageModelSession(
                 model: model,
-                instructions: "Extract structured hormone lab report data. Return only strict JSON."
+                instructions: "Convert OCR evidence into JSON only. This is transcription and table cleanup, not advice or interpretation."
             )
-            return try await session.respond(to: prompt).content
+            let response = try await session.respond(to: prompt, options: jsonGenerationOptions)
+            return jsonPayload(from: response.content, attempt: attempt)
         } catch {
+            logModelError(error, attempt: attempt)
             return nil
         }
     }
 
-    private static func prompt(for text: String) -> String {
-        """
-        Read this OCR text from a hormone lab report and return JSON only.
-        Do not use reference range numbers as result values. A result value must be the measured value in the table row.
-        Preserve estradiol, testosterone, LH, FSH, prolactin, progesterone, SHBG, free testosterone, DHEA-S, and other hormone rows when present.
-        Use ISO-like dates when possible.
+    private static func generatedPayloadUsingOnDeviceModel(prompt: String) async -> AIReportPayload? {
+        let attempt = ModelAttempt.structuredText
+        guard shouldAttempt(attempt) else { return nil }
+        let model = SystemLanguageModel.default
+        guard model.isAvailable else { return nil }
 
-        JSON shape:
+        markAttemptStarted(attempt)
+        defer { markAttemptFinished(attempt) }
+
+        do {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: "Extract structured hormone lab report data from visible evidence only. Do not provide medical interpretation."
+            )
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedAIReportPayload.self,
+                includeSchemaInPrompt: true,
+                options: textGenerationOptions
+            )
+            return AIReportPayload(generated: response.content)
+        } catch {
+            logModelError(error, attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func jsonPayload(from rawContent: String, attempt: ModelAttempt) -> AIReportPayload? {
+        guard let data = jsonObjectText(from: rawContent)?.data(using: .utf8) else {
+            recordAttemptError("JSON response did not contain an object", attempt: attempt)
+            return nil
+        }
+
+        do {
+            return try JSONDecoder().decode(AIReportPayload.self, from: data)
+        } catch {
+            recordAttemptError("JSON decode failed: \(describeModelError(error))", attempt: attempt)
+            return nil
+        }
+    }
+
+    private static func jsonObjectText(from rawContent: String) -> String? {
+        let trimmed = rawContent.trimmed
+        if trimmed.hasPrefix("{"), trimmed.hasSuffix("}") {
+            return trimmed
+        }
+
+        var content = trimmed
+        if content.hasPrefix("```") {
+            content = content
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```JSON", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmed
+            if content.hasPrefix("{"), content.hasSuffix("}") {
+                return content
+            }
+        }
+
+        guard let start = content.firstIndex(of: "{"),
+              let end = content.lastIndex(of: "}"),
+              start <= end else {
+            return nil
+        }
+        return String(content[start...end])
+    }
+
+    private static var textGenerationOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_800)
+    }
+
+    private static var jsonGenerationOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_400)
+    }
+
+    private static func evidenceTextForAI(sourceText: String, fallback: LabReport) -> String {
+        var lines: [String] = [
+            "OCR evidence prepared for structured lab-result extraction.",
+            "Patient identity fields, visit IDs, sample IDs, and billing fields are intentionally omitted."
+        ]
+
+        if !fallback.institution.trimmed.isEmpty {
+            lines.append("Institution: \(fallback.institution.trimmed)")
+        }
+        if !fallback.location.trimmed.isEmpty {
+            lines.append("Location: \(fallback.location.trimmed)")
+        }
+        let specimen = LabReportFieldSanitizer.reviewSpecimen(fallback.specimen)
+        if !specimen.isEmpty {
+            lines.append("Specimen: \(specimen)")
+        }
+        if !fallback.method.trimmed.isEmpty {
+            lines.append("Report method: \(fallback.method.trimmed)")
+        }
+
+        lines.append("Collected at: \(aiDateString(fallback.collectedAt))")
+        if let reportedAt = fallback.reportedAt {
+            lines.append("Reported at: \(aiDateString(reportedAt))")
+        }
+
+        for analyte in fallback.analytes {
+            let name = analyte.displayName
+            var parts = [
+                "Analyte row",
+                "kind=\(analyte.kind.rawValue)",
+                "name=\(name)"
+            ]
+            if let value = analyte.value {
+                parts.append("value=\(aiNumberString(value))")
+            }
+            if !analyte.unitSymbol.trimmed.isEmpty {
+                parts.append("unit=\(analyte.unitSymbol.trimmed)")
+            }
+            if let method = analyte.method?.trimmed, !method.isEmpty {
+                parts.append("method=\(method)")
+            }
+            if let sourceLine = analyte.sourceLine?.trimmed, !sourceLine.isEmpty {
+                parts.append("sourceLine=\(sourceLine)")
+            }
+            if let note = analyte.note?.trimmed, !note.isEmpty {
+                parts.append("note=\(note)")
+            }
+            lines.append(parts.joined(separator: " | "))
+        }
+
+        if fallback.analytes.isEmpty {
+            let usefulLines = sourceText
+                .split(whereSeparator: \.isNewline)
+                .map { String($0).trimmed }
+                .filter(isUsefulEvidenceLineForAI)
+                .prefix(32)
+            lines.append(contentsOf: usefulLines.map { "OCR line: \($0)" })
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func metadataEvidenceText(sourceText: String, fallback: LabReport) -> String {
+        var lines: [String] = [
+            "OCR lines prepared for document header metadata extraction.",
+            "Personal identifiers, billing fields, reviewer names, and diagnoses are omitted."
+        ]
+
+        if !fallback.institution.trimmed.isEmpty {
+            lines.append("Existing institution candidate: \(fallback.institution.trimmed)")
+        }
+        if !fallback.location.trimmed.isEmpty {
+            lines.append("Existing location candidate: \(fallback.location.trimmed)")
+        }
+        let specimen = LabReportFieldSanitizer.reviewSpecimen(fallback.specimen)
+        if !specimen.isEmpty {
+            lines.append("Existing specimen candidate: \(specimen)")
+        }
+        if !fallback.method.trimmed.isEmpty {
+            lines.append("Existing method candidate: \(fallback.method.trimmed)")
+        }
+
+        lines.append("Existing collectedAt candidate: \(aiDateString(fallback.collectedAt))")
+        if let reportedAt = fallback.reportedAt {
+            lines.append("Existing reportedAt candidate: \(aiDateString(reportedAt))")
+        }
+
+        let metadataLines = sourceText
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmed }
+            .filter(isMetadataEvidenceLineForAI)
+            .prefix(28)
+        lines.append(contentsOf: metadataLines.map { "OCR metadata line: \($0)" })
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func metadataPrompt(for evidence: String) -> String {
+        """
+        Extract document metadata fields from this OCR evidence.
+        Use exact visible dates and names when possible.
+        Method must be copied or normalized only from an explicit assay-method or analyzer/platform line, such as a method label or analyzer token.
+        Do not use report titles, department names, specimen types, diagnoses, interpretation phrases, or generic analysis/result text as method.
+        For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If an OCR-corrupted specimen can be confidently normalized, use the normalized material; otherwise leave it empty.
+        Do not broaden a corrupted specimen to generic blood unless blood is explicitly visible.
+        Leave unknown fields empty.
+
+        Evidence:
+        \(evidence)
+        """
+    }
+
+    private struct UniversalEvidenceLine {
+        var id: Int
+        var text: String
+    }
+
+    private static func universalEvidenceLines(from sourceText: String) -> [UniversalEvidenceLine] {
+        let rawLines = sourceText
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmed }
+            .filter { !$0.isEmpty }
+
+        var lines: [UniversalEvidenceLine] = []
+        for line in rawLines where isUniversalEvidenceLineForAI(line) {
+            lines.append(UniversalEvidenceLine(id: lines.count, text: line))
+            if lines.count >= 80 { break }
+        }
+        return lines
+    }
+
+    private static func universalExtractionPrompt(
+        for evidenceLines: [UniversalEvidenceLine],
+        fallback: LabReport
+    ) -> String {
+        let lineText = evidenceLines
+            .map { "\($0.id): \($0.text)" }
+            .joined(separator: "\n")
+        let anchorText = fallback.analytes.isEmpty ? "No verified rows yet." : evidenceTextForAI(sourceText: "", fallback: fallback)
+
+        return """
+        Extract visible measurement rows from OCR lines.
+        Use itemCode E2, T, PRL, FSH, LH, P, SHBG, freeT, DHEAS, or other.
+        Resolve OCR confusions, visually similar characters, split rows, and common abbreviations using row context.
+        For each row, copy the measured result value from the result field, not from a reference interval.
+        Return sourceLineID and exact sourceLine text for every row.
+        Omit rows when the item label, value, or source line is uncertain after context review.
+        Leave method empty unless the same row or a visible method/analyzer column explicitly contains a method or analyzer token.
+        Existing verified anchors:
+        \(anchorText)
+
+        OCR lines:
+        \(lineText)
+        """
+    }
+
+    private static func universalExtractionInstructions() -> String {
+        """
+        Extract structured rows from OCR text. Return only rows that are directly visible.
+        Use item codes, not interpretation. Resolve OCR confusions from context, but do not infer missing rows.
+        Copy measured values exactly from source lines. Do not use reference interval numbers as measured values.
+        Leave method empty unless a source line explicitly contains an assay method or analyzer/platform token.
+        Ignore patient identity, order IDs, billing fields, reviewer names, and diagnoses.
+        """
+    }
+
+    private static func isUsefulEvidenceLineForAI(_ line: String) -> Bool {
+        guard !line.isEmpty else { return false }
+        let excluded = [
+            "姓名", "性别", "年龄", "病历号", "样本编号", "条形码号", "申请医生",
+            "审核者", "审核人", "打印次数", "收费类别", "费别", "临床诊断"
+        ]
+        if excluded.contains(where: { line.localizedCaseInsensitiveContains($0) }) {
+            return false
+        }
+
+        let useful = [
+            "雌二醇", "E2", "泌乳素", "PRL", "促卵泡", "FSH", "促黄体", "LH",
+            "睾酮", "testosterone", "孕酮", "progesterone", "硫酸脱氢表雄酮", "DHEA",
+            "SHBG", "free testosterone", "采集时间", "报告时间", "标本", "样本",
+            "检验机构", "检测机构", "实验室", "医院", "hospital", "laboratory", "method"
+        ]
+        return useful.contains { line.localizedCaseInsensitiveContains($0) }
+    }
+
+    private static func isMetadataEvidenceLineForAI(_ line: String) -> Bool {
+        guard !line.isEmpty else { return false }
+        let excluded = [
+            "姓名", "性别", "年龄", "病历号", "样本编号", "条形码号", "申请医生",
+            "审核者", "审核人", "收费类别", "费别", "临床诊断", "身份证", "电话"
+        ]
+        if excluded.contains(where: { line.localizedCaseInsensitiveContains($0) }) {
+            return false
+        }
+
+        let useful = [
+            "医院", "检验报告", "检验报告单", "检验机构", "检测机构", "实验室",
+            "hospital", "laboratory", "lab", "采集时间", "采样时间", "抽血时间",
+            "报告时间", "审核时间", "检验时间", "collection", "collected", "reported",
+            "标本", "样本", "血清", "血浆", "serum", "plasma", "系统或方法学", "方法",
+            "method", "assay", "i2000", "Abbott", "Roche", "Beckman"
+        ]
+        return useful.contains { line.localizedCaseInsensitiveContains($0) }
+    }
+
+    private static func isUniversalEvidenceLineForAI(_ line: String) -> Bool {
+        guard !line.isEmpty, line.count <= 180 else { return false }
+        let excluded = [
+            "姓名", "name:", "patient", "dob", "date of birth", "性别", "年龄",
+            "病历号", "mrn", "medical record", "样本编号", "specimen id", "accession",
+            "条形码号", "barcode", "申请医生", "provider", "doctor", "审核者", "审核人",
+            "收费类别", "billing", "invoice", "费别", "临床诊断", "diagnosis", "身份证",
+            "phone", "电话", "address"
+        ]
+        if excluded.contains(where: { line.localizedCaseInsensitiveContains($0) }) {
+            return false
+        }
+
+        let hasDigit = line.rangeOfCharacter(from: .decimalDigits) != nil
+        let hasMeasurementSignal = containsHormoneLabelSignal(line)
+            || ["estradiol", "oestradiol", "testosterone", "prolactin", "follicle", "lutein", "progesterone", "dhea", "shbg", "sex hormone"].contains { line.localizedCaseInsensitiveContains($0) }
+        let hasMetadataSignal = isMetadataEvidenceLineForAI(line)
+        let hasUnitSignal = line.range(of: labelUnitPattern, options: [.regularExpression, .caseInsensitive]) != nil
+
+        return hasMeasurementSignal || (hasDigit && hasUnitSignal) || hasMetadataSignal
+    }
+
+    private static func jsonPrompt(for text: String) -> String {
+        """
+        Return only one JSON object with this shape:
         {
-          "collectedAt": "YYYY-MM-DD HH:mm",
-          "reportedAt": "YYYY-MM-DD HH:mm",
+          "collectedAt": "YYYY-MM-DD HH:mm:ss or empty",
+          "reportedAt": "YYYY-MM-DD HH:mm:ss or empty",
           "institution": "",
           "location": "",
           "specimen": "",
           "method": "",
           "analytes": [
             {
-              "kind": "estradiol|testosterone|luteinizingHormone|follicleStimulatingHormone|prolactin|progesterone|sexHormoneBindingGlobulin|freeTestosterone|dehydroepiandrosteroneSulfate|other",
+              "kind": "estradiol|testosterone|prolactin|follicleStimulatingHormone|luteinizingHormone|progesterone|sexHormoneBindingGlobulin|freeTestosterone|dehydroepiandrosteroneSulfate|other",
               "name": "",
               "value": 0,
               "unit": "",
@@ -1075,66 +2484,804 @@ private enum LabReportAIExtractor {
           ]
         }
 
-        OCR text:
+        Rules:
+        - Return JSON only, with no Markdown and no explanation.
+        - Copy result values from value= fields or sourceLine result columns, not from reference ranges.
+        - Include all visible hormone analyte rows from the evidence.
+        - For known hormone kinds, leave name empty; use name only when kind is other.
+        - Leave referenceRange empty; HRT review does not store sex-assigned lab reference intervals.
+        - For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If OCR is corrupted, normalize only when confident; do not broaden to generic blood unless blood is explicit.
+        - Leave method empty unless an explicit assay method or analyzer/platform token is visible. Do not use department names, report titles, or analysis/result text as method.
+        - Leave note empty unless the row visibly contains an abnormal flag such as ↑ or ↓.
+        - Use empty strings for unknown fields and [] for missing analytes.
+
+        Evidence:
+        \(text)
+        """
+    }
+
+    private static func promptForStructuredGeneration(for text: String) -> String {
+        """
+        Extract structured hormone lab report data from the OCR evidence.
+        Copy measured result values only; never use reference range numbers as result values.
+        Include estradiol/E2, testosterone/T, prolactin/PRL, FSH, LH, progesterone/P, SHBG, free testosterone, and DHEA-S when visible.
+        Leave known hormone names and reference ranges empty; only use name for kind other.
+        For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If OCR is corrupted, normalize only when confident; do not broaden to generic blood unless blood is explicit.
+        Leave method empty unless an explicit assay method or analyzer/platform token is visible. Do not use department names, report titles, or analysis/result text as method.
+        Leave unknown optional fields empty. Do not invent rows, dates, or notes.
+
+        OCR evidence:
         \(text)
         """
     }
 
     private static func decodeReport(
-        from jsonText: String,
+        from payload: AIReportPayload,
         sourceKind: LabReportSourceKind,
         sourceText: String,
         fallback: LabReport
     ) -> LabReport? {
-        guard let data = extractJSONObject(from: jsonText).data(using: .utf8),
-              let payload = try? JSONDecoder().decode(AIReportPayload.self, from: data) else {
-            return nil
-        }
-
-        let analytes = payload.analytes.compactMap { item -> LabAnalyteResult? in
+        let decodedAnalytes = payload.analytes.compactMap { item -> LabAnalyteResult? in
             guard let kind = HormoneLabResultParser.kind(fromAIValue: item.kind ?? item.name),
-                  item.value != nil || !(item.referenceRange ?? "").trimmed.isEmpty else {
+                  item.value != nil else {
                 return nil
             }
-            let unit = item.unit ?? ""
+            let unit = HormoneLabResultParser.normalizedUnitSymbol(from: item.unit ?? "", kind: kind)
             let concentrationUnit = HormoneLabResultParser.concentrationUnit(from: unit, kind: kind)
 
             return LabAnalyteResult(
                 kind: kind,
-                name: (item.name ?? "").trimmed.isEmpty ? kind.defaultName : item.name?.trimmed,
+                name: kind == .other ? cleanAITextField(item.name)?.nilIfBlank : nil,
                 value: item.value,
                 unitSymbol: concentrationUnit?.symbol ?? unit.trimmed,
                 concentrationUnit: concentrationUnit,
-                referenceRange: item.referenceRange?.nilIfBlank,
-                method: item.method?.nilIfBlank,
-                sourceLine: item.sourceLine?.nilIfBlank,
-                note: item.note?.nilIfBlank
+                referenceRange: nil,
+                method: verifiedAIMethod(item.method, sourceText: sourceText, sourceLine: item.sourceLine),
+                sourceLine: cleanAITextField(item.sourceLine)?.nilIfBlank,
+                note: visibleFlagNote(cleanAITextField(item.note), sourceLine: cleanAITextField(item.sourceLine))
             )
         }
+        let analytes = sourceText.trimmed.isEmpty
+            ? decodedAnalytes
+            : decodedAnalytes.filter { hasVisibleEvidence(for: $0, in: sourceText) }
 
-        guard !analytes.isEmpty else { return nil }
+        let mergedAnalytes = merge(analytes, withAnchorsFrom: fallback)
+        guard !mergedAnalytes.isEmpty else { return nil }
 
         return LabReport(
             collectedAt: payload.collectedAt.flatMap(HormoneLabResultParser.parseDate) ?? fallback.collectedAt,
             reportedAt: payload.reportedAt.flatMap(HormoneLabResultParser.parseDate) ?? fallback.reportedAt,
-            institution: payload.institution?.trimmed ?? fallback.institution,
-            location: payload.location?.trimmed ?? fallback.location,
-            specimen: payload.specimen?.trimmed ?? fallback.specimen,
-            method: payload.method?.trimmed ?? fallback.method,
+            institution: cleanAITextField(payload.institution)?.nilIfBlank ?? fallback.institution,
+            location: cleanAITextField(payload.location)?.nilIfBlank ?? fallback.location,
+            specimen: verifiedAISpecimen(payload.specimen, sourceText: sourceText, fallback: fallback.specimen),
+            method: verifiedAIMethod(payload.method, sourceText: sourceText) ?? fallback.method,
             sourceKind: sourceKind,
             sourceText: sourceText,
-            analytes: HormoneLabResultParser.uniqued(analytes),
+            analytes: HormoneLabResultParser.uniqued(mergedAnalytes),
             note: fallback.note
         )
     }
 
-    private static func extractJSONObject(from text: String) -> String {
-        guard let start = text.firstIndex(of: "{"),
-              let end = text.lastIndex(of: "}"),
-              start <= end else {
-            return text
+    private static func decodeReport(
+        from payload: GeneratedUniversalReportPayload,
+        evidenceLines: [UniversalEvidenceLine],
+        sourceKind: LabReportSourceKind,
+        sourceText: String,
+        fallback: LabReport
+    ) -> LabReport? {
+        let linesByID = Dictionary(uniqueKeysWithValues: evidenceLines.map { ($0.id, $0.text) })
+        let analytes = payload.rows.compactMap { row -> AIAnalytePayload? in
+            guard let kind = HormoneLabResultParser.kind(fromAIValue: row.itemCode),
+                  kind != .other else {
+                return nil
+            }
+            let sourceLine = universalSourceLine(for: row, linesByID: linesByID)
+            guard !sourceLine.trimmed.isEmpty else { return nil }
+
+            return AIAnalytePayload(
+                kind: kind.rawValue,
+                name: kind == .other ? cleanAITextField(row.label)?.nilIfBlank : nil,
+                value: parseAIValueText(row.valueText),
+                unit: row.unit.nilIfBlank,
+                referenceRange: nil,
+                method: verifiedAIMethod(row.method, sourceText: sourceText, sourceLine: sourceLine),
+                sourceLine: cleanAITextField(sourceLine),
+                note: cleanAITextField(row.note)?.nilIfBlank
+            )
         }
-        return String(text[start...end])
+
+        let reportPayload = AIReportPayload(
+            collectedAt: payload.collectedAt.nilIfBlank,
+            reportedAt: payload.reportedAt.nilIfBlank,
+            institution: payload.institution.nilIfBlank,
+            location: payload.location.nilIfBlank,
+            specimen: payload.specimen.nilIfBlank,
+            method: payload.method.nilIfBlank,
+            analytes: analytes
+        )
+        return decodeReport(from: reportPayload, sourceKind: sourceKind, sourceText: sourceText, fallback: fallback)
+    }
+
+    private static func universalSourceLine(
+        for row: GeneratedUniversalAnalyteRow,
+        linesByID: [Int: String]
+    ) -> String {
+        let modelLine = row.sourceLine.trimmed
+        if !modelLine.isEmpty {
+            return modelLine
+        }
+        if let id = row.sourceLineID,
+           let sourceLine = linesByID[id]?.trimmed,
+           !sourceLine.isEmpty {
+            return sourceLine
+        }
+        return ""
+    }
+
+    private static func decodeReport(
+        from metadata: AIMetadataPayload,
+        sourceKind: LabReportSourceKind,
+        sourceText: String,
+        fallback: LabReport
+    ) -> LabReport? {
+        let report = LabReport(
+            collectedAt: metadata.collectedAt.flatMap(HormoneLabResultParser.parseDate) ?? fallback.collectedAt,
+            reportedAt: metadata.reportedAt.flatMap(HormoneLabResultParser.parseDate) ?? fallback.reportedAt,
+            institution: cleanAITextField(metadata.institution)?.nilIfBlank ?? fallback.institution,
+            location: cleanAITextField(metadata.location)?.nilIfBlank ?? fallback.location,
+            specimen: verifiedAISpecimen(metadata.specimen, sourceText: sourceText, fallback: fallback.specimen),
+            method: verifiedAIMethod(metadata.method, sourceText: sourceText) ?? fallback.method,
+            sourceKind: sourceKind,
+            sourceText: sourceText,
+            analytes: fallback.analytes,
+            note: fallback.note
+        )
+        guard metadataChanged(report, from: fallback) else {
+            return nil
+        }
+        return report
+    }
+
+    private static func cleanAITextField(_ text: String?) -> String? {
+        guard let text else { return nil }
+        return text.trimmed
+    }
+
+    private static func verifiedAISpecimen(
+        _ specimen: String?,
+        sourceText: String,
+        fallback: String
+    ) -> String {
+        let fallbackValue = LabReportFieldSanitizer.reviewSpecimen(fallback)
+        guard let rawValue = cleanAITextField(specimen)?.nilIfBlank else {
+            return fallbackValue
+        }
+        let value = LabReportFieldSanitizer.reviewSpecimen(rawValue)
+        guard !value.isEmpty else {
+            return fallbackValue
+        }
+
+        if sourceTextContains(value, in: sourceText) {
+            return value
+        }
+        if isGenericBloodSpecimen(value) {
+            return fallbackValue
+        }
+        if hasSpecimenEvidenceLabel(in: sourceText) {
+            return value
+        }
+        return fallbackValue
+    }
+
+    private static func isGenericBloodSpecimen(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        return lower == "血液" || lower == "blood"
+    }
+
+    private static func hasSpecimenEvidenceLabel(in sourceText: String) -> Bool {
+        sourceText
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmed }
+            .contains { line in
+                [
+                    "标本", "樣本", "样本", "sample", "specimen", "material"
+                ].contains { line.localizedCaseInsensitiveContains($0) }
+            }
+    }
+
+    private static func verifiedAIMethod(
+        _ method: String?,
+        sourceText: String,
+        sourceLine: String? = nil
+    ) -> String? {
+        guard let value = cleanAITextField(method)?.nilIfBlank,
+              value.count <= 48,
+              isPlausibleAssayMethod(value) else {
+            return nil
+        }
+
+        let evidence = [sourceLine, sourceText]
+            .compactMap { $0?.nilIfBlank }
+            .joined(separator: "\n")
+        guard sourceTextContains(value, in: evidence) else {
+            return nil
+        }
+        return normalizedAssayMethod(value)
+    }
+
+    private static func isPlausibleAssayMethod(_ value: String) -> Bool {
+        let lower = value.lowercased()
+        let tokens = [
+            "i2000", "architect", "cobas", "abbott", "roche", "beckman", "siemens",
+            "lc-ms", "lc/ms", "lc ms", "ms/ms", "eclia", "clia", "cmia", "elisa",
+            "免疫", "化学发光", "化學發光", "质谱", "質譜", "放射免疫", "电化学发光", "電化學發光"
+        ]
+        return tokens.contains { lower.contains($0.lowercased()) }
+    }
+
+    private static func normalizedAssayMethod(_ value: String) -> String {
+        let lower = value.lowercased()
+        if lower.contains("i2000") || lower.contains("12000sr") || lower.contains("l2000sr") {
+            return "i2000SR"
+        }
+        return value
+    }
+
+    private static func metadataChanged(_ report: LabReport, from fallback: LabReport) -> Bool {
+        if abs(report.collectedAt.timeIntervalSince(fallback.collectedAt)) > 1 {
+            return true
+        }
+        switch (report.reportedAt, fallback.reportedAt) {
+        case let (lhs?, rhs?):
+            if abs(lhs.timeIntervalSince(rhs)) > 1 { return true }
+        case (.some, .none):
+            return true
+        case (.none, .some), (.none, .none):
+            break
+        }
+
+        return report.institution != fallback.institution
+            || report.location != fallback.location
+            || report.specimen != fallback.specimen
+            || report.method != fallback.method
+    }
+
+    private static func metadataNeedsModel(_ fallback: LabReport) -> Bool {
+        !fallback.analytes.isEmpty
+            || fallback.institution.trimmed.isEmpty
+            || fallback.reportedAt == nil
+    }
+
+    private static func shouldAttemptUniversalExtraction(for fallback: LabReport) -> Bool {
+        fallback.analytes.count < 7
+    }
+
+    private static func merge(
+        _ aiAnalytes: [LabAnalyteResult],
+        withAnchorsFrom fallback: LabReport
+    ) -> [LabAnalyteResult] {
+        let anchors = fallback.analytes
+        guard !anchors.isEmpty else {
+            return HormoneLabResultParser.uniqued(aiAnalytes)
+        }
+
+        var usedAIIDs = Set<UUID>()
+        let anchoredRows = anchors.map { anchor -> LabAnalyteResult in
+            guard let ai = aiAnalytes.first(where: { candidate in
+                candidate.kind == anchor.kind && !usedAIIDs.contains(candidate.id)
+            }) else {
+                return LabAnalyteResult(
+                    id: anchor.id,
+                    kind: anchor.kind,
+                    name: anchor.kind == .other ? anchor.name.nilIfBlank : nil,
+                    value: anchor.value,
+                    unitSymbol: anchor.unitSymbol,
+                    concentrationUnit: anchor.concentrationUnit,
+                    referenceRange: nil,
+                    method: anchor.method,
+                    sourceLine: anchor.sourceLine,
+                    note: visibleFlagNote(anchor.note, sourceLine: anchor.sourceLine)
+                )
+            }
+            usedAIIDs.insert(ai.id)
+
+            return LabAnalyteResult(
+                id: anchor.id,
+                kind: anchor.kind,
+                name: anchor.kind == .other ? (anchor.name.nilIfBlank ?? ai.name.nilIfBlank) : nil,
+                value: anchor.value,
+                unitSymbol: anchor.unitSymbol.isEmpty ? ai.unitSymbol : anchor.unitSymbol,
+                concentrationUnit: anchor.concentrationUnit ?? ai.concentrationUnit,
+                referenceRange: nil,
+                method: anchor.method ?? ai.method,
+                sourceLine: anchor.sourceLine ?? ai.sourceLine,
+                note: visibleFlagNote(anchor.note, sourceLine: anchor.sourceLine)
+                    ?? visibleFlagNote(ai.note, sourceLine: ai.sourceLine)
+            )
+        }
+
+        guard anchors.count < 7 else {
+            return anchoredRows
+        }
+
+        let extraAIRows = aiAnalytes.filter { ai in
+            guard !usedAIIDs.contains(ai.id),
+                  ai.value != nil,
+                  !anchors.contains(where: { $0.kind == ai.kind }),
+                  let sourceLine = ai.sourceLine else {
+                return false
+            }
+            let compactLine = compactEvidenceText(sourceLine)
+            return valueEvidenceCandidates(for: ai.value ?? -1).contains { compactLine.contains($0) }
+        }
+
+        return anchoredRows + extraAIRows
+    }
+
+    private static func visibleFlagNote(_ note: String?, sourceLine: String?) -> String? {
+        guard let note = note?.trimmed, !note.isEmpty else { return nil }
+        guard note.count <= 12 else { return nil }
+        let evidence = [note, sourceLine ?? ""].joined(separator: " ")
+        if evidence.contains("↑") { return "↑" }
+        if evidence.contains("↓") { return "↓" }
+        let lower = note.lowercased()
+        if ["h", "high", "above"].contains(lower) { return "↑" }
+        if ["l", "low", "below"].contains(lower) { return "↓" }
+        return nil
+    }
+
+    private static func hasVisibleEvidence(for analyte: LabAnalyteResult, in sourceText: String) -> Bool {
+        guard let sourceLine = analyte.sourceLine?.trimmed, !sourceLine.isEmpty else {
+            return false
+        }
+        guard sourceTextContains(sourceLine, in: sourceText) else {
+            return false
+        }
+        guard let value = analyte.value else {
+            return !(analyte.referenceRange ?? "").trimmed.isEmpty
+                && hasKindEvidence(analyte.kind, in: sourceLine)
+        }
+
+        let compactLine = compactEvidenceText(sourceLine)
+        let hasVisibleValue = valueEvidenceCandidates(for: value).contains { candidate in
+            compactLine.contains(candidate)
+        }
+        guard hasVisibleValue else { return false }
+
+        if hasKindEvidence(analyte.kind, in: sourceLine) {
+            return true
+        }
+
+        return isLikelyMeasurementEvidenceLine(sourceLine)
+    }
+
+    private static func sourceTextContains(_ sourceLine: String, in sourceText: String) -> Bool {
+        sourceText.localizedCaseInsensitiveContains(sourceLine)
+            || compactEvidenceText(sourceText).localizedCaseInsensitiveContains(compactEvidenceText(sourceLine))
+    }
+
+    private static func isLikelyMeasurementEvidenceLine(_ line: String) -> Bool {
+        containsReferenceRangeText(line)
+            || line.range(of: labelUnitPattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func hasKindEvidence(_ kind: LabAnalyteKind, in line: String) -> Bool {
+        if kindNeedles(for: kind).contains(where: { line.localizedCaseInsensitiveContains($0) }) {
+            return true
+        }
+
+        let pattern: String?
+        switch kind {
+        case .estradiol:
+            pattern = #"(?i)(?:\(|\b)E2(?:\)|\b)"#
+        case .testosterone:
+            pattern = #"(?i)(?:\(|\b)T(?:\)|\b)"#
+        case .progesterone:
+            pattern = #"(?i)(?:\(|\b)P(?:\)|\b)"#
+        case .luteinizingHormone:
+            pattern = #"(?i)(?:\(|\b)LH(?:\)|\b)"#
+        case .follicleStimulatingHormone:
+            pattern = #"(?i)(?:\(|\b)FSH(?:\)|\b)"#
+        case .prolactin:
+            pattern = #"(?i)(?:\(|\b)PRL(?:\)|\b)"#
+        case .dehydroepiandrosteroneSulfate:
+            pattern = #"(?i)(?:\(|\b)DHEA\s*-?\s*S(?:\)|\b)"#
+        case .sexHormoneBindingGlobulin:
+            pattern = #"(?i)(?:\(|\b)SHBG(?:\)|\b)"#
+        case .freeTestosterone, .other:
+            pattern = nil
+        }
+
+        guard let pattern,
+              let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        return regex.firstMatch(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line)) != nil
+    }
+
+    private static func kindNeedles(for kind: LabAnalyteKind) -> [String] {
+        switch kind {
+        case .estradiol:
+            return ["雌二醇", "estradiol", "oestradiol", "estrogen e2"]
+        case .testosterone:
+            return ["睾酮", "睪酮", "testosterone", "testo", "total t"]
+        case .luteinizingHormone:
+            return ["促黄体", "黄体生成素", "luteinizing", "luteinising"]
+        case .follicleStimulatingHormone:
+            return ["促卵泡", "卵泡刺激素", "follicle stimulating", "follicle-stimulating"]
+        case .prolactin:
+            return ["泌乳素", "prolactin"]
+        case .progesterone:
+            return ["孕酮", "progesterone"]
+        case .sexHormoneBindingGlobulin:
+            return ["性激素结合球蛋白", "sex hormone binding", "binding globulin"]
+        case .freeTestosterone:
+            return ["游离睾酮", "free testosterone", "free T", "free testo"]
+        case .dehydroepiandrosteroneSulfate:
+            return ["硫酸脱氢表雄酮", "脱氢表雄酮", "dhea-s", "dheas", "dehydroepiandrosterone"]
+        case .other:
+            return []
+        }
+    }
+
+    private static func compactEvidenceText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\t", with: "")
+    }
+
+    private static func valueEvidenceCandidates(for value: Double) -> [String] {
+        let candidates = [
+            String(value),
+            String(format: "%.0f", value),
+            String(format: "%.1f", value),
+            String(format: "%.2f", value),
+            String(format: "%.3f", value)
+        ]
+        return Array(Set(candidates.map(compactEvidenceText)))
+    }
+
+    private static func aiDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    private static func aiNumberString(_ value: Double) -> String {
+        String(format: "%.6g", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    private static func parseAIValueText(_ text: String) -> Double? {
+        let normalized = text
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "，", with: ".")
+            .replacingOccurrences(of: "↑", with: "")
+            .replacingOccurrences(of: "↓", with: "")
+            .replacingOccurrences(of: "<", with: "")
+            .replacingOccurrences(of: ">", with: "")
+            .replacingOccurrences(of: "≤", with: "")
+            .replacingOccurrences(of: "≥", with: "")
+            .trimmed
+        if let value = Double(normalized) {
+            return value
+        }
+        guard let regex = try? NSRegularExpression(pattern: #"\d+(?:[\.,]\d+)?"#),
+              let match = regex.firstMatch(in: normalized, range: NSRange(normalized.startIndex..<normalized.endIndex, in: normalized)),
+              let range = Range(match.range, in: normalized) else {
+            return nil
+        }
+        return Double(normalized[range].replacingOccurrences(of: ",", with: "."))
+    }
+
+    private static func anchoredStatus(_ status: String, fallback: LabReport) -> String {
+        guard !fallback.analytes.isEmpty else { return status }
+        return "\(status) Table values were cross-checked against OCR anchors."
+    }
+
+    private static func userFacingFallbackSummary(kind: String) -> String {
+        let model = localContentTransformModel
+        guard model.isAvailable else {
+            return "Apple Intelligence is unavailable on this device; OCR will be used."
+        }
+        if shouldStopTextAttemptsAfterPolicyRejection() {
+            return "Apple Intelligence is available, but iOS rejected the model request for this report; verified OCR table parsing was used."
+        }
+        return "Apple Intelligence did not add verified \(kind) metadata; verified OCR table parsing was used."
+    }
+
+    private static func shouldAttempt(_ attempt: ModelAttempt) -> Bool {
+        let defaults = UserDefaults.standard
+        if isAttemptCrashDisabled(attempt) {
+            return false
+        }
+
+        guard defaults.string(forKey: activeAttemptKey) == attempt.rawValue else {
+            return true
+        }
+
+        let startedAt = defaults.object(forKey: activeAttemptStartedAtKey) as? Date
+        if let startedAt, Date().timeIntervalSince(startedAt) > attemptStaleInterval {
+            defaults.removeObject(forKey: activeAttemptKey)
+            defaults.removeObject(forKey: activeAttemptStartedAtKey)
+            return true
+        }
+
+        markAttemptCrashDisabled(attempt)
+        defaults.removeObject(forKey: activeAttemptKey)
+        defaults.removeObject(forKey: activeAttemptStartedAtKey)
+        defaults.synchronize()
+        return false
+    }
+
+    private static func isAttemptCrashDisabled(_ attempt: ModelAttempt) -> Bool {
+        let defaults = UserDefaults.standard
+        let untilKey = crashDisabledUntilPrefix + attempt.rawValue
+
+        if let disabledUntil = defaults.object(forKey: untilKey) as? Date {
+            if disabledUntil > Date() { return true }
+            defaults.removeObject(forKey: untilKey)
+        }
+        return false
+    }
+
+    private static func markAttemptCrashDisabled(_ attempt: ModelAttempt) {
+        UserDefaults.standard.set(Date().addingTimeInterval(crashDisableInterval), forKey: crashDisabledUntilPrefix + attempt.rawValue)
+    }
+
+    private static func markAttemptStarted(_ attempt: ModelAttempt) {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: lastAttemptErrorPrefix + attempt.rawValue)
+        defaults.set(attempt.rawValue, forKey: activeAttemptKey)
+        defaults.set(Date(), forKey: activeAttemptStartedAtKey)
+        defaults.synchronize()
+    }
+
+    private static func markAttemptFinished(_ attempt: ModelAttempt) {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: activeAttemptKey) == attempt.rawValue else { return }
+        defaults.removeObject(forKey: activeAttemptKey)
+        defaults.removeObject(forKey: activeAttemptStartedAtKey)
+        defaults.synchronize()
+    }
+
+    private static func detailedDiagnosticSummary(for attempts: [ModelAttempt]) -> String {
+        let model = SystemLanguageModel.default
+        let transformModel = localContentTransformModel
+        var parts = [
+            "SystemLanguageModel availability=\(systemAvailabilityDescription(model.availability))",
+            "ContentTransformModel availability=\(systemAvailabilityDescription(transformModel.availability))",
+            "supportsCurrentLocale=\(model.supportsLocale(Locale.current))",
+            "supportsEnUS=\(model.supportsLocale(Locale(identifier: "en_US")))",
+            "supportsZhHans=\(model.supportsLocale(Locale(identifier: "zh_Hans")))"
+        ]
+        if #available(iOS 27.0, *) {
+            if appHasPrivateCloudComputeEntitlement() {
+                let privateCloudModel = PrivateCloudComputeLanguageModel()
+                parts.append("PrivateCloudCompute availability=\(privateCloudAvailabilityDescription(privateCloudModel.availability))")
+                parts.append("PrivateCloudCompute supportsCurrentLocale=\(privateCloudModel.supportsLocale(Locale.current))")
+                parts.append("PrivateCloudCompute supportsZhHans=\(privateCloudModel.supportsLocale(Locale(identifier: "zh_Hans")))")
+            } else {
+                parts.append("PrivateCloudCompute availability=unavailable.missingEntitlement")
+            }
+        } else {
+            parts.append("PrivateCloudCompute availability=unavailable.requiresIOS27")
+        }
+        parts.append(contentsOf: attempts.compactMap { attempt in
+            guard let error = lastAttemptError(attempt), !error.isEmpty else { return nil }
+            return "\(attempt.rawValue) error: \(error)"
+        })
+        return parts.joined(separator: " | ")
+    }
+
+    private static func shouldStopTextAttemptsAfterPolicyRejection() -> Bool {
+        [
+            lastAttemptError(.privateCloudVision),
+            lastAttemptError(.onDeviceVision),
+            lastAttemptError(.privateCloudUniversal),
+            lastAttemptError(.onDeviceUniversal),
+            lastAttemptError(.privateCloudMetadata),
+            lastAttemptError(.onDeviceMetadata),
+            lastAttemptError(.privateCloudLabelRepair),
+            lastAttemptError(.onDeviceLabelRepair)
+        ]
+            .compactMap { $0 }
+            .contains { error in
+                error.contains("guardrailViolation")
+                    || error.contains("refusal")
+                    || error.contains("SensitiveContentAnalysisML")
+                    || error.contains("CombinedTextSanitizerBackend")
+                    || error.contains("GenerativeFunctionsFoundation")
+            }
+    }
+
+    private static func lastAttemptError(_ attempt: ModelAttempt) -> String? {
+        UserDefaults.standard.string(forKey: lastAttemptErrorPrefix + attempt.rawValue)
+    }
+
+    private static func logModelError(_ error: any Error, attempt: ModelAttempt) {
+        recordAttemptError(describeModelError(error), attempt: attempt)
+        #if DEBUG
+        NSLog("LAB_FOUNDATION_MODEL_ATTEMPT_ERROR attempt=%@ error=%@", attempt.rawValue, String(describing: error))
+        #endif
+    }
+
+    private static func recordAttemptError(_ message: String, attempt: ModelAttempt) {
+        UserDefaults.standard.set(message, forKey: lastAttemptErrorPrefix + attempt.rawValue)
+    }
+
+    private static func clearAttemptError(_ attempt: ModelAttempt) {
+        UserDefaults.standard.removeObject(forKey: lastAttemptErrorPrefix + attempt.rawValue)
+    }
+
+    private static func describeModelError(_ error: any Error) -> String {
+        let nsError = error as NSError
+        var parts = [
+            "domain=\(nsError.domain)",
+            "code=\(nsError.code)",
+            "description=\(nsError.localizedDescription)"
+        ]
+        if let reason = nsError.localizedFailureReason, !reason.isEmpty {
+            parts.append("reason=\(reason)")
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("underlying=\(underlying.domain)#\(underlying.code) \(underlying.localizedDescription)")
+        }
+        parts.append("raw=\(String(describing: error))")
+        return parts.joined(separator: " | ")
+    }
+
+    private static func systemAvailabilityDescription(_ availability: SystemLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable.deviceNotEligible"
+            case .appleIntelligenceNotEnabled:
+                return "unavailable.appleIntelligenceNotEnabled"
+            case .modelNotReady:
+                return "unavailable.modelNotReady"
+            @unknown default:
+                return "unavailable.unknown"
+            }
+        }
+    }
+
+    @available(iOS 27.0, *)
+    private static func privateCloudAvailabilityDescription(_ availability: PrivateCloudComputeLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable.deviceNotEligible"
+            case .systemNotReady:
+                return "unavailable.systemNotReady"
+            @unknown default:
+                return "unavailable.unknown"
+            }
+        }
+    }
+
+    @Generable(description: "Table label mappings for OCR fragments.")
+    struct GeneratedLabelRepairPayload {
+        @Guide(description: "Mappings from OCR fragment id to item code. Omit uncertain fragments.", .maximumCount(24))
+        var labels: [GeneratedLabelRepairMapping]
+    }
+
+    @Generable(description: "One OCR table label mapping.")
+    struct GeneratedLabelRepairMapping {
+        @Guide(description: "The integer id shown before the label fragment.")
+        var id: Int
+        @Guide(
+            description: "Item code.",
+            .anyOf([
+                "E2",
+                "T",
+                "PRL",
+                "FSH",
+                "LH",
+                "P",
+                "SHBG",
+                "freeT",
+                "DHEAS",
+                "other"
+            ])
+        )
+        var kind: String
+    }
+
+    private struct AIMetadataPayload {
+        var collectedAt: String?
+        var reportedAt: String?
+        var institution: String?
+        var location: String?
+        var specimen: String?
+        var method: String?
+
+        init(generated: GeneratedAIMetadataPayload) {
+            self.collectedAt = generated.collectedAt.nilIfBlank
+            self.reportedAt = generated.reportedAt.nilIfBlank
+            self.institution = generated.institution.nilIfBlank
+            self.location = generated.location.nilIfBlank
+            self.specimen = generated.specimen.nilIfBlank
+            self.method = generated.method.nilIfBlank
+        }
+    }
+
+    @Generable(description: "Document header metadata.")
+    struct GeneratedAIMetadataPayload {
+        @Guide(description: "Collection or sample time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var collectedAt: String
+        @Guide(description: "Report issue time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var reportedAt: String
+        @Guide(description: "Institution or organization name. Empty when unavailable.")
+        var institution: String
+        @Guide(description: "Testing location or site. Empty when unavailable.")
+        var location: String
+        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        var specimen: String
+        @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
+        var method: String
+    }
+
+    @Generable(description: "Universal structured OCR measurement extraction.")
+    struct GeneratedUniversalReportPayload {
+        @Guide(description: "Collection or sample time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var collectedAt: String
+        @Guide(description: "Report issue time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var reportedAt: String
+        @Guide(description: "Institution or organization name. Empty when unavailable.")
+        var institution: String
+        @Guide(description: "Testing location or site. Empty when unavailable.")
+        var location: String
+        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        var specimen: String
+        @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
+        var method: String
+        @Guide(description: "Visible measurement rows anchored to OCR lines.", .maximumCount(16))
+        var rows: [GeneratedUniversalAnalyteRow]
+    }
+
+    @Generable(description: "One OCR measurement row anchored to source text.")
+    struct GeneratedUniversalAnalyteRow {
+        @Guide(
+            description: "Measurement item code.",
+            .anyOf([
+                "E2",
+                "T",
+                "PRL",
+                "FSH",
+                "LH",
+                "P",
+                "SHBG",
+                "freeT",
+                "DHEAS",
+                "other"
+            ])
+        )
+        var itemCode: String
+        @Guide(description: "Visible row label only when itemCode is other; otherwise empty.")
+        var label: String
+        @Guide(description: "Measured result text copied from the result field. Empty when unavailable.")
+        var valueText: String
+        @Guide(description: "Unit text for the measured value. Empty when unavailable.")
+        var unit: String
+        @Guide(description: "Leave empty; sex-assigned reference intervals are not stored for HRT review.")
+        var referenceRange: String
+        @Guide(description: "OCR line number used as evidence when available.")
+        var sourceLineID: Int?
+        @Guide(description: "Exact OCR source line text used as evidence.")
+        var sourceLine: String
+        @Guide(description: "Row-level assay method, analyzer, or platform only when explicitly visible on the source row or method column. Empty otherwise.")
+        var method: String
+        @Guide(description: "Only include visible abnormal flag or uncertainty. Empty otherwise.")
+        var note: String
     }
 
     private struct AIReportPayload: Decodable {
@@ -1145,6 +3292,36 @@ private enum LabReportAIExtractor {
         var specimen: String?
         var method: String?
         var analytes: [AIAnalytePayload]
+
+        init(
+            collectedAt: String?,
+            reportedAt: String?,
+            institution: String?,
+            location: String?,
+            specimen: String?,
+            method: String?,
+            analytes: [AIAnalytePayload]
+        ) {
+            self.collectedAt = collectedAt
+            self.reportedAt = reportedAt
+            self.institution = institution
+            self.location = location
+            self.specimen = specimen
+            self.method = method
+            self.analytes = analytes
+        }
+
+        init(generated: GeneratedAIReportPayload) {
+            self.init(
+                collectedAt: generated.collectedAt.nilIfBlank,
+                reportedAt: generated.reportedAt.nilIfBlank,
+                institution: generated.institution.nilIfBlank,
+                location: generated.location.nilIfBlank,
+                specimen: generated.specimen.nilIfBlank,
+                method: generated.method.nilIfBlank,
+                analytes: generated.analytes.map(AIAnalytePayload.init(generated:))
+            )
+        }
     }
 
     private struct AIAnalytePayload: Decodable {
@@ -1156,11 +3333,135 @@ private enum LabReportAIExtractor {
         var method: String?
         var sourceLine: String?
         var note: String?
+
+        enum CodingKeys: String, CodingKey {
+            case kind
+            case name
+            case value
+            case unit
+            case referenceRange
+            case method
+            case sourceLine
+            case note
+        }
+
+        init(
+            kind: String?,
+            name: String?,
+            value: Double?,
+            unit: String?,
+            referenceRange: String?,
+            method: String?,
+            sourceLine: String?,
+            note: String?
+        ) {
+            self.kind = kind
+            self.name = name
+            self.value = value
+            self.unit = unit
+            self.referenceRange = referenceRange
+            self.method = method
+            self.sourceLine = sourceLine
+            self.note = note
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.kind = try container.decodeIfPresent(String.self, forKey: .kind)
+            self.name = try container.decodeIfPresent(String.self, forKey: .name)
+            self.value = Self.decodeFlexibleDouble(from: container, forKey: .value)
+            self.unit = try container.decodeIfPresent(String.self, forKey: .unit)
+            self.referenceRange = try container.decodeIfPresent(String.self, forKey: .referenceRange)
+            self.method = try container.decodeIfPresent(String.self, forKey: .method)
+            self.sourceLine = try container.decodeIfPresent(String.self, forKey: .sourceLine)
+            self.note = try container.decodeIfPresent(String.self, forKey: .note)
+        }
+
+        private static func decodeFlexibleDouble(
+            from container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys
+        ) -> Double? {
+            if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+                return value
+            }
+            if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+                let normalized = text
+                    .trimmed
+                    .replacingOccurrences(of: ",", with: ".")
+                return Double(normalized)
+            }
+            return nil
+        }
+
+        init(generated: GeneratedAIAnalytePayload) {
+            self.init(
+                kind: generated.kind.nilIfBlank,
+                name: generated.name.nilIfBlank,
+                value: generated.value,
+                unit: generated.unit.nilIfBlank,
+                referenceRange: generated.referenceRange.nilIfBlank,
+                method: generated.method.nilIfBlank,
+                sourceLine: generated.sourceLine.nilIfBlank,
+                note: generated.note.nilIfBlank
+            )
+        }
+    }
+
+    @Generable(description: "Structured hormone lab report with collection metadata and hormone analyte rows.")
+    struct GeneratedAIReportPayload {
+        @Guide(description: "Collection or sample time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var collectedAt: String
+        @Guide(description: "Report issue time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
+        var reportedAt: String
+        @Guide(description: "Testing institution, hospital, or lab name. Empty when unavailable.")
+        var institution: String
+        @Guide(description: "Testing location or site. Empty when unavailable.")
+        var location: String
+        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        var specimen: String
+        @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
+        var method: String
+        @Guide(description: "All visible hormone analyte rows from the report table.", .maximumCount(16))
+        var analytes: [GeneratedAIAnalytePayload]
+    }
+
+    @Generable(description: "One hormone analyte row from a lab report table.")
+    struct GeneratedAIAnalytePayload {
+        @Guide(
+            description: "Canonical hormone kind.",
+            .anyOf([
+                "estradiol",
+                "testosterone",
+                "luteinizingHormone",
+                "follicleStimulatingHormone",
+                "prolactin",
+                "progesterone",
+                "sexHormoneBindingGlobulin",
+                "freeTestosterone",
+                "dehydroepiandrosteroneSulfate",
+                "other"
+            ])
+        )
+        var kind: String
+        @Guide(description: "Only use for kind other; leave empty for known hormone kinds.")
+        var name: String
+        @Guide(description: "Measured result value from the result column, not a reference range number.")
+        var value: Double?
+        @Guide(description: "Unit for the measured value, for example pmol/L, nmol/L, mIU/L, IU/L, or µmol/L.")
+        var unit: String
+        @Guide(description: "Leave empty; sex-assigned reference intervals are not stored for HRT review.")
+        var referenceRange: String
+        @Guide(description: "Row-level assay method, analyzer, or platform only when explicitly visible on the source row or method column. Empty otherwise.")
+        var method: String
+        @Guide(description: "Visible source row text from the table. Empty when unavailable.")
+        var sourceLine: String
+        @Guide(description: "Only include uncertainty or abnormal flag information. Empty otherwise.")
+        var note: String
     }
 }
 #endif
 
-private enum HormoneLabResultParser {
+enum HormoneLabResultParser {
     static func parseReport(
         _ text: String,
         sourceKind: LabReportSourceKind,
@@ -1171,30 +3472,35 @@ private enum HormoneLabResultParser {
             .split(whereSeparator: \.isNewline)
             .map { String($0).trimmed }
             .filter { !$0.isEmpty }
+        let displayLines = lines.map(stripInternalParserHints)
 
+        let detectedDates = extractDates(from: normalizedText)
         let collectedAt = extractDate(
             from: lines,
             labels: ["标本采集时间", "采集时间", "采样时间", "抽血时间", "collection time", "sample collected", "collected"]
-        ) ?? extractDate(from: normalizedText) ?? Date()
+        ) ?? detectedDates.first ?? Date()
         let reportedAt = extractDate(
             from: lines,
             labels: ["报告时间", "审核时间", "检验时间", "reported", "report date", "result date"]
-        )
+        ) ?? (detectedDates.count >= 3 ? detectedDates[2] : nil)
 
         let parsedAnalytes = lines.compactMap(parseAnalyteLine)
-        let analytes = parsedAnalytes.isEmpty
+        let multilineAnalytes = parseMultilineAnalyteBlocks(lines)
+        let panelAnalytes = parseHormonePanelTableRows(lines)
+        let fallbackAnalytes = parsedAnalytes.isEmpty && multilineAnalytes.isEmpty && panelAnalytes.isEmpty
             ? parseUntitledResultLines(lines, collectedAt: collectedAt, defaultHormone: defaultHormone)
-            : uniqued(parsedAnalytes)
+            : []
+        let analytes = uniqued(panelAnalytes + parsedAnalytes + multilineAnalytes + fallbackAnalytes)
 
         return LabReport(
             collectedAt: collectedAt,
             reportedAt: reportedAt,
-            institution: extractField(from: lines, labels: ["检验机构", "检测机构", "医院", "实验室", "laboratory", "institution", "lab"]),
-            location: extractField(from: lines, labels: ["地点", "地址", "location", "address"]),
-            specimen: extractField(from: lines, labels: ["标本种类", "样本类型", "标本", "specimen", "sample type"]),
-            method: extractField(from: lines, labels: ["检测方法", "检验方法", "方法", "method", "assay"]),
+            institution: extractInstitution(from: displayLines),
+            location: extractField(from: displayLines, labels: ["地点", "地址", "location", "address"]),
+            specimen: extractSpecimen(from: displayLines),
+            method: extractReportMethod(from: lines, analytes: analytes),
             sourceKind: sourceKind,
-            sourceText: text,
+            sourceText: stripInternalParserHints(text),
             analytes: analytes,
             note: ""
         )
@@ -1206,16 +3512,44 @@ private enum HormoneLabResultParser {
 
     static func kind(fromAIValue raw: String?) -> LabAnalyteKind? {
         guard let raw, !raw.trimmed.isEmpty else { return nil }
-        let lower = raw.lowercased()
-        if let exact = LabAnalyteKind(rawValue: lower) {
+        let value = raw.trimmed
+        if let exact = LabAnalyteKind(rawValue: value) {
             return exact
         }
-        return detectAnalyteKind(in: raw)
+        let lower = value
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        switch lower {
+        case "e2", "estradiol", "oestradiol":
+            return .estradiol
+        case "t", "testosterone", "totaltestosterone", "totaltesto":
+            return .testosterone
+        case "lh", "luteinizinghormone", "luteinisinghormone":
+            return .luteinizingHormone
+        case "fsh", "folliclestimulatinghormone":
+            return .follicleStimulatingHormone
+        case "prl", "prolactin":
+            return .prolactin
+        case "p", "progesterone":
+            return .progesterone
+        case "shbg", "sexhormonebindingglobulin":
+            return .sexHormoneBindingGlobulin
+        case "freet", "freetestosterone":
+            return .freeTestosterone
+        case "dheas", "dheasulfate", "dehydroepiandrosteronesulfate":
+            return .dehydroepiandrosteroneSulfate
+        case "other":
+            return .other
+        default:
+            return detectAnalyteKind(in: value)
+        }
     }
 
     static func concentrationUnit(from raw: String, kind: LabAnalyteKind) -> ConcentrationUnit? {
         guard let hormone = kind.simulatedHormone else { return nil }
-        let token = raw
+        let token = normalizedUnitSymbol(from: raw, kind: kind)
             .lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "／", with: "/")
@@ -1236,36 +3570,110 @@ private enum HormoneLabResultParser {
         return unit
     }
 
+    static func normalizedUnitSymbol(from raw: String, kind: LabAnalyteKind) -> String {
+        resolvedUnitSymbol(normalizedUnitToken(raw), kind: kind)
+    }
+
     static func uniqued(_ analytes: [LabAnalyteResult]) -> [LabAnalyteResult] {
-        var seen = Set<String>()
-        return analytes.filter { analyte in
-            let key = [
+        var selectedByKey: [String: (index: Int, score: Int, analyte: LabAnalyteResult)] = [:]
+        var keyOrder: [String] = []
+
+        for (index, analyte) in analytes.enumerated() {
+            let key = uniquenessKey(for: analyte)
+            let score = analyteEvidenceScore(analyte)
+
+            if let current = selectedByKey[key] {
+                if score > current.score {
+                    selectedByKey[key] = (current.index, score, analyte)
+                }
+            } else {
+                selectedByKey[key] = (index, score, analyte)
+                keyOrder.append(key)
+            }
+        }
+
+        return keyOrder
+            .compactMap { selectedByKey[$0] }
+            .sorted { $0.index < $1.index }
+            .map(\.analyte)
+    }
+
+    private static func uniquenessKey(for analyte: LabAnalyteResult) -> String {
+        if analyte.kind == .other {
+            return [
                 analyte.kind.rawValue,
                 analyte.name.lowercased(),
-                analyte.value.map { String(format: "%.4f", $0) } ?? "",
-                analyte.concentrationUnit?.rawValue ?? analyte.unitSymbol.lowercased(),
-                analyte.sourceLine ?? ""
+                analyte.sourceLine ?? UUID().uuidString
             ].joined(separator: "|")
-            return seen.insert(key).inserted
         }
+        return analyte.kind.rawValue
+    }
+
+    private static func analyteEvidenceScore(_ analyte: LabAnalyteResult) -> Int {
+        var score = 0
+        if analyte.value != nil { score += 3 }
+        if !analyte.unitSymbol.trimmed.isEmpty { score += 2 }
+        if analyte.concentrationUnit != nil { score += 2 }
+        if !(analyte.referenceRange ?? "").trimmed.isEmpty { score += 2 }
+        if !(analyte.method ?? "").trimmed.isEmpty { score += 1 }
+
+        if let sourceLine = analyte.sourceLine {
+            if let detectedKind = detectAnalyteKind(in: sourceLine) {
+                score += detectedKind == analyte.kind ? 6 : -8
+            }
+            if let value = analyte.value,
+               valueEvidenceCandidates(for: value).contains(where: { compactEvidenceText(sourceLine).contains($0) }) {
+                score += 2
+            }
+        }
+
+        if analyte.kind.simulatedHormone != nil, analyte.concentrationUnit == nil {
+            score -= 6
+        }
+        return score
     }
 
     private static func normalize(_ text: String) -> String {
-        text
+        let normalized = text
             .replacingOccurrences(of: "／", with: "/")
             .replacingOccurrences(of: "—", with: "-")
             .replacingOccurrences(of: "–", with: "-")
             .replacingOccurrences(of: "～", with: "~")
             .replacingOccurrences(of: "：", with: ":")
+
+        return normalizeOCRDecimalSpacing(normalized)
+    }
+
+    private static func stripInternalParserHints(_ text: String) -> String {
+        text
+            .replacingOccurrences(
+                of: #"\s*\[(?:label|analyte):[^\]]+\]"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmed
+    }
+
+    private static func normalizeOCRDecimalSpacing(_ text: String) -> String {
+        let pattern = #"(\d)\s*[\.,]\s+(\d{1,3})(?!\d)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "$1.$2")
     }
 
     private static func parseAnalyteLine(_ line: String) -> LabAnalyteResult? {
+        guard !isLikelyUnrelatedMetadataLine(line) else { return nil }
         guard let kind = detectAnalyteKind(in: line),
               let value = extractMeasuredValue(from: line, kind: kind) else {
             return nil
         }
 
-        let unitSymbol = extractUnitSymbol(from: line)
+        let referenceRange = extractReferenceRange(from: line, kind: kind)
+        let unitSymbol = resolvedUnitSymbol(
+            extractUnitSymbol(from: line, fallbackReferenceRange: referenceRange),
+            referenceRange: referenceRange,
+            kind: kind
+        )
         let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
         let resolvedUnitSymbol = concentrationUnit?.symbol ?? unitSymbol
 
@@ -1279,10 +3687,89 @@ private enum HormoneLabResultParser {
             value: value,
             unitSymbol: resolvedUnitSymbol,
             concentrationUnit: concentrationUnit,
-            referenceRange: extractReferenceRange(from: line),
+            referenceRange: referenceRange,
             method: extractMethod(from: line),
-            sourceLine: line
+            sourceLine: stripInternalParserHints(line)
         )
+    }
+
+    private static func parseMultilineAnalyteBlocks(_ lines: [String]) -> [LabAnalyteResult] {
+        lines.indices.compactMap { index in
+            guard !isLikelyUnrelatedMetadataLine(lines[index]) else { return nil }
+            guard let kind = detectAnalyteKind(in: lines[index]) else { return nil }
+            let blockLines = analyteBlockLines(startingAt: index, in: lines)
+            guard blockLines.count > 1 else { return nil }
+
+            let blockText = blockLines.joined(separator: " ")
+            guard let value = extractMeasuredValue(from: blockText, kind: kind) else {
+                return nil
+            }
+
+            let referenceRange = extractReferenceRange(from: blockText, kind: kind)
+            let unitSymbol = resolvedUnitSymbol(
+                extractUnitSymbol(from: blockText, fallbackReferenceRange: referenceRange),
+                referenceRange: referenceRange,
+                kind: kind
+            )
+            let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
+            if kind.simulatedHormone != nil, concentrationUnit == nil {
+                return nil
+            }
+
+            return LabAnalyteResult(
+                kind: kind,
+                name: detectedName(for: kind, in: blockText),
+                value: value,
+                unitSymbol: concentrationUnit?.symbol ?? unitSymbol,
+                concentrationUnit: concentrationUnit,
+                referenceRange: referenceRange,
+                method: extractMethod(from: blockText),
+                sourceLine: stripInternalParserHints(blockText)
+            )
+        }
+    }
+
+    private static func analyteBlockLines(startingAt index: Int, in lines: [String]) -> [String] {
+        var block = [lines[index]]
+        let maxEnd = min(lines.count, index + 8)
+        guard index + 1 < maxEnd else { return block }
+
+        for nextIndex in (index + 1)..<maxEnd {
+            let line = lines[nextIndex]
+            if detectAnalyteKind(in: line) != nil, blockContainsResultEvidence(block) {
+                break
+            }
+            if isLikelyUnrelatedMetadataLine(line), blockContainsResultEvidence(block) {
+                break
+            }
+            block.append(line)
+            if blockContainsCompleteResultEvidence(block) {
+                break
+            }
+        }
+        return block
+    }
+
+    private static func blockContainsResultEvidence(_ lines: [String]) -> Bool {
+        let text = lines.joined(separator: " ")
+        return text.rangeOfCharacter(from: .decimalDigits) != nil
+            && firstUnitSymbol(in: text) != nil
+    }
+
+    private static func blockContainsCompleteResultEvidence(_ lines: [String]) -> Bool {
+        let text = lines.joined(separator: " ")
+        return blockContainsResultEvidence(lines) && !referenceRangeMatches(in: text).isEmpty
+    }
+
+    private static func isLikelyUnrelatedMetadataLine(_ line: String) -> Bool {
+        let lower = line.lowercased()
+        let metadataSignals = [
+            "collected", "collection", "reported", "result date", "provider", "doctor",
+            "specimen", "sample", "accession", "patient", "dob", "mrn", "医院", "报告时间",
+            "采集时间", "样本编号", "标本编号", "病历号", "病员号", "姓名",
+            "临床诊断", "床号", "送检医生", "送检科室"
+        ]
+        return metadataSignals.contains { lower.contains($0) || line.contains($0) }
     }
 
     private static func parseUntitledResultLines(
@@ -1296,7 +3783,12 @@ private enum HormoneLabResultParser {
         let kind: LabAnalyteKind = defaultHormone == .estradiol ? .estradiol : .testosterone
         let analytes = lines.compactMap { line -> LabAnalyteResult? in
             guard let value = extractMeasuredValue(from: line, kind: kind) else { return nil }
-            let unitSymbol = extractUnitSymbol(from: line)
+            let referenceRange = extractReferenceRange(from: line, kind: kind)
+            let unitSymbol = resolvedUnitSymbol(
+                extractUnitSymbol(from: line, fallbackReferenceRange: referenceRange),
+                referenceRange: referenceRange,
+                kind: kind
+            )
             guard let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind) else {
                 return nil
             }
@@ -1307,11 +3799,245 @@ private enum HormoneLabResultParser {
                 value: value,
                 unitSymbol: concentrationUnit.symbol,
                 concentrationUnit: concentrationUnit,
-                referenceRange: extractReferenceRange(from: line),
-                sourceLine: line
+                referenceRange: referenceRange,
+                sourceLine: stripInternalParserHints(line)
             )
         }
         return uniqued(analytes)
+    }
+
+    private static func parseHormonePanelTableRows(_ lines: [String]) -> [LabAnalyteResult] {
+        let candidates = lines.enumerated().compactMap { tableRowCandidate(from: $0, lines: lines) }
+        let explicitRows = candidates.compactMap { row -> LabAnalyteResult? in
+            guard let kind = row.explicitKind else { return nil }
+            return analyte(from: row, kind: kind, lines: lines)
+        }
+        let inferredRows = inferFullPanelRows(from: candidates, lines: lines)
+        return uniqued(inferredRows + explicitRows)
+    }
+
+    private static func inferFullPanelRows(from candidates: [TableRowCandidate], lines: [String]) -> [LabAnalyteResult] {
+        guard candidates.count >= 6 else { return [] }
+
+        let panelKinds: [LabAnalyteKind] = [
+            .estradiol,
+            .prolactin,
+            .follicleStimulatingHormone,
+            .luteinizingHormone,
+            .testosterone,
+            .progesterone,
+            .dehydroepiandrosteroneSulfate
+        ]
+
+        var bestStart = 0
+        var bestLength = 0
+        var bestScore = 0
+
+        for start in candidates.indices {
+            let length = min(panelKinds.count, candidates.count - start)
+            guard length >= 4 else { continue }
+
+            let score = (0..<length).reduce(0) { total, offset in
+                total + panelRowScore(candidates[start + offset], kind: panelKinds[offset])
+            }
+
+            if score > bestScore {
+                bestStart = start
+                bestLength = length
+                bestScore = score
+            }
+        }
+
+        guard bestLength >= 4, bestScore >= max(8, bestLength * 2 - 2) else {
+            return []
+        }
+
+        return (0..<bestLength).compactMap { offset in
+            let kind = panelKinds[offset]
+            let row = candidates[bestStart + offset]
+            return analyte(from: row, kind: kind, lines: lines)
+        }
+    }
+
+    private static func analyte(
+        from row: TableRowCandidate,
+        kind: LabAnalyteKind,
+        lines: [String]
+    ) -> LabAnalyteResult? {
+        let referenceRange = extractReferenceRange(from: row.line, kind: kind)
+        let unitSymbol = resolvedUnitSymbol(
+            row.unitSymbol.isEmpty ? extractUnitSymbol(from: row.line, fallbackReferenceRange: referenceRange) : row.unitSymbol,
+            referenceRange: referenceRange,
+            kind: kind
+        )
+        let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
+        if kind.simulatedHormone != nil, concentrationUnit == nil {
+            return nil
+        }
+
+        return LabAnalyteResult(
+            kind: kind,
+            name: detectedName(for: kind, in: row.evidenceText),
+            value: row.value,
+            unitSymbol: concentrationUnit?.symbol ?? unitSymbol,
+            concentrationUnit: concentrationUnit,
+            referenceRange: referenceRange,
+            method: row.method ?? methodNearLine(row.lineIndex, in: lines),
+            sourceLine: stripInternalParserHints(row.evidenceText)
+        )
+    }
+
+    private struct TableRowCandidate {
+        var lineIndex: Int
+        var line: String
+        var value: Double
+        var unitSymbol: String
+        var method: String?
+        var explicitKind: LabAnalyteKind?
+        var referenceBounds: (lower: Double, upper: Double)?
+        var evidenceText: String
+    }
+
+    private static func tableRowCandidate(
+        from item: EnumeratedSequence<[String]>.Element,
+        lines: [String]
+    ) -> TableRowCandidate? {
+        let (index, line) = item
+        guard let referenceMatch = referenceRangeMatches(in: line).first,
+              let value = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceMatch) else {
+            return nil
+        }
+        let nearbyKind = detectedKindNearLine(index, line: line, in: lines)
+        let evidenceText = nearbyKind.map { _ in evidenceTextNearLine(index, in: lines) } ?? line
+
+        return TableRowCandidate(
+            lineIndex: index,
+            line: line,
+            value: value,
+            unitSymbol: extractUnitSymbol(from: line),
+            method: extractMethod(from: line),
+            explicitKind: nearbyKind ?? detectAnalyteKind(in: line),
+            referenceBounds: referenceBounds(from: line),
+            evidenceText: evidenceText
+        )
+    }
+
+    private static func detectedKindNearLine(_ index: Int, line: String, in lines: [String]) -> LabAnalyteKind? {
+        if let kind = detectAnalyteKind(in: lines[index]) {
+            return kind
+        }
+
+        let nearbyIndices = [index - 1, index + 1, index - 2, index + 2]
+            .filter { lines.indices.contains($0) }
+        let scoredKinds = nearbyIndices.compactMap { candidateIndex -> (kind: LabAnalyteKind, score: Int)? in
+            let line = lines[candidateIndex]
+            let displayLine = stripInternalParserHints(line)
+            guard referenceRangeMatches(in: displayLine).isEmpty else {
+                return nil
+            }
+            guard displayLine.count <= 40 else { return nil }
+            guard let kind = detectAnalyteKind(in: line) else { return nil }
+            let distance = abs(candidateIndex - index)
+            return (kind, 10 - distance * 2 + unitCompatibilityScore(candidateLine: lines[index], kind: kind))
+        }
+        return scoredKinds.max { $0.score < $1.score }?.kind
+    }
+
+    private static func unitCompatibilityScore(candidateLine line: String, kind: LabAnalyteKind) -> Int {
+        let referenceRange = extractReferenceRange(from: line, kind: kind)
+        let unit = resolvedUnitSymbol(
+            extractUnitSymbol(from: line, fallbackReferenceRange: referenceRange),
+            referenceRange: referenceRange,
+            kind: kind
+        )
+        var score = 0
+        switch kind {
+        case .estradiol:
+            if unit == "pmol/L" || unit == "pg/mL" { score += 4 }
+        case .prolactin:
+            if unit == "mIU/L" || unit == "mIU/mL" || unit == "ng/mL" { score += 4 }
+        case .follicleStimulatingHormone, .luteinizingHormone:
+            if unit == "IU/L" || unit == "mIU/mL" { score += 3 }
+        case .testosterone:
+            if unit == "nmol/L" || unit == "ng/dL" || unit == "ng/mL" { score += 4 }
+            if let bounds = referenceBounds(from: line), bounds.upper >= 5 { score += 2 }
+        case .progesterone:
+            if unit == "nmol/L" || unit == "ng/mL" { score += 3 }
+            if let bounds = referenceBounds(from: line), bounds.upper <= 5 { score += 2 }
+        case .dehydroepiandrosteroneSulfate:
+            if unit == "µmol/L" { score += 4 }
+        default:
+            break
+        }
+        return score
+    }
+
+    private static func evidenceTextNearLine(_ index: Int, in lines: [String]) -> String {
+        let nearbyIndices = [index - 2, index - 1, index, index + 1, index + 2]
+            .filter { lines.indices.contains($0) }
+        return nearbyIndices
+            .map { lines[$0] }
+            .filter { !$0.trimmed.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func panelRowScore(_ row: TableRowCandidate, kind: LabAnalyteKind) -> Int {
+        var score = 0
+        if let explicitKind = row.explicitKind {
+            if explicitKind == kind {
+                score += 6
+            } else {
+                score -= 8
+            }
+        }
+
+        let referenceRange = extractReferenceRange(from: row.line, kind: kind)
+        let unit = resolvedUnitSymbol(row.unitSymbol, referenceRange: referenceRange, kind: kind)
+        switch kind {
+        case .estradiol:
+            if unit == "pmol/L" || unit == "pg/mL" { score += 2 }
+        case .prolactin:
+            if unit == "mIU/L" || unit == "mIU/mL" || unit == "ng/mL" { score += 2 }
+        case .follicleStimulatingHormone, .luteinizingHormone:
+            if unit == "IU/L" || unit == "mIU/mL" { score += 2 }
+        case .testosterone:
+            if unit == "nmol/L" || unit == "ng/dL" || unit == "ng/mL" { score += 2 }
+            if let bounds = row.referenceBounds, bounds.upper >= 5 { score += 1 }
+        case .progesterone:
+            if unit == "nmol/L" || unit == "ng/mL" { score += 2 }
+            if let bounds = row.referenceBounds, bounds.upper <= 5 { score += 1 }
+        case .dehydroepiandrosteroneSulfate:
+            if unit == "µmol/L" { score += 2 }
+        default:
+            break
+        }
+        return score
+    }
+
+    private static func extractMeasuredValueBeforeReference(
+        in line: String,
+        referenceRange: NSTextCheckingResult
+    ) -> Double? {
+        guard let prefixRange = Range(NSRange(location: 0, length: referenceRange.range.location), in: line) else {
+            return nil
+        }
+
+        let prefix = String(line[prefixRange])
+        let numberPattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
+        guard let regex = try? NSRegularExpression(pattern: numberPattern) else { return nil }
+        let range = NSRange(prefix.startIndex..<prefix.endIndex, in: prefix)
+        let bounds = referenceBounds(from: line)
+
+        return regex.matches(in: prefix, range: range).reversed().compactMap { match in
+            stringCapture(1, in: prefix, match: match)
+                .flatMap { correctedMeasuredValue(from: $0, referenceBounds: bounds, kind: nil) }
+        }
+        .first
+    }
+
+    private static func methodNearLine(_ index: Int, in lines: [String]) -> String? {
+        let nearbyIndices = [index - 1, index + 1].filter { lines.indices.contains($0) }
+        return nearbyIndices.compactMap { extractMethod(from: lines[$0]) }.first
     }
 
     private static func detectAnalyteKind(in line: String) -> LabAnalyteKind? {
@@ -1319,9 +4045,9 @@ private enum HormoneLabResultParser {
             (.freeTestosterone, #"(?i)(游离睾酮|free\s+testosterone|\bfree\s+t\b)"#),
             (.sexHormoneBindingGlobulin, #"(?i)(性激素结合球蛋白|\bshbg\b)"#),
             (.estradiol, #"(?i)(雌二醇|\boestradiol\b|\bestradiol\b|\be2\b)"#),
-            (.testosterone, #"(?i)(总睾酮|睾酮|睪酮|\btotal\s+t\b|\btestosterone\b|^\s*t\b|\bt\s*:)"#),
-            (.luteinizingHormone, #"(?i)(促黄体生成素|黄体生成素|\blh\b)"#),
-            (.follicleStimulatingHormone, #"(?i)(促卵泡生成素|卵泡刺激素|\bfsh\b)"#),
+            (.testosterone, #"(?i)(总睾酮|睾酮|睪酮|\btotal\s+t\b|\btestosterone\b|\btesto\b|testo|^\s*t\b|\bt\s*:)"#),
+            (.luteinizingHormone, #"(?i)(促黄体生成素|黄体生成素|\blh\b|\bluteini[sz](?:ing|ng)\s+hormone\b)"#),
+            (.follicleStimulatingHormone, #"(?i)(促卵泡生成素|卵泡刺激素|\bfsh\b|\bfollicle\s+stimulat(?:ing|ion)\s+hormone\b)"#),
             (.prolactin, #"(?i)(泌乳素|\bprolactin\b|\bprl\b)"#),
             (.progesterone, #"(?i)(孕酮|\bprogesterone\b|^\s*p\b|\bp\s*:)"#),
             (.dehydroepiandrosteroneSulfate, #"(?i)(硫酸脱氢表雄酮|脱氢表雄酮|dhea\s*-?\s*s|dheas)"#)
@@ -1336,12 +4062,21 @@ private enum HormoneLabResultParser {
     private static func detectedName(for kind: LabAnalyteKind, in line: String) -> String {
         let cleanLine = line.trimmed
         if cleanLine.contains("雌二醇") { return "Estradiol" }
-        if cleanLine.contains("睾酮") || cleanLine.contains("睪酮") { return kind.defaultName }
+        if cleanLine.contains("睾酮") || cleanLine.contains("睪酮") || cleanLine.localizedCaseInsensitiveContains("Testo") { return kind.defaultName }
+        if cleanLine.contains("泌乳素") { return "Prolactin" }
+        if cleanLine.contains("促卵泡") || cleanLine.localizedCaseInsensitiveContains("FSH") { return "FSH" }
+        if cleanLine.contains("促黄体") || cleanLine.localizedCaseInsensitiveContains("LH") { return "LH" }
+        if cleanLine.contains("孕酮") { return "Progesterone" }
         if cleanLine.lowercased().contains("dhea") || cleanLine.contains("脱氢表雄酮") { return "DHEA-S" }
         return kind.defaultName
     }
 
     private static func extractMeasuredValue(from line: String, kind: LabAnalyteKind) -> Double? {
+        if let referenceRange = referenceRangeMatches(in: line).first,
+           let value = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceRange) {
+            return value
+        }
+
         let referenceRanges = referenceRangeMatches(in: line).map(\.range)
         let analyteRanges = analyteCodeMatches(in: line, kind: kind).map(\.range)
         let numberPattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
@@ -1352,21 +4087,101 @@ private enum HormoneLabResultParser {
         for match in matches
             where !referenceRanges.contains(where: { rangesOverlap($0, match.range) })
                 && !analyteRanges.contains(where: { rangesOverlap($0, match.range) }) {
-            guard let valueText = stringCapture(1, in: line, match: match)?
-                .replacingOccurrences(of: "<", with: "")
-                .replacingOccurrences(of: ">", with: "")
-                .replacingOccurrences(of: "≤", with: "")
-                .replacingOccurrences(of: "≥", with: "")
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: ",", with: "."),
-                let value = Double(valueText),
-                value > 0 else {
+            guard let valueText = stringCapture(1, in: line, match: match),
+                let value = correctedMeasuredValue(from: valueText, referenceBounds: referenceBounds(from: line), kind: kind),
+                value >= 0 else {
                 continue
             }
             return value
         }
 
         return nil
+    }
+
+    private static func cleanNumberText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "<", with: "")
+            .replacingOccurrences(of: ">", with: "")
+            .replacingOccurrences(of: "≤", with: "")
+            .replacingOccurrences(of: "≥", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: ",", with: ".")
+    }
+
+    private static func correctedMeasuredValue(
+        from rawText: String,
+        referenceBounds: (lower: Double, upper: Double)?,
+        kind: LabAnalyteKind?
+    ) -> Double? {
+        let cleanText = cleanNumberText(rawText)
+        guard let value = Double(cleanText), value >= 0 else {
+            return nil
+        }
+        guard let strippedText = numberTextByDroppingLeadingFlagOne(cleanText),
+              let strippedValue = Double(strippedText),
+              shouldDropLeadingFlagOne(original: value, stripped: strippedValue, referenceBounds: referenceBounds, kind: kind) else {
+            return value
+        }
+        return strippedValue
+    }
+
+    private static func numberTextByDroppingLeadingFlagOne(_ text: String) -> String? {
+        guard text.hasPrefix("1"), text.count >= 2 else { return nil }
+        var stripped = String(text.dropFirst())
+        guard stripped.contains(where: \.isNumber) else { return nil }
+        if stripped.hasPrefix(".") {
+            stripped = "0" + stripped
+        }
+        return stripped
+    }
+
+    private static func shouldDropLeadingFlagOne(
+        original: Double,
+        stripped: Double,
+        referenceBounds: (lower: Double, upper: Double)?,
+        kind: LabAnalyteKind?
+    ) -> Bool {
+        guard stripped >= 0,
+              stripped < original,
+              let referenceBounds else {
+            return false
+        }
+
+        let upper = max(referenceBounds.lower, referenceBounds.upper)
+        guard upper > 0 else { return false }
+
+        let originalRatio = original / upper
+        let strippedRatio = stripped / upper
+
+        if originalRatio >= 8, strippedRatio <= 4 {
+            return true
+        }
+        if originalRatio >= 3, strippedRatio <= 1.5 {
+            return true
+        }
+        if originalRatio >= 5, strippedRatio <= originalRatio * 0.4 {
+            return true
+        }
+
+        return false
+    }
+
+    private static func compactEvidenceText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\t", with: "")
+    }
+
+    private static func valueEvidenceCandidates(for value: Double) -> [String] {
+        let candidates = [
+            String(value),
+            String(format: "%.0f", value),
+            String(format: "%.1f", value),
+            String(format: "%.2f", value),
+            String(format: "%.3f", value)
+        ]
+        return Array(Set(candidates.map(compactEvidenceText)))
     }
 
     private static func analyteCodeMatches(in line: String, kind: LabAnalyteKind) -> [NSTextCheckingResult] {
@@ -1399,74 +4214,373 @@ private enum HormoneLabResultParser {
         return regex.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line))
     }
 
-    private static func extractReferenceRange(from line: String) -> String? {
+    private static func extractReferenceRange(from line: String, kind: LabAnalyteKind? = nil) -> String? {
         guard let match = referenceRangeMatches(in: line).first,
               let range = Range(match.range, in: line) else {
             return nil
         }
-        return String(line[range]).trimmed
+        return normalizedReferenceRange(String(line[range]).trimmed, kind: kind)
     }
 
     private static func referenceRangeMatches(in line: String) -> [NSTextCheckingResult] {
-        let pattern = #"([<>≤≥]?\s*\d+(?:[\.,]\d+)?)\s*(?:-|~|至|到)\s*([<>≤≥]?\s*\d+(?:[\.,]\d+)?)\s*([a-zA-Zμµ/%]+(?:\s*/\s*[a-zA-Zμµ]+)?)?"#
+        let pattern = #"([<>≤≥]?\s*\d+(?:[\.,]\d+)?)\s*(?:-|~|至|到)\s*([<>≤≥]?\s*\d+(?:[\.,]\d+)?)\s*([a-zA-Z0-9μµ/%]+(?:\s*/\s*[a-zA-Z0-9μµ]+)?)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
         return regex.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line))
     }
 
-    private static func extractUnitSymbol(from line: String) -> String {
-        let pattern = #"(?i)(pg\s*/?\s*m[lL]|pmol\s*/?\s*[lL]|ng\s*/?\s*d[lL]|ng\s*/?\s*m[lL]|nmol\s*/?\s*[lL]|u?mol\s*/?\s*[lL]|[µμ]mol\s*/?\s*[lL]|mIU\s*/?\s*m[lL]|uIU\s*/?\s*m[lL]|[µμ]IU\s*/?\s*m[lL]|IU\s*/?\s*[lL]|mIU\s*/?\s*[lL])"#
-        guard let match = firstMatch(pattern: pattern, in: line),
-              let unit = stringCapture(1, in: line, match: match) else {
-            return ""
+    private static func referenceBounds(from line: String) -> (lower: Double, upper: Double)? {
+        guard let match = referenceRangeMatches(in: line).first,
+              let lower = stringCapture(1, in: line, match: match).map(cleanNumberText).flatMap(Double.init),
+              let upper = stringCapture(2, in: line, match: match).map(cleanNumberText).flatMap(Double.init) else {
+            return nil
+        }
+        return (lower, upper)
+    }
+
+    private static func normalizedReferenceRange(_ referenceRange: String, kind: LabAnalyteKind?) -> String {
+        var normalized = normalizedUnitSubstrings(in: referenceRange)
+            .replacingOccurrences(of: "umol/L", with: "µmol/L", options: [.caseInsensitive])
+            .replacingOccurrences(of: "wmol/L", with: "µmol/L", options: [.caseInsensitive])
+            .replacingOccurrences(of: "u mol/L", with: "µmol/L", options: [.caseInsensitive])
+            .replacingOccurrences(of: "μmol/L", with: "µmol/L", options: [.caseInsensitive])
+            .replacingOccurrences(of: "IV/L", with: "IU/L", options: [.caseInsensitive])
+
+        if kind == .testosterone || kind == .progesterone {
+            normalized = normalized
+                .replacingOccurrences(of: "mmo1/L", with: "nmol/L", options: [.caseInsensitive])
+                .replacingOccurrences(of: "mmol/L", with: "nmol/L", options: [.caseInsensitive])
+        }
+        if kind == .dehydroepiandrosteroneSulfate {
+            normalized = normalized
+                .replacingOccurrences(of: "mmo1/L", with: "µmol/L", options: [.caseInsensitive])
+                .replacingOccurrences(of: "mmol/L", with: "µmol/L", options: [.caseInsensitive])
         }
 
-        let compact = unit
+        return normalized
+    }
+
+    private static func extractUnitSymbol(from line: String) -> String {
+        extractUnitSymbol(from: line, fallbackReferenceRange: nil)
+    }
+
+    private static func extractUnitSymbol(from line: String, fallbackReferenceRange: String?) -> String {
+        if let fallbackReferenceRange,
+           let unit = firstUnitSymbol(in: fallbackReferenceRange) {
+            return unit
+        }
+
+        if let unit = firstUnitSymbolAfterNumber(in: line) {
+            return unit
+        }
+
+        return firstUnitSymbol(in: line) ?? ""
+    }
+
+    private static var unitSymbolPattern: String {
+        let massUnit = #"(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|g)"#
+        let molarUnit = #"(?:p\s*mol|n\s*mol|u\s*mol|w\s*mol|µ\s*mol|μ\s*mol|m\s*mol|mmo[1l]|mol)"#
+        let activityUnit = #"(?:u\s*IU|µ\s*IU|μ\s*IU|m\s*IU|m?[i1][uUvV]|IU|IV|1U|1V|U)"#
+        let denominator = #"(?:m\s*[lL1]|d\s*[lL1]|[lL1])"#
+        return #"(?<![A-Za-z])((?:"# + massUnit + #"|"# + molarUnit + #"|"# + activityUnit + #")\s*/?\s*"# + denominator + #")(?![A-Za-z])"#
+    }
+
+    private static func firstUnitSymbol(in text: String) -> String? {
+        guard let match = firstMatch(pattern: unitSymbolPattern, in: text),
+              let unit = stringCapture(1, in: text, match: match) else {
+            return nil
+        }
+        return normalizedUnitToken(unit)
+    }
+
+    private static func firstUnitSymbolAfterNumber(in line: String) -> String? {
+        let numberPattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
+        guard let numberRegex = try? NSRegularExpression(pattern: numberPattern),
+              let unitRegex = try? NSRegularExpression(
+                pattern: #"^\s*(?:[↑↓HhLl*•·\.\-–—:]|\([HhLl]\))*\s*"# + unitSymbolPattern,
+                options: [.caseInsensitive]
+              ) else {
+            return nil
+        }
+
+        let matches = numberRegex.matches(in: line, range: NSRange(line.startIndex..<line.endIndex, in: line))
+        for match in matches {
+            let suffixLocation = match.range.location + match.range.length
+            guard suffixLocation <= (line as NSString).length else { continue }
+            let maxLength = min(24, (line as NSString).length - suffixLocation)
+            let suffixRange = NSRange(location: suffixLocation, length: maxLength)
+            guard let swiftRange = Range(suffixRange, in: line) else { continue }
+            let suffix = String(line[swiftRange])
+            guard let unitMatch = unitRegex.firstMatch(in: suffix, range: NSRange(suffix.startIndex..<suffix.endIndex, in: suffix)),
+                  let unit = stringCapture(1, in: suffix, match: unitMatch) else {
+                continue
+            }
+            return normalizedUnitToken(unit)
+        }
+
+        return nil
+    }
+
+    private static func normalizedUnitSubstrings(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: unitSymbolPattern, options: [.caseInsensitive]) else {
+            return text
+        }
+
+        var normalized = text
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+        for match in matches.reversed() {
+            guard let range = Range(match.range(at: 1), in: normalized),
+                  let originalRange = Range(match.range(at: 1), in: text) else {
+                continue
+            }
+            normalized.replaceSubrange(range, with: normalizedUnitToken(String(text[originalRange])))
+        }
+        return normalized
+    }
+
+    private static func normalizedUnitToken(_ raw: String) -> String {
+        let compact = raw
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "／", with: "/")
-        switch compact.lowercased() {
+            .replacingOccurrences(of: "μ", with: "µ")
+            .replacingOccurrences(of: "/m1", with: "/ml", options: [.caseInsensitive])
+            .replacingOccurrences(of: "/d1", with: "/dl", options: [.caseInsensitive])
+        let lower = compact.lowercased()
+            .replacingOccurrences(of: "1", with: "i")
+            .replacingOccurrences(of: "iv", with: "iu")
+            .replacingOccurrences(of: "miv", with: "miu")
+        switch lower {
         case "pg/ml": return "pg/mL"
+        case "pg/l": return "pg/L"
+        case "pg/dl": return "pg/dL"
         case "pmol/l": return "pmol/L"
+        case "pmol/ml": return "pmol/mL"
+        case "pmol/dl": return "pmol/dL"
         case "ng/dl": return "ng/dL"
         case "ng/ml": return "ng/mL"
+        case "ng/l": return "ng/L"
+        case "ug/ml", "µg/ml": return "µg/mL"
+        case "ug/l", "µg/l": return "µg/L"
+        case "ug/dl", "µg/dl": return "µg/dL"
+        case "mg/ml": return "mg/mL"
+        case "mg/l": return "mg/L"
+        case "mg/dl": return "mg/dL"
+        case "g/ml": return "g/mL"
+        case "g/l": return "g/L"
+        case "g/dl": return "g/dL"
         case "nmol/l": return "nmol/L"
+        case "nmol/ml": return "nmol/mL"
+        case "nmol/dl": return "nmol/dL"
+        case "mmol/l", "mmoi/l": return "mmol/L"
+        case "mmol/ml", "mmoi/ml": return "mmol/mL"
+        case "mmol/dl", "mmoi/dl": return "mmol/dL"
         case "miu/ml": return "mIU/mL"
         case "uiu/ml": return "uIU/mL"
-        case "iu/l": return "IU/L"
+        case "µiu/ml": return "µIU/mL"
+        case "iu/ml", "u/ml": return "IU/mL"
+        case "miu/dl": return "mIU/dL"
+        case "iu/dl", "u/dl": return "IU/dL"
+        case "uiu/dl": return "uIU/dL"
+        case "µiu/dl": return "µIU/dL"
+        case "iu/l", "u/l": return "IU/L"
         case "miu/l": return "mIU/L"
-        case "umol/l": return "umol/L"
-        case "µmol/l": return "µmol/L"
-        case "μmol/l": return "μmol/L"
+        case "uiu/l": return "uIU/L"
+        case "µiu/l": return "µIU/L"
+        case "umol/l", "wmol/l", "µmol/l": return "µmol/L"
+        case "umol/ml", "wmol/ml", "µmol/ml": return "µmol/mL"
+        case "umol/dl", "wmol/dl", "µmol/dl": return "µmol/dL"
+        case "mol/l": return "mol/L"
+        case "mol/ml": return "mol/mL"
+        case "mol/dl": return "mol/dL"
         default: return compact
+        }
+    }
+
+    private static func resolvedUnitSymbol(_ rawUnitSymbol: String, kind: LabAnalyteKind) -> String {
+        if (kind == .testosterone || kind == .progesterone), rawUnitSymbol == "mmol/L" {
+            return "nmol/L"
+        }
+        if kind == .dehydroepiandrosteroneSulfate, rawUnitSymbol == "mol/L" || rawUnitSymbol == "mmol/L" {
+            return "µmol/L"
+        }
+        return rawUnitSymbol
+    }
+
+    private static func resolvedUnitSymbol(
+        _ rawUnitSymbol: String,
+        referenceRange: String?,
+        kind: LabAnalyteKind
+    ) -> String {
+        let unit = resolvedUnitSymbol(rawUnitSymbol, kind: kind)
+        if let inferred = inferredUnitSymbol(from: referenceRange, kind: kind) {
+            if unit.isEmpty || unit == "mol/L" {
+                return inferred
+            }
+            if kind == .prolactin, unit == "IU/L" {
+                return inferred
+            }
+        }
+        return unit
+    }
+
+    private static func inferredUnitSymbol(from referenceRange: String?, kind: LabAnalyteKind) -> String? {
+        guard let referenceRange,
+              let bounds = referenceBounds(from: referenceRange) else {
+            return nil
+        }
+
+        switch kind {
+        case .estradiol:
+            return bounds.upper >= 100 ? "pmol/L" : nil
+        case .testosterone:
+            return bounds.upper >= 5 ? "nmol/L" : nil
+        case .progesterone:
+            return bounds.upper <= 10 ? "nmol/L" : nil
+        case .prolactin:
+            return bounds.upper >= 100 ? "mIU/L" : nil
+        case .follicleStimulatingHormone, .luteinizingHormone:
+            return "IU/L"
+        case .dehydroepiandrosteroneSulfate:
+            return "µmol/L"
+        default:
+            return nil
         }
     }
 
     private static func extractMethod(from line: String) -> String? {
         let lower = line.lowercased()
-        let tokens = ["i2000sr", "lc-ms/ms", "eclia", "clia", "cmia", "elisa", "化学发光", "免疫", "质谱"]
+        if lower.contains("i2000sr") || lower.contains("12000sr") || lower.contains("l2000sr") {
+            return "i2000SR"
+        }
+        let tokens = ["lc-ms/ms", "eclia", "clia", "cmia", "elisa", "化学发光", "免疫", "质谱"]
         return tokens.first { lower.contains($0.lowercased()) }
     }
 
-    private static func extractField(from lines: [String], labels: [String]) -> String {
+    private static func extractInstitution(from lines: [String]) -> String {
+        let labeled = extractField(
+            from: lines,
+            labels: ["检验机构", "检测机构", "实验室", "laboratory", "institution", "lab"]
+        )
+        if !labeled.isEmpty {
+            return sanitizedInstitution(labeled)
+        }
+
+        for line in lines.prefix(12) {
+            let candidate = sanitizedInstitution(line)
+            guard !candidate.isEmpty else { continue }
+            if line.contains("医院")
+                || line.localizedCaseInsensitiveContains("hospital")
+                || line.localizedCaseInsensitiveContains("laboratory")
+                || line.contains("检验报告")
+                || line.contains("报告单") {
+                return candidate
+            }
+        }
+        return ""
+    }
+
+    private static func sanitizedInstitution(_ raw: String) -> String {
+        var value = raw.trimmed
+        let noise = [
+            "检验报告单", "检验报告", "报告单", "报告",
+            "打印次数", "第1页", "共1页", "门诊", "门急诊"
+        ]
+        for token in noise {
+            value = value.replacingOccurrences(of: token, with: "")
+        }
+        value = value.replacingOccurrences(of: ":", with: " ")
+        value = value.replacingOccurrences(of: "：", with: " ")
+        value = value
+            .replacingOccurrences(of: "...", with: "")
+            .replacingOccurrences(of: "…", with: "")
+            .trimmed
+
+        if value.contains("大学附属"), !value.contains("医院") {
+            if let siteRange = value.range(of: "（") ?? value.range(of: "(") {
+                value.insert(contentsOf: "医院", at: siteRange.lowerBound)
+            } else {
+                value += "医院"
+            }
+        }
+
+        return value.trimmed
+    }
+
+    private static func extractSpecimen(from lines: [String]) -> String {
+        let value = extractField(
+            from: lines,
+            labels: ["标本种类", "样本类型", "标本", "specimen", "sample type"],
+            terminators: ["收费类别", "收夷类别", "申请医生", "临床诊断", "科室", "病区", "病历号", "样本编号"]
+        )
+        guard !value.isEmpty else { return "" }
+        return value
+            .replacingOccurrences(of: "血清收", with: "血清")
+            .trimmed
+    }
+
+    private static func extractReportMethod(from lines: [String], analytes: [LabAnalyteResult]) -> String {
+        let labeled = extractField(
+            from: lines,
+            labels: ["检测方法", "检验方法", "方法学", "method", "assay"],
+            terminators: ["检验项目", "结果", "参考范围", "系统", "采集时间", "报告时间"]
+        )
+        if isMeaningfulMethod(labeled) {
+            return labeled
+        }
+
+        let methods = analytes.compactMap(\.method).filter { isMeaningfulMethod($0) }
+        let grouped = Dictionary(grouping: methods, by: { $0 })
+        return grouped.max { lhs, rhs in lhs.value.count < rhs.value.count }?.key ?? ""
+    }
+
+    private static func isMeaningfulMethod(_ value: String) -> Bool {
+        let clean = value.trimmed
+        guard clean.count >= 3 else { return false }
+        let lower = clean.lowercased()
+        if lower == "method" || clean == "方法" || clean == "方法学" || clean.contains("系统或") {
+            return false
+        }
+        if clean.contains("检验项目") || clean.contains("参考范围") || clean.contains("结果") {
+            return false
+        }
+        return true
+    }
+
+    private static func extractField(
+        from lines: [String],
+        labels: [String],
+        terminators: [String] = []
+    ) -> String {
         for line in lines {
-            let lower = line.lowercased()
-            guard let label = labels.first(where: { lower.contains($0.lowercased()) }) else { continue }
-            if let colon = line.firstIndex(of: ":") {
-                let value = String(line[line.index(after: colon)...]).trimmed
-                if !value.isEmpty { return value }
+            guard let label = labels.first(where: { line.range(of: $0, options: [.caseInsensitive]) != nil }),
+                  let labelRange = line.range(of: label, options: [.caseInsensitive]) else {
+                continue
             }
-            let value = line.replacingOccurrences(of: label, with: "", options: [.caseInsensitive]).trimmed
-            if !value.isEmpty, value != line {
-                return value
+
+            var value = String(line[labelRange.upperBound...]).trimmed
+            if value.hasPrefix(":") || value.hasPrefix("：") {
+                value.removeFirst()
             }
+            value = value.trimmed
+
+            for terminator in terminators {
+                if let terminatorRange = value.range(of: terminator, options: [.caseInsensitive]) {
+                    value = String(value[..<terminatorRange.lowerBound]).trimmed
+                }
+            }
+
+            if !value.isEmpty { return value }
         }
         return ""
     }
 
     private static func extractDate(from lines: [String], labels: [String]) -> Date? {
         for line in lines {
-            let lower = line.lowercased()
-            guard labels.contains(where: { lower.contains($0.lowercased()) }) else { continue }
-            if let date = extractDate(from: line) {
+            guard let label = labels.first(where: { line.range(of: $0, options: [.caseInsensitive]) != nil }),
+                  let labelRange = line.range(of: label, options: [.caseInsensitive]) else {
+                continue
+            }
+            let labeledSuffix = String(line[labelRange.upperBound...])
+            if let date = extractDate(from: labeledSuffix) ?? extractDate(from: line) {
                 return date
             }
         }
@@ -1474,6 +4588,10 @@ private enum HormoneLabResultParser {
     }
 
     private static func extractDate(from text: String) -> Date? {
+        extractDates(from: text).first
+    }
+
+    private static func extractDates(from text: String) -> [Date] {
         let normalized = text
             .replacingOccurrences(of: "年", with: "-")
             .replacingOccurrences(of: "月", with: "-")
@@ -1482,12 +4600,16 @@ private enum HormoneLabResultParser {
             .replacingOccurrences(of: ".", with: "-")
 
         let patterns = [
-            #"(\d{4})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})(?:\s+(\d{1,2})\s*[:时]\s*(\d{1,2}))?"#,
-            #"(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(\d{4})(?:\s+(\d{1,2})\s*[:时]\s*(\d{1,2}))?"#
+            #"(\d{4})\s*-\s*(\d{1,2})\s*-\s*(\d{1,2})(?:\s*(\d{1,2})\s*[:时]\s*(\d{1,2})(?:\s*[:分]\s*\d{1,2})?)?"#,
+            #"(\d{1,2})\s*-\s*(\d{1,2})\s*-\s*(\d{4})(?:\s*(\d{1,2})\s*[:时]\s*(\d{1,2})(?:\s*[:分]\s*\d{1,2})?)?"#
         ]
 
+        var dates: [Date] = []
         for pattern in patterns {
-            guard let match = firstMatch(pattern: pattern, in: normalized) else { continue }
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let matches = regex.matches(in: normalized, range: NSRange(normalized.startIndex..<normalized.endIndex, in: normalized))
+
+            for match in matches {
             let first = intCapture(1, in: normalized, match: match)
             let second = intCapture(2, in: normalized, match: match)
             let third = intCapture(3, in: normalized, match: match)
@@ -1516,11 +4638,80 @@ private enum HormoneLabResultParser {
             components.hour = hour
             components.minute = minute
             if let date = components.date {
-                return date
+                    dates.append(date)
+                }
             }
         }
 
-        return nil
+        dates.append(contentsOf: extractMonthNameDates(from: text))
+        if normalized != text {
+            dates.append(contentsOf: extractMonthNameDates(from: normalized))
+        }
+        return dates
+    }
+
+    private static func extractMonthNameDates(from text: String) -> [Date] {
+        let monthFirstPattern = #"\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})(?:\s+(\d{1,2})\s*:\s*(\d{2})(?:\s*([AaPp][Mm]))?)?"#
+        let dayFirstPattern = #"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})(?:\s+(\d{1,2})\s*:\s*(\d{2})(?:\s*([AaPp][Mm]))?)?"#
+        var dates: [Date] = []
+
+        dates.append(contentsOf: monthNameDates(in: text, pattern: monthFirstPattern, monthIndex: 1, dayIndex: 2, yearIndex: 3))
+        dates.append(contentsOf: monthNameDates(in: text, pattern: dayFirstPattern, monthIndex: 2, dayIndex: 1, yearIndex: 3))
+        return dates
+    }
+
+    private static func monthNameDates(
+        in text: String,
+        pattern: String,
+        monthIndex: Int,
+        dayIndex: Int,
+        yearIndex: Int
+    ) -> [Date] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text))
+
+        return matches.compactMap { match in
+            guard let monthText = stringCapture(monthIndex, in: text, match: match),
+                  let month = monthNumber(from: monthText),
+                  let day = intCapture(dayIndex, in: text, match: match),
+                  let year = intCapture(yearIndex, in: text, match: match) else {
+                return nil
+            }
+            var hour = intCapture(4, in: text, match: match) ?? 12
+            let minute = intCapture(5, in: text, match: match) ?? 0
+            if let marker = stringCapture(6, in: text, match: match)?.lowercased() {
+                if marker == "pm", hour < 12 { hour += 12 }
+                if marker == "am", hour == 12 { hour = 0 }
+            }
+
+            var components = DateComponents()
+            components.calendar = Calendar.current
+            components.year = year
+            components.month = month
+            components.day = day
+            components.hour = hour
+            components.minute = minute
+            return components.date
+        }
+    }
+
+    private static func monthNumber(from text: String) -> Int? {
+        let prefix = text.lowercased().prefix(3)
+        switch prefix {
+        case "jan": return 1
+        case "feb": return 2
+        case "mar": return 3
+        case "apr": return 4
+        case "may": return 5
+        case "jun": return 6
+        case "jul": return 7
+        case "aug": return 8
+        case "sep": return 9
+        case "oct": return 10
+        case "nov": return 11
+        case "dec": return 12
+        default: return nil
+        }
     }
 
     private static func rangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
@@ -1555,6 +4746,410 @@ private enum HormoneLabResultParser {
         stringCapture(index, in: text, match: match).flatMap(Int.init)
     }
 }
+
+#if DEBUG && canImport(FoundationModels)
+@available(iOS 26.0, *)
+@MainActor
+enum LabReportAIDiagnostics {
+    static func run() async -> String {
+        let model = SystemLanguageModel.default
+        let transformModel = SystemLanguageModel(
+            useCase: .contentTagging,
+            guardrails: .permissiveContentTransformations
+        )
+        var lines: [String] = []
+
+        lines.append("HRT Recorder Apple AI Diagnostics")
+        lines.append("Bundle: \(Bundle.main.bundleIdentifier ?? "unknown")")
+        lines.append("Device locale: \(Locale.current.identifier)")
+        lines.append("Timestamp: \(Date().formatted(date: .numeric, time: .standard))")
+        lines.append("")
+        lines.append("SystemLanguageModel")
+        lines.append("- availability: \(systemAvailabilityDescription(model.availability))")
+        lines.append("- supports current locale: \(model.supportsLocale(Locale.current))")
+        lines.append("- supports en_US: \(model.supportsLocale(Locale(identifier: "en_US")))")
+        lines.append("- supports zh_Hans: \(model.supportsLocale(Locale(identifier: "zh_Hans")))")
+        lines.append("")
+        lines.append("ContentTransform SystemLanguageModel")
+        lines.append("- availability: \(systemAvailabilityDescription(transformModel.availability))")
+        lines.append("- supports current locale: \(transformModel.supportsLocale(Locale.current))")
+        if #available(iOS 27.0, *) {
+            lines.append("")
+            lines.append("PrivateCloudComputeLanguageModel")
+            if appHasPrivateCloudComputeEntitlement() {
+                let privateCloudModel = PrivateCloudComputeLanguageModel()
+                lines.append("- availability: \(privateCloudAvailabilityDescription(privateCloudModel.availability))")
+                lines.append("- supports current locale: \(privateCloudModel.supportsLocale(Locale.current))")
+                lines.append("- supports zh_Hans: \(privateCloudModel.supportsLocale(Locale(identifier: "zh_Hans")))")
+            } else {
+                lines.append("- availability: unavailable.missingEntitlement")
+            }
+        } else {
+            lines.append("")
+            lines.append("PrivateCloudComputeLanguageModel")
+            lines.append("- availability: unavailable.requiresIOS27")
+        }
+        lines.append("")
+        lines.append(await runTextProbe(
+            name: "default plain English text",
+            model: model,
+            prompt: "Reply with exactly READY.",
+            instructions: "Follow the user's instruction exactly."
+        ))
+        lines.append("")
+        lines.append(await runTextProbe(
+            name: "default plain Chinese text",
+            model: model,
+            prompt: "请只回复 READY。",
+            instructions: "Follow the user's instruction exactly."
+        ))
+        lines.append("")
+        lines.append(await runStructuredProbe(model: transformModel))
+        lines.append("")
+        lines.append(await runMetadataNoMethodBoundaryProbe(model: transformModel))
+        if #available(iOS 27.0, *) {
+            lines.append("")
+            lines.append(await runPrivateCloudStructuredProbe())
+        }
+        lines.append("")
+        lines.append(await runProductionLabTextExtractionProbe())
+        lines.append("")
+        lines.append(await runProductionBoundaryProbe())
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static var diagnosticOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 96)
+    }
+
+    private static var boundaryOptions: GenerationOptions {
+        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 360)
+    }
+
+    private static func runTextProbe(
+        name: String,
+        model: SystemLanguageModel,
+        prompt: String,
+        instructions: String
+    ) async -> String {
+        guard model.isAvailable else {
+            return "\(name): SKIP system model unavailable (\(systemAvailabilityDescription(model.availability)))"
+        }
+
+        do {
+            let session = LanguageModelSession(model: model, instructions: instructions)
+            let response = try await session.respond(to: prompt, options: diagnosticOptions)
+            let content = response.content.trimmed
+            var trimSet = CharacterSet.whitespacesAndNewlines
+            trimSet.formUnion(CharacterSet(charactersIn: ".。!！"))
+            let normalizedContent = content.trimmingCharacters(in: trimSet)
+            let passed = normalizedContent.caseInsensitiveCompare("READY") == .orderedSame
+            return "\(name): \(passed ? "PASS" : "FAIL") response=\(content)"
+        } catch {
+            return "\(name): FAIL \(describe(error))"
+        }
+    }
+
+    private static func runStructuredProbe(model: SystemLanguageModel) async -> String {
+        guard model.isAvailable else {
+            return "structured generation: SKIP system model unavailable (\(systemAvailabilityDescription(model.availability)))"
+        }
+
+        do {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: "Return the requested diagnostic structure only."
+            )
+            let response = try await session.respond(
+                to: "Set status to READY and explanation to OK.",
+                generating: GeneratedDiagnosticPayload.self,
+                includeSchemaInPrompt: true,
+                options: diagnosticOptions
+            )
+            return "structured generation: PASS status=\(response.content.status) explanation=\(response.content.explanation)"
+        } catch {
+            return "structured generation: FAIL \(describe(error))"
+        }
+    }
+
+    private static func runMetadataNoMethodBoundaryProbe(model: SystemLanguageModel) async -> String {
+        guard model.isAvailable else {
+            return "metadata boundary no-method: SKIP system model unavailable (\(systemAvailabilityDescription(model.availability)))"
+        }
+
+        do {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: """
+                Extract document metadata from OCR evidence only.
+                Leave method empty unless the OCR explicitly contains an assay method or analyzer/instrument line or token.
+                Do not use report titles, department names, specimen types, diagnoses, or generic analysis/result text as method.
+                For specimen, prefer the narrowest plausible material visible in a specimen/sample field.
+                If a specimen value is OCR-corrupted, normalize it only when confident; do not broaden it to generic blood unless blood is explicitly visible.
+                Do not invent fields.
+                """
+            )
+            let response = try await session.respond(
+                to: """
+                OCR evidence:
+                \(diagnosticNoMethodOCRText)
+
+                No assay method line is visible in this evidence.
+                """,
+                generating: GeneratedBoundaryMetadataPayload.self,
+                includeSchemaInPrompt: true,
+                options: boundaryOptions
+            )
+            let payload = response.content
+            let method = payload.method.trimmed
+            let specimen = payload.specimen.trimmed
+            let methodOK = method.isEmpty
+            let specimenOK = specimen.isEmpty
+                || specimen == "血清"
+                || specimen.localizedCaseInsensitiveContains("serum")
+            return [
+                "metadata boundary no-method: \(methodOK && specimenOK ? "PASS" : "FAIL")",
+                "method=\(method.isEmpty ? "empty" : method)",
+                "specimen=\(specimen.isEmpty ? "empty" : specimen)",
+                "institution=\(payload.institution.trimmed)"
+            ].joined(separator: " ")
+        } catch {
+            return "metadata boundary no-method: FAIL \(describe(error))"
+        }
+    }
+
+    @available(iOS 27.0, *)
+    private static func runPrivateCloudStructuredProbe() async -> String {
+        guard appHasPrivateCloudComputeEntitlement() else {
+            return "private cloud structured generation: SKIP missing com.apple.developer.private-cloud-compute entitlement"
+        }
+        let model = PrivateCloudComputeLanguageModel()
+        guard model.isAvailable else {
+            return "private cloud structured generation: SKIP private cloud unavailable (\(privateCloudAvailabilityDescription(model.availability)))"
+        }
+
+        do {
+            let session = LanguageModelSession(
+                model: model,
+                instructions: "Return the requested diagnostic structure only."
+            )
+            let response = try await session.respond(
+                to: "Set status to READY and explanation to PCC_OK.",
+                generating: GeneratedDiagnosticPayload.self,
+                includeSchemaInPrompt: true,
+                options: diagnosticOptions
+            )
+            return "private cloud structured generation: PASS status=\(response.content.status) explanation=\(response.content.explanation)"
+        } catch {
+            return "private cloud structured generation: FAIL \(describe(error))"
+        }
+    }
+
+    private static func runProductionLabTextExtractionProbe() async -> String {
+        let fallback = HormoneLabResultParser.parseReport(
+            diagnosticLabOCRText,
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        guard !fallback.analytes.isEmpty else {
+            return "production lab text extraction: FAIL OCR fallback produced no analytes"
+        }
+
+        guard let outcome = await LabReportAIExtractor.extract(
+            from: diagnosticLabOCRText,
+            sourceKind: .pastedText,
+            fallback: fallback
+        ) else {
+            let kinds = fallback.analytes
+                .map(\.kind.rawValue)
+                .joined(separator: ",")
+            return "production lab text extraction: PASS fallbackOnly analytes=\(fallback.analytes.count) kinds=\(kinds) institution=\(fallback.institution) diagnostic=\(LabReportAIExtractor.detailedTextDiagnosticSummary())"
+        }
+
+        let kinds = outcome.report.analytes
+            .map(\.kind.rawValue)
+            .joined(separator: ",")
+        return "production lab text extraction: PASS analytes=\(outcome.report.analytes.count) kinds=\(kinds) institution=\(outcome.report.institution) status=\(outcome.statusMessage ?? "")"
+    }
+
+    private static func runProductionBoundaryProbe() async -> String {
+        let fallback = HormoneLabResultParser.parseReport(
+            diagnosticNoMethodOCRText,
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        guard !fallback.analytes.isEmpty else {
+            return "production boundary no-method/no-note: FAIL OCR fallback produced no analytes"
+        }
+
+        let report = await LabReportAIExtractor.extract(
+            from: diagnosticNoMethodOCRText,
+            sourceKind: .pastedText,
+            fallback: fallback
+        )?.report ?? fallback
+
+        let rowMethods = report.analytes
+            .compactMap { $0.method?.nilIfBlank }
+            .joined(separator: "|")
+        let notes = report.analytes
+            .compactMap { $0.note?.nilIfBlank }
+            .joined(separator: "|")
+        let methodOK = report.method.trimmed.isEmpty && rowMethods.isEmpty
+        let notesOK = notes.isEmpty || notes
+            .split(separator: "|")
+            .allSatisfy { $0 == "↑" || $0 == "↓" }
+        let specimenOK = report.specimen.trimmed.isEmpty || report.specimen == "血清"
+        let testosterone = report.analytes.first { $0.kind == .testosterone }
+        let testosteroneOK = testosterone?.displayName == LabAnalyteKind.testosterone.defaultName
+            && abs((testosterone?.value ?? .nan) - 0.66) < 0.001
+
+        return [
+            "production boundary no-method/no-note: \(methodOK && notesOK && specimenOK && testosteroneOK ? "PASS" : "FAIL")",
+            "reportMethod=\(report.method.trimmed.isEmpty ? "empty" : report.method.trimmed)",
+            "rowMethods=\(rowMethods.isEmpty ? "empty" : rowMethods)",
+            "notes=\(notes.isEmpty ? "empty" : notes)",
+            "specimen=\(report.specimen.trimmed.isEmpty ? "empty" : report.specimen.trimmed)",
+            "testosterone=\(testosterone?.displayName ?? "missing"):\(testosterone?.value.map { String($0) } ?? "nil")"
+        ].joined(separator: " ")
+    }
+
+    private static let diagnosticLabOCRText = """
+    上海中医药大学附属曙光医院（东部）检验报告单
+    检验项目 结果 标志 参考范围 系统或方法学
+    雌二醇（E2） 51.00 40.37-161.48pmol/L i2000SR
+    垂体泌乳素（PRL） 168.12 72.66-407.4mIU/L i2000SR
+    促卵泡刺激素（FSH） 2.07 0.95-11.95IU/L i2000SR
+    促黄体生成素（LH） 2.09 0.57-12.07IU/L i2000SR
+    睾酮（T） 7.11 4.94-32.01nmol/L i2000SR
+    孕酮（P） 0.70 ↑ 0-0.64nmol/L i2000SR
+    硫酸脱氢表雄酮（DHEA-S） 13.49 ↑ 1.20-10.40µmol/L i2000SR
+    标本种类: 血清
+    采集时间: 2026-04-10 16:34:01 接收时间: 2026-04-10 16:39:42
+    报告时间: 2026-04-11 08:51:33 打印时间: 2026-04-11 08:51:49
+    """
+
+    private static let diagnosticNoMethodOCRText = """
+    华中科技大学同济医学院附属协和医院核医学科报告单
+    科别: 互联网门诊
+    标本种类: 血消
+    备注:
+    单位 项目 结果 参考范围
+    1 PRL 垂体泌乳素 ↑ 33.76 2.7-15.2 ng/ml
+    2 E2 雌二醇 ↑69.01 11.3-43.2 pg/m1
+    3 Testo 睪酮 ↓0.66 Tanner5期:6.5-30.6 nmol/L
+    检验时间 14:43:22
+    审核时间 15:53:03
+    """
+
+    private static func describe(_ error: any Error) -> String {
+        let nsError = error as NSError
+        var parts = [
+            "domain=\(nsError.domain)",
+            "code=\(nsError.code)",
+            "description=\(nsError.localizedDescription)"
+        ]
+        if let reason = nsError.localizedFailureReason, !reason.isEmpty {
+            parts.append("reason=\(reason)")
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            parts.append("underlying=\(underlying.domain)#\(underlying.code) \(underlying.localizedDescription)")
+        }
+        parts.append("raw=\(String(describing: error))")
+        return parts.joined(separator: " | ")
+    }
+
+    @Generable(description: "Minimal diagnostic structure.")
+    struct GeneratedDiagnosticPayload {
+        @Guide(description: "Diagnostic status.")
+        var status: String
+        @Guide(description: "Short explanation.")
+        var explanation: String
+    }
+
+    @Generable(description: "Boundary metadata probe payload.")
+    struct GeneratedBoundaryMetadataPayload {
+        @Guide(description: "Institution or organization name. Empty when unavailable.")
+        var institution: String
+        @Guide(description: "Testing location or site. Empty when unavailable.")
+        var location: String
+        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        var specimen: String
+        @Guide(description: "Assay method, analyzer, or platform only if explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
+        var method: String
+    }
+
+    @available(iOS 27.0, *)
+    private static func privateCloudAvailabilityDescription(_ availability: PrivateCloudComputeLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable.deviceNotEligible"
+            case .systemNotReady:
+                return "unavailable.systemNotReady"
+            @unknown default:
+                return "unavailable.unknown"
+            }
+        }
+    }
+
+    private static func systemAvailabilityDescription(_ availability: SystemLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable.deviceNotEligible"
+            case .appleIntelligenceNotEnabled:
+                return "unavailable.appleIntelligenceNotEnabled"
+            case .modelNotReady:
+                return "unavailable.modelNotReady"
+            @unknown default:
+                return "unavailable.unknown"
+            }
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+enum LabReportFoundationModelDiagnostics {
+    static func logStartup() {
+        let model = SystemLanguageModel.default
+        let parts: [String] = [
+            "bundle=\(Bundle.main.bundleIdentifier ?? "unknown")",
+            "locale=\(Locale.current.identifier)",
+            "systemAvailability=\(systemAvailabilityDescription(model.availability))",
+            "systemSupportsCurrentLocale=\(model.supportsLocale(Locale.current))",
+            "systemSupportsEnUS=\(model.supportsLocale(Locale(identifier: "en_US")))",
+            "systemSupportsZhHans=\(model.supportsLocale(Locale(identifier: "zh_Hans")))"
+        ]
+
+        NSLog("LAB_FOUNDATION_MODEL_DIAGNOSTIC %@", parts.joined(separator: " | "))
+    }
+
+    private static func systemAvailabilityDescription(_ availability: SystemLanguageModel.Availability) -> String {
+        switch availability {
+        case .available:
+            return "available"
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "unavailable.deviceNotEligible"
+            case .appleIntelligenceNotEnabled:
+                return "unavailable.appleIntelligenceNotEnabled"
+            case .modelNotReady:
+                return "unavailable.modelNotReady"
+            @unknown default:
+                return "unavailable.unknown"
+            }
+        }
+    }
+}
+#endif
 
 private extension LabReportSourceKind {
     var localizedLabel: String {

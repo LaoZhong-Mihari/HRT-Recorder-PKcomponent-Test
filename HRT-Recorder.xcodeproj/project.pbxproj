@@ -11,9 +11,9 @@
 		550EBB5F2ECEE3B500D3C38A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4E2ECEE3B500D3C38A /* Assets.xcassets */; };
 		550EBB602ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		550EBB612ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
-		550EBB652ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		550EBB632ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
 		550EBB642ECEE3B500D3C38A /* PKSharedCatalog.json in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB622ECEE3B500D3C38A /* PKSharedCatalog.json */; };
+		550EBB652ECEE3B500D3C38A /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 550EBB4F2ECEE3B500D3C38A /* Localizable.xcstrings */; };
 		557D83D22F5D33B300CDF791 /* HRT-Recorder Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 557D83C82F5D33B100CDF791 /* HRT-Recorder Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A0000032F6D000000000001 /* HRT-Recorder Widgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 7A0000012F6D000000000001 /* HRT-Recorder Widgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */

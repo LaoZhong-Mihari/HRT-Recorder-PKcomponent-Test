@@ -67,7 +67,8 @@ struct LabAnalyteResult: Identifiable, Codable, Equatable, Sendable {
     ) {
         self.id = id
         self.kind = kind
-        self.name = name ?? kind.defaultName
+        let cleanedName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.name = kind == .other && cleanedName?.isEmpty == false ? cleanedName! : kind.defaultName
         self.value = value
         self.unitSymbol = unitSymbol
         self.concentrationUnit = concentrationUnit
@@ -75,6 +76,11 @@ struct LabAnalyteResult: Identifiable, Codable, Equatable, Sendable {
         self.method = method
         self.sourceLine = sourceLine
         self.note = note
+    }
+
+    nonisolated var displayName: String {
+        let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return kind == .other && !cleanedName.isEmpty ? cleanedName : kind.defaultName
     }
 
     nonisolated var simulatedHormone: SimulatedHormone? {
@@ -96,7 +102,7 @@ struct LabAnalyteResult: Identifiable, Codable, Equatable, Sendable {
             concentration: value,
             unit: concentrationUnit,
             reportID: reportID,
-            analyteName: name,
+            analyteName: displayName,
             sourceLine: sourceLine
         )
     }
@@ -156,10 +162,10 @@ struct LabReport: Identifiable, Codable, Equatable, Sendable {
         let displayValues = analytes.compactMap { analyte -> String? in
             guard let value = analyte.value else { return nil }
             let unit = analyte.concentrationUnit?.symbol ?? analyte.unitSymbol
-            return String(format: "%@: %.2f %@", locale: Locale.current, analyte.name, value, unit)
+            return String(format: "%@: %.2f %@", locale: Locale.current, analyte.displayName, value, unit)
         }
         guard !displayValues.isEmpty else {
-            return analytes.map(\.name).joined(separator: ", ")
+            return analytes.map(\.displayName).joined(separator: ", ")
         }
         return displayValues.joined(separator: " · ")
     }

@@ -19,6 +19,13 @@ struct HRTRecorderApp: App {
     @StateObject private var watchDoseReceiver = WatchDoseReceiver()
     
     init() {
+        #if DEBUG && LAB_REPORT_SELF_TESTS
+        LabReportOCRFallbackSelfTest.runIfRequested()
+        Task {
+            await LabReportImagePipelineSelfTest.runIfRequested()
+        }
+        #endif
+
         let persistedStore = PersistedStore<[DoseEvent]>(
             filename: "dose_events.json",
             defaultValue: []

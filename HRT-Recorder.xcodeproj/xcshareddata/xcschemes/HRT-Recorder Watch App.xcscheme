@@ -60,7 +60,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "557D83C72F5D33B100CDF791"
             BuildableName = "HRT-Recorder Watch App.app"
-            BlueprintName = "HRT-Recorder Watch App"
             ReferencedContainer = "container:HRT-Recorder.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -77,7 +76,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "557D83C72F5D33B100CDF791"
             BuildableName = "HRT-Recorder Watch App.app"
-            BlueprintName = "HRT-Recorder Watch App"
             ReferencedContainer = "container:HRT-Recorder.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
