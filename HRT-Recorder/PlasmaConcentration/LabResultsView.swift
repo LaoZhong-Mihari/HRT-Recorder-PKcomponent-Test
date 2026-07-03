@@ -15,6 +15,9 @@ import UIKit
 import Vision
 import VisionKit
 
+// iOS 27 beta-only FoundationModels symbols are gated so the app still builds with
+// the current iOS 26.1 SDK. Enable FOUNDATION_MODELS_IOS27_BETA when that SDK is installed.
+
 struct LabResultsView: View {
     @ObservedObject var vm: DoseTimelineVM
 
@@ -937,13 +940,22 @@ private struct DocumentScannerView: UIViewControllerRepresentable {
 }
 
 private enum LabResultOCRService {
-    private static let recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+    private static let recognitionLanguages = [
+        "zh-Hans", "zh-Hant",
+        "en-US", "en-GB",
+        "de-DE", "fr-FR", "es-ES", "it-IT", "pt-BR",
+        "ja-JP", "ko-KR"
+    ]
     private static let customWords = [
         "雌二醇", "睾酮", "泌乳素", "促卵泡刺激素", "促黄体生成素", "孕酮",
         "垂体泌乳素", "硫酸脱氢表雄酮", "采集时间", "接收时间", "报告时间", "打印时间",
+        "Estradiol", "Oestradiol", "Testosterone", "Prolactin", "Progesterone",
+        "Follicle Stimulating Hormone", "Luteinising Hormone", "Luteinizing Hormone",
+        "SHBG", "Free Testosterone", "DHEA-S", "TSH", "HbA1c", "Ferritin",
+        "Glucose", "Creatinine", "eGFR", "Cholesterol", "Triglycerides",
         "E2", "PRL", "FSH", "LH", "T", "P", "DHEA-S",
         "pg", "ng", "pmol", "nmol", "µmol", "μmol", "umol",
-        "IU", "mIU", "uIU", "mL", "ml", "L", "dL", "dl"
+        "mmol", "mg", "g", "IU", "mIU", "uIU", "mEq", "mL", "ml", "L", "dL", "dl"
     ]
 
     static func recognizeText(in images: [UIImage]) async throws -> String {
@@ -1084,7 +1096,10 @@ private enum LabResultOCRService {
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
                     request.usesLanguageCorrection = true
-                    request.recognitionLanguages = recognitionLanguages
+                    if #available(iOS 16.0, *) {
+                        request.automaticallyDetectsLanguage = true
+                    }
+                    request.recognitionLanguages = supportedLegacyRecognitionLanguages(for: request)
                     request.customWords = customWords
 
                     let handler = VNImageRequestHandler(
@@ -1101,6 +1116,14 @@ private enum LabResultOCRService {
                 }
             }
         }
+    }
+
+    private static func supportedLegacyRecognitionLanguages(for request: VNRecognizeTextRequest) -> [String] {
+        guard let supported = try? request.supportedRecognitionLanguages() else {
+            return recognitionLanguages
+        }
+        let filtered = recognitionLanguages.filter { supported.contains($0) }
+        return filtered.isEmpty ? recognitionLanguages : filtered
     }
 
     private static func mergeOCRCandidates(_ candidates: [String]) -> String {
@@ -1279,7 +1302,7 @@ enum LabReportExtractionPipeline {
 
         return LabReportExtractionOutcome(
             report: ruleReport,
-            statusMessage: "Apple FoundationModels requires iOS 27 on this build; OCR table parsing was used."
+            statusMessage: "Apple FoundationModels is unavailable in this build or runtime; OCR table parsing was used."
         )
     }
 }
@@ -1354,7 +1377,7 @@ fileprivate enum LabReportAIExtractor {
         ocrText: String,
         fallback: LabReport
     ) async -> LabReportExtractionOutcome? {
-        #if canImport(FoundationModels)
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *),
            let payload = await generatedPayloadUsingPrivateCloudVision(
                 images: images,
@@ -1428,7 +1451,7 @@ fileprivate enum LabReportAIExtractor {
         }
         let prompt = metadataPrompt(for: metadataEvidenceText(sourceText: text, fallback: fallback))
 
-        #if canImport(FoundationModels)
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *),
            let payload = await metadataPayloadUsingPrivateCloud(prompt: prompt),
            let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: text, fallback: fallback) {
@@ -1518,15 +1541,15 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private static var labelRepairOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 320)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 320)
     }
 
     private static var metadataGenerationOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 520)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 520)
     }
 
     private static var universalGenerationOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_200)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 1_200)
     }
 
     private static func labelCandidates(in lines: [String]) -> [LabelCandidate] {
@@ -1654,7 +1677,7 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private static var labelUnitPattern: String {
-        #"(?i)\b(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|p\s*mol|n\s*mol|u\s*mol|µ\s*mol|μ\s*mol|m\s*IU|IU|IV|U)\s*/?\s*(?:m\s*[lL1]|d\s*[lL1]|[lL1])\b"#
+        #"(?i)(?<![A-Za-z])(?:(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|g|p\s*mol|n\s*mol|u\s*mol|µ\s*mol|μ\s*mol|m\s*mol|mol|m\s*IU|u\s*IU|µ\s*IU|μ\s*IU|IU|IV|U)\s*/?\s*(?:m\s*[lL1]|d\s*[lL1]|[lL1])|%|mm\s*Hg|f\s*L|p\s*g|m\s*Eq\s*/?\s*[lL1]|m\s*[lL1]\s*/\s*min(?:\s*/\s*1\.?\s*73\s*m2)?|m\s*mol\s*/\s*mol|[x×]?\s*10\s*\^?\s*\d+\s*/\s*[lL1])(?![A-Za-z])"#
     }
 
     private static func deterministicKind(forLabel label: String) -> LabAnalyteKind? {
@@ -1692,7 +1715,7 @@ fileprivate enum LabReportAIExtractor {
             clearAttemptError(.onDeviceLabelRepair)
             return nil
         }
-        #if canImport(FoundationModels)
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *),
            let cloudMappings = await privateCloudLabelMappings(for: candidates),
            !cloudMappings.isEmpty {
@@ -1702,6 +1725,7 @@ fileprivate enum LabReportAIExtractor {
         return await onDeviceLabelMappings(for: candidates)
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func privateCloudLabelMappings(for candidates: [LabelCandidate]) async -> [LabelRepairMapping]? {
         let attempt = ModelAttempt.privateCloudLabelRepair
@@ -1734,6 +1758,7 @@ fileprivate enum LabReportAIExtractor {
             return nil
         }
     }
+    #endif
 
     private static func onDeviceLabelMappings(for candidates: [LabelCandidate]) async -> [LabelRepairMapping]? {
         let attempt = ModelAttempt.onDeviceLabelRepair
@@ -1828,6 +1853,7 @@ fileprivate enum LabReportAIExtractor {
             .replacingOccurrences(of: "\n", with: " ")
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func generatedPayloadUsingPrivateCloudVision(
         images: [UIImage],
@@ -1905,17 +1931,20 @@ fileprivate enum LabReportAIExtractor {
             return nil
         }
     }
+    #endif
 
     private static func visionInstructionsText() -> String {
         """
-        Extract visible hormone lab report data from the attached image.
+        Extract visible lab report data from the attached image.
         Use OCR anchors when they are clearer than the image.
         Copy measured result values only, never reference range numbers.
+        Classify known HRT-related hormone rows with their item code; preserve other clearly visible measurement rows as other with their visible label.
         Do not include patient identity, IDs, billing fields, or medical interpretation.
         Leave uncertain fields empty.
         """
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func visionPrompt(
         images: [UIImage],
@@ -1934,8 +1963,8 @@ fileprivate enum LabReportAIExtractor {
 
         return FoundationModels.Prompt {
             """
-            Extract a hormone lab report from the image.
-            Preserve only visible institution, location, specimen, method, collection/report times, and hormone analyte rows.
+            Extract a lab report from the image.
+            Preserve only visible institution, location, specimen, method, collection/report times, known HRT-related hormone rows, and other clearly visible measurement rows.
             If OCR anchors list table rows, treat those rows as the value/unit anchors.
             For specimen, return a normalized plausible lab specimen/material term rather than raw OCR noise; leave it empty when uncertain.
             OCR anchors:
@@ -1944,6 +1973,7 @@ fileprivate enum LabReportAIExtractor {
             attachment
         }
     }
+    #endif
 
     private static func cgImageForModel(from image: UIImage) -> CGImage? {
         if let cgImage = image.cgImage {
@@ -1955,6 +1985,7 @@ fileprivate enum LabReportAIExtractor {
         return CIContext().createCGImage(ciImage, from: ciImage.extent)
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func metadataPayloadUsingPrivateCloud(prompt: String) async -> AIMetadataPayload? {
         let attempt = ModelAttempt.privateCloudMetadata
@@ -1987,6 +2018,7 @@ fileprivate enum LabReportAIExtractor {
             return nil
         }
     }
+    #endif
 
     private static func metadataPayloadUsingOnDeviceModel(prompt: String) async -> AIMetadataPayload? {
         let attempt = ModelAttempt.onDeviceMetadata
@@ -2041,7 +2073,7 @@ fileprivate enum LabReportAIExtractor {
         }
         let prompt = universalExtractionPrompt(for: evidenceLines, fallback: fallback)
 
-        #if canImport(FoundationModels)
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *),
            let payload = await universalPayloadUsingPrivateCloud(prompt: prompt),
            let report = decodeReport(
@@ -2075,6 +2107,7 @@ fileprivate enum LabReportAIExtractor {
         return nil
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func universalPayloadUsingPrivateCloud(prompt: String) async -> GeneratedUniversalReportPayload? {
         let attempt = ModelAttempt.privateCloudUniversal
@@ -2107,6 +2140,7 @@ fileprivate enum LabReportAIExtractor {
             return nil
         }
     }
+    #endif
 
     private static func universalPayloadUsingOnDeviceModel(prompt: String) async -> GeneratedUniversalReportPayload? {
         let attempt = ModelAttempt.onDeviceUniversal
@@ -2226,11 +2260,11 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private static var textGenerationOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_800)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 1_800)
     }
 
     private static var jsonGenerationOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 1_400)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 1_400)
     }
 
     private static func evidenceTextForAI(sourceText: String, fallback: LabReport) -> String {
@@ -2376,6 +2410,7 @@ fileprivate enum LabReportAIExtractor {
         return """
         Extract visible measurement rows from OCR lines.
         Use itemCode E2, T, PRL, FSH, LH, P, SHBG, freeT, DHEAS, or other.
+        Use other for non-HRT lab measurements only when the source line visibly contains a label, measured value, and unit; put the visible label in label.
         Resolve OCR confusions, visually similar characters, split rows, and common abbreviations using row context.
         For each row, copy the measured result value from the result field, not from a reference interval.
         Return sourceLineID and exact sourceLine text for every row.
@@ -2392,8 +2427,9 @@ fileprivate enum LabReportAIExtractor {
     private static func universalExtractionInstructions() -> String {
         """
         Extract structured rows from OCR text. Return only rows that are directly visible.
-        Use item codes, not interpretation. Resolve OCR confusions from context, but do not infer missing rows.
+        Use item codes for known HRT-related hormone rows and other for directly visible non-HRT lab measurements. Resolve OCR confusions from context, but do not infer missing rows.
         Copy measured values exactly from source lines. Do not use reference interval numbers as measured values.
+        For other rows, include the visible test name/label; omit rows whose label is only a header, unit, patient field, or administrative field.
         Leave method empty unless a source line explicitly contains an assay method or analyzer/platform token.
         Ignore patient identity, order IDs, billing fields, reviewer names, and diagnoses.
         """
@@ -2487,7 +2523,7 @@ fileprivate enum LabReportAIExtractor {
         Rules:
         - Return JSON only, with no Markdown and no explanation.
         - Copy result values from value= fields or sourceLine result columns, not from reference ranges.
-        - Include all visible hormone analyte rows from the evidence.
+        - Include all visible known HRT-related hormone rows and other explicit lab measurement rows from the evidence.
         - For known hormone kinds, leave name empty; use name only when kind is other.
         - Leave referenceRange empty; HRT review does not store sex-assigned lab reference intervals.
         - For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If OCR is corrupted, normalize only when confident; do not broaden to generic blood unless blood is explicit.
@@ -2502,10 +2538,11 @@ fileprivate enum LabReportAIExtractor {
 
     private static func promptForStructuredGeneration(for text: String) -> String {
         """
-        Extract structured hormone lab report data from the OCR evidence.
+        Extract structured lab report data from the OCR evidence.
         Copy measured result values only; never use reference range numbers as result values.
         Include estradiol/E2, testosterone/T, prolactin/PRL, FSH, LH, progesterone/P, SHBG, free testosterone, and DHEA-S when visible.
-        Leave known hormone names and reference ranges empty; only use name for kind other.
+        Also include other clearly visible lab measurement rows when the row has a label, measured value, and unit.
+        Leave known hormone names and reference ranges empty; use name for kind other.
         For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If OCR is corrupted, normalize only when confident; do not broaden to generic blood unless blood is explicit.
         Leave method empty unless an explicit assay method or analyzer/platform token is visible. Do not use department names, report titles, or analysis/result text as method.
         Leave unknown optional fields empty. Do not invent rows, dates, or notes.
@@ -2526,18 +2563,25 @@ fileprivate enum LabReportAIExtractor {
                   item.value != nil else {
                 return nil
             }
+            let sourceLine = cleanAITextField(item.sourceLine)?.nilIfBlank
+            let otherName = kind == .other
+                ? otherAnalyteName(from: item.name, sourceLine: sourceLine)
+                : nil
+            guard kind != .other || otherName != nil else {
+                return nil
+            }
             let unit = HormoneLabResultParser.normalizedUnitSymbol(from: item.unit ?? "", kind: kind)
             let concentrationUnit = HormoneLabResultParser.concentrationUnit(from: unit, kind: kind)
 
             return LabAnalyteResult(
                 kind: kind,
-                name: kind == .other ? cleanAITextField(item.name)?.nilIfBlank : nil,
+                name: otherName,
                 value: item.value,
                 unitSymbol: concentrationUnit?.symbol ?? unit.trimmed,
                 concentrationUnit: concentrationUnit,
                 referenceRange: nil,
                 method: verifiedAIMethod(item.method, sourceText: sourceText, sourceLine: item.sourceLine),
-                sourceLine: cleanAITextField(item.sourceLine)?.nilIfBlank,
+                sourceLine: sourceLine,
                 note: visibleFlagNote(cleanAITextField(item.note), sourceLine: cleanAITextField(item.sourceLine))
             )
         }
@@ -2571,16 +2615,19 @@ fileprivate enum LabReportAIExtractor {
     ) -> LabReport? {
         let linesByID = Dictionary(uniqueKeysWithValues: evidenceLines.map { ($0.id, $0.text) })
         let analytes = payload.rows.compactMap { row -> AIAnalytePayload? in
-            guard let kind = HormoneLabResultParser.kind(fromAIValue: row.itemCode),
-                  kind != .other else {
-                return nil
-            }
+            let kind = HormoneLabResultParser.kind(fromAIValue: row.itemCode) ?? .other
             let sourceLine = universalSourceLine(for: row, linesByID: linesByID)
             guard !sourceLine.trimmed.isEmpty else { return nil }
+            let otherName = kind == .other
+                ? otherAnalyteName(from: row.label, sourceLine: sourceLine)
+                : nil
+            guard kind != .other || otherName != nil else {
+                return nil
+            }
 
             return AIAnalytePayload(
                 kind: kind.rawValue,
-                name: kind == .other ? cleanAITextField(row.label)?.nilIfBlank : nil,
+                name: otherName,
                 value: parseAIValueText(row.valueText),
                 unit: row.unit.nilIfBlank,
                 referenceRange: nil,
@@ -2645,6 +2692,43 @@ fileprivate enum LabReportAIExtractor {
     private static func cleanAITextField(_ text: String?) -> String? {
         guard let text else { return nil }
         return text.trimmed
+    }
+
+    private static func otherAnalyteName(from label: String?, sourceLine: String?) -> String? {
+        [label, sourceLine]
+            .compactMap { cleanAITextField($0)?.nilIfBlank }
+            .compactMap(sanitizedOtherAnalyteName)
+            .first
+    }
+
+    private static func sanitizedOtherAnalyteName(_ raw: String) -> String? {
+        var value = raw
+        value = value.replacingOccurrences(
+            of: #"[<>≤≥]?\s*\d+(?:[\.,]\d+)?\s*(?:-|~|至|到)\s*[<>≤≥]?\s*\d+(?:[\.,]\d+)?(?:\s*[A-Za-z0-9μµ/%]+(?:\s*/\s*[A-Za-z0-9μµ]+)?)?"#,
+            with: " ",
+            options: .regularExpression
+        )
+        value = value.replacingOccurrences(of: labelUnitPattern, with: " ", options: [.regularExpression, .caseInsensitive])
+        value = value.replacingOccurrences(of: #"(?<![A-Za-z])\d+(?:[\.,]\d+)?"#, with: " ", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"^[\s#•·↑↓+\-¥￥\.\):]+"#, with: " ", options: .regularExpression)
+        value = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmed
+
+        guard isPlausibleOtherAnalyteName(value) else { return nil }
+        return value
+    }
+
+    private static func isPlausibleOtherAnalyteName(_ value: String) -> Bool {
+        guard value.count >= 2, value.count <= 80 else { return false }
+        let lower = value.lowercased()
+        let noise = [
+            "result", "results", "unit", "units", "reference", "range", "interval",
+            "patient", "specimen", "sample", "collected", "reported", "date",
+            "项目", "结果", "单位", "参考", "范围", "标本", "样本", "报告", "时间"
+        ]
+        guard !noise.contains(where: { lower == $0 || lower.contains($0) }) else {
+            return false
+        }
+        return value.rangeOfCharacter(from: .letters) != nil
     }
 
     private static func verifiedAISpecimen(
@@ -3057,6 +3141,7 @@ fileprivate enum LabReportAIExtractor {
             "supportsEnUS=\(model.supportsLocale(Locale(identifier: "en_US")))",
             "supportsZhHans=\(model.supportsLocale(Locale(identifier: "zh_Hans")))"
         ]
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *) {
             if appHasPrivateCloudComputeEntitlement() {
                 let privateCloudModel = PrivateCloudComputeLanguageModel()
@@ -3069,6 +3154,9 @@ fileprivate enum LabReportAIExtractor {
         } else {
             parts.append("PrivateCloudCompute availability=unavailable.requiresIOS27")
         }
+        #else
+        parts.append("PrivateCloudCompute availability=unavailable.notCompiledWithIOS27SDK")
+        #endif
         parts.append(contentsOf: attempts.compactMap { attempt in
             guard let error = lastAttemptError(attempt), !error.isEmpty else { return nil }
             return "\(attempt.rawValue) error: \(error)"
@@ -3151,6 +3239,7 @@ fileprivate enum LabReportAIExtractor {
         }
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func privateCloudAvailabilityDescription(_ availability: PrivateCloudComputeLanguageModel.Availability) -> String {
         switch availability {
@@ -3167,6 +3256,7 @@ fileprivate enum LabReportAIExtractor {
             }
         }
     }
+    #endif
 
     @Generable(description: "Table label mappings for OCR fragments.")
     struct GeneratedLabelRepairPayload {
@@ -3244,7 +3334,7 @@ fileprivate enum LabReportAIExtractor {
         var specimen: String
         @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
         var method: String
-        @Guide(description: "Visible measurement rows anchored to OCR lines.", .maximumCount(16))
+        @Guide(description: "Visible measurement rows anchored to OCR lines, including known HRT-related rows and other explicit lab measurements.", .maximumCount(24))
         var rows: [GeneratedUniversalAnalyteRow]
     }
 
@@ -3266,7 +3356,7 @@ fileprivate enum LabReportAIExtractor {
             ])
         )
         var itemCode: String
-        @Guide(description: "Visible row label only when itemCode is other; otherwise empty.")
+        @Guide(description: "Visible row label when itemCode is other; otherwise empty.")
         var label: String
         @Guide(description: "Measured result text copied from the result field. Empty when unavailable.")
         var valueText: String
@@ -3407,7 +3497,7 @@ fileprivate enum LabReportAIExtractor {
         }
     }
 
-    @Generable(description: "Structured hormone lab report with collection metadata and hormone analyte rows.")
+    @Generable(description: "Structured lab report with collection metadata, known HRT-related hormone rows, and other visible measurement rows.")
     struct GeneratedAIReportPayload {
         @Guide(description: "Collection or sample time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
         var collectedAt: String
@@ -3421,14 +3511,14 @@ fileprivate enum LabReportAIExtractor {
         var specimen: String
         @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
         var method: String
-        @Guide(description: "All visible hormone analyte rows from the report table.", .maximumCount(16))
+        @Guide(description: "All visible known HRT-related hormone rows and other explicit lab measurement rows from the report table.", .maximumCount(24))
         var analytes: [GeneratedAIAnalytePayload]
     }
 
-    @Generable(description: "One hormone analyte row from a lab report table.")
+    @Generable(description: "One lab analyte row from a report table.")
     struct GeneratedAIAnalytePayload {
         @Guide(
-            description: "Canonical hormone kind.",
+            description: "Canonical kind for known HRT-related hormone rows, or other for another visible lab measurement.",
             .anyOf([
                 "estradiol",
                 "testosterone",
@@ -3443,7 +3533,7 @@ fileprivate enum LabReportAIExtractor {
             ])
         )
         var kind: String
-        @Guide(description: "Only use for kind other; leave empty for known hormone kinds.")
+        @Guide(description: "Visible test name only for kind other; leave empty for known hormone kinds.")
         var name: String
         @Guide(description: "Measured result value from the result column, not a reference range number.")
         var value: Double?
@@ -3477,20 +3567,29 @@ enum HormoneLabResultParser {
         let detectedDates = extractDates(from: normalizedText)
         let collectedAt = extractDate(
             from: lines,
-            labels: ["标本采集时间", "采集时间", "采样时间", "抽血时间", "collection time", "sample collected", "collected"]
+            labels: [
+                "标本采集时间", "采集时间", "采样时间", "抽血时间",
+                "collection time", "collection date", "date collected", "sample collected", "sample date", "collected",
+                "abnahme", "entnahme", "prélèvement", "prelevement", "fecha de toma", "fecha muestra", "data da coleta"
+            ]
         ) ?? detectedDates.first ?? Date()
         let reportedAt = extractDate(
             from: lines,
-            labels: ["报告时间", "审核时间", "检验时间", "reported", "report date", "result date"]
-        ) ?? (detectedDates.count >= 3 ? detectedDates[2] : nil)
+            labels: [
+                "报告时间", "审核时间", "检验时间",
+                "reported", "date reported", "report date", "result date", "issued",
+                "befunddatum", "bericht", "résultat", "resultat", "fecha informe", "fecha resultado", "data do resultado"
+            ]
+        ) ?? (detectedDates.count >= 3 ? detectedDates[2] : (detectedDates.count >= 2 ? detectedDates[1] : nil))
 
         let parsedAnalytes = lines.compactMap(parseAnalyteLine)
         let multilineAnalytes = parseMultilineAnalyteBlocks(lines)
         let panelAnalytes = parseHormonePanelTableRows(lines)
+        let genericAnalytes = parseGenericMeasurementRows(lines)
         let fallbackAnalytes = parsedAnalytes.isEmpty && multilineAnalytes.isEmpty && panelAnalytes.isEmpty
             ? parseUntitledResultLines(lines, collectedAt: collectedAt, defaultHormone: defaultHormone)
             : []
-        let analytes = uniqued(panelAnalytes + parsedAnalytes + multilineAnalytes + fallbackAnalytes)
+        let analytes = uniqued(panelAnalytes + parsedAnalytes + multilineAnalytes + fallbackAnalytes + genericAnalytes)
 
         return LabReport(
             collectedAt: collectedAt,
@@ -3804,6 +3903,99 @@ enum HormoneLabResultParser {
             )
         }
         return uniqued(analytes)
+    }
+
+    private static func parseGenericMeasurementRows(_ lines: [String]) -> [LabAnalyteResult] {
+        uniqued(lines.compactMap(parseGenericMeasurementLine))
+    }
+
+    private static func parseGenericMeasurementLine(_ line: String) -> LabAnalyteResult? {
+        let displayLine = stripInternalParserHints(line)
+        guard !isLikelyUnrelatedMetadataLine(displayLine),
+              detectAnalyteKind(in: line) == nil,
+              let measurement = genericMeasurement(in: displayLine),
+              let label = genericAnalyteLabel(in: displayLine, valueRange: measurement.valueRange) else {
+            return nil
+        }
+
+        return LabAnalyteResult(
+            kind: .other,
+            name: label,
+            value: measurement.value,
+            unitSymbol: measurement.unitSymbol,
+            concentrationUnit: nil,
+            referenceRange: measurement.referenceRange,
+            method: extractMethod(from: line),
+            sourceLine: displayLine
+        )
+    }
+
+    private struct GenericMeasurement {
+        var value: Double
+        var valueRange: NSRange
+        var unitSymbol: String
+        var referenceRange: String?
+    }
+
+    private static func genericMeasurement(in line: String) -> GenericMeasurement? {
+        let pattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)\s*(?:[↑↓HhLl*•·\.\-–—:]|\([HhLl]\))*\s*"# + unitSymbolPattern
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+
+        let fullRange = NSRange(line.startIndex..<line.endIndex, in: line)
+        let referenceMatches = referenceRangeMatches(in: line)
+        let referenceRanges = referenceMatches.map(\.range)
+
+        for match in regex.matches(in: line, range: fullRange)
+            where !referenceRanges.contains(where: { rangesOverlap($0, match.range(at: 1)) }) {
+            guard let valueText = stringCapture(1, in: line, match: match),
+                  let value = correctedMeasuredValue(from: valueText, referenceBounds: referenceBounds(from: line), kind: nil),
+                  let unit = stringCapture(2, in: line, match: match).map(normalizedUnitToken),
+                  !unit.isEmpty else {
+                continue
+            }
+
+            return GenericMeasurement(
+                value: value,
+                valueRange: match.range(at: 1),
+                unitSymbol: unit,
+                referenceRange: referenceMatches.first.flatMap { match in
+                    guard let range = Range(match.range, in: line) else { return nil }
+                    return normalizedReferenceRange(String(line[range]).trimmed, kind: nil)
+                }
+            )
+        }
+
+        return nil
+    }
+
+    private static func genericAnalyteLabel(in line: String, valueRange: NSRange) -> String? {
+        guard let prefixRange = Range(NSRange(location: 0, length: valueRange.location), in: line) else {
+            return nil
+        }
+        var label = String(line[prefixRange])
+        label = label.replacingOccurrences(of: #"^\s*\d+[\.\)]?\s*"#, with: "", options: .regularExpression)
+        label = label.replacingOccurrences(of: #"^[\s#•·↑↓+\-¥￥\.\):]+"#, with: "", options: .regularExpression)
+        label = label.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmed
+
+        guard isPlausibleGenericAnalyteLabel(label) else { return nil }
+        return label
+    }
+
+    private static func isPlausibleGenericAnalyteLabel(_ label: String) -> Bool {
+        guard label.count >= 2, label.count <= 80 else { return false }
+        let lower = label.lowercased()
+        let noise = [
+            "test", "tests", "item", "items", "component", "result", "results",
+            "unit", "units", "reference", "range", "interval", "flag",
+            "patient", "specimen", "sample", "collected", "reported", "date",
+            "项目", "结果", "单位", "参考", "范围", "标志", "标本", "样本", "报告", "时间"
+        ]
+        guard !noise.contains(where: { lower == $0 || lower.contains($0) }) else {
+            return false
+        }
+        return label.rangeOfCharacter(from: .letters) != nil
     }
 
     private static func parseHormonePanelTableRows(_ lines: [String]) -> [LabAnalyteResult] {
@@ -4281,7 +4473,9 @@ enum HormoneLabResultParser {
         let molarUnit = #"(?:p\s*mol|n\s*mol|u\s*mol|w\s*mol|µ\s*mol|μ\s*mol|m\s*mol|mmo[1l]|mol)"#
         let activityUnit = #"(?:u\s*IU|µ\s*IU|μ\s*IU|m\s*IU|m?[i1][uUvV]|IU|IV|1U|1V|U)"#
         let denominator = #"(?:m\s*[lL1]|d\s*[lL1]|[lL1])"#
-        return #"(?<![A-Za-z])((?:"# + massUnit + #"|"# + molarUnit + #"|"# + activityUnit + #")\s*/?\s*"# + denominator + #")(?![A-Za-z])"#
+        let countUnit = #"(?:[x×]?\s*10\s*\^?\s*\d+\s*/\s*[lL1]|10\s*\*\s*\d+\s*/\s*[lL1])"#
+        let standaloneUnit = #"(?:%|mm\s*Hg|f\s*L|p\s*g|m\s*Eq\s*/?\s*[lL1]|m\s*[lL1]\s*/\s*min(?:\s*/\s*1\.?\s*73\s*m2)?|m\s*mol\s*/\s*mol|"# + countUnit + #")"#
+        return #"(?<![A-Za-z])((?:(?:"# + massUnit + #"|"# + molarUnit + #"|"# + activityUnit + #")\s*/?\s*"# + denominator + #")|"# + standaloneUnit + #")(?![A-Za-z])"#
     }
 
     private static func firstUnitSymbol(in text: String) -> String? {
@@ -4342,6 +4536,7 @@ enum HormoneLabResultParser {
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "／", with: "/")
             .replacingOccurrences(of: "μ", with: "µ")
+            .replacingOccurrences(of: "×", with: "x")
             .replacingOccurrences(of: "/m1", with: "/ml", options: [.caseInsensitive])
             .replacingOccurrences(of: "/d1", with: "/dl", options: [.caseInsensitive])
         let lower = compact.lowercased()
@@ -4349,6 +4544,13 @@ enum HormoneLabResultParser {
             .replacingOccurrences(of: "iv", with: "iu")
             .replacingOccurrences(of: "miv", with: "miu")
         switch lower {
+        case "%": return "%"
+        case "mmhg": return "mmHg"
+        case "fl": return "fL"
+        case "pg": return "pg"
+        case "meq/l": return "mEq/L"
+        case "ml/min": return "mL/min"
+        case "ml/min/i.73m2": return "mL/min/1.73m2"
         case "pg/ml": return "pg/mL"
         case "pg/l": return "pg/L"
         case "pg/dl": return "pg/dL"
@@ -4373,6 +4575,7 @@ enum HormoneLabResultParser {
         case "mmol/l", "mmoi/l": return "mmol/L"
         case "mmol/ml", "mmoi/ml": return "mmol/mL"
         case "mmol/dl", "mmoi/dl": return "mmol/dL"
+        case "mmol/mol", "mmoi/mol": return "mmol/mol"
         case "miu/ml": return "mIU/mL"
         case "uiu/ml": return "uIU/mL"
         case "µiu/ml": return "µIU/mL"
@@ -4391,8 +4594,23 @@ enum HormoneLabResultParser {
         case "mol/l": return "mol/L"
         case "mol/ml": return "mol/mL"
         case "mol/dl": return "mol/dL"
-        default: return compact
+        default:
+            if let normalizedCountUnit = normalizedCountUnit(lower) {
+                return normalizedCountUnit
+            }
+            return compact
         }
+    }
+
+    private static func normalizedCountUnit(_ lower: String) -> String? {
+        let normalized = lower
+            .replacingOccurrences(of: "i", with: "1")
+            .replacingOccurrences(of: "*", with: "^")
+        guard let match = firstMatch(pattern: #"x?10\^?(\d+)/l"#, in: normalized),
+              let power = stringCapture(1, in: normalized, match: match) else {
+            return nil
+        }
+        return "10^\(power)/L"
     }
 
     private static func resolvedUnitSymbol(_ rawUnitSymbol: String, kind: LabAnalyteKind) -> String {
@@ -4458,18 +4676,32 @@ enum HormoneLabResultParser {
     private static func extractInstitution(from lines: [String]) -> String {
         let labeled = extractField(
             from: lines,
-            labels: ["检验机构", "检测机构", "实验室", "laboratory", "institution", "lab"]
+            labels: [
+                "检验机构", "检测机构", "实验室",
+                "testing laboratory", "performing laboratory", "institution", "organization", "performed at"
+            ]
         )
         if !labeled.isEmpty {
-            return sanitizedInstitution(labeled)
+            let candidate = sanitizedInstitution(labeled)
+            if isPlausibleInstitution(candidate) {
+                return candidate
+            }
         }
 
         for line in lines.prefix(12) {
             let candidate = sanitizedInstitution(line)
-            guard !candidate.isEmpty else { continue }
+            guard isPlausibleInstitution(candidate) else { continue }
             if line.contains("医院")
                 || line.localizedCaseInsensitiveContains("hospital")
                 || line.localizedCaseInsensitiveContains("laboratory")
+                || line.localizedCaseInsensitiveContains("medical center")
+                || line.localizedCaseInsensitiveContains("clinic")
+                || line.localizedCaseInsensitiveContains("klinikum")
+                || line.localizedCaseInsensitiveContains("krankenhaus")
+                || line.localizedCaseInsensitiveContains("laboratoire")
+                || line.localizedCaseInsensitiveContains("laboratorio")
+                || line.localizedCaseInsensitiveContains("labor ")
+                || line.localizedCaseInsensitiveContains(" lab ")
                 || line.contains("检验报告")
                 || line.contains("报告单") {
                 return candidate
@@ -4482,6 +4714,7 @@ enum HormoneLabResultParser {
         var value = raw.trimmed
         let noise = [
             "检验报告单", "检验报告", "报告单", "报告",
+            "Laboratory Results", "Lab Results", "Laboratory Report", "Lab Report", "Laborbefund",
             "打印次数", "第1页", "共1页", "门诊", "门急诊"
         ]
         for token in noise {
@@ -4505,10 +4738,28 @@ enum HormoneLabResultParser {
         return value.trimmed
     }
 
+    private static func isPlausibleInstitution(_ value: String) -> Bool {
+        let clean = value.trimmed
+        guard clean.count >= 4 else { return false }
+        let lower = clean.lowercased()
+        let noise = [
+            "result", "results", "report", "lab result", "lab results",
+            "laboratory result", "laboratory results", "befund", "laborbefund"
+        ]
+        guard !noise.contains(where: { lower == $0 || lower.contains($0) }) else {
+            return false
+        }
+        return clean.rangeOfCharacter(from: .letters) != nil
+    }
+
     private static func extractSpecimen(from lines: [String]) -> String {
         let value = extractField(
             from: lines,
-            labels: ["标本种类", "样本类型", "标本", "specimen", "sample type"],
+            labels: [
+                "标本种类", "样本类型", "标本", "样本",
+                "specimen", "sample type", "sample", "material",
+                "probe", "materialart", "échantillon", "echantillon", "muestra", "amostra"
+            ],
             terminators: ["收费类别", "收夷类别", "申请医生", "临床诊断", "科室", "病区", "病历号", "样本编号"]
         )
         guard !value.isEmpty else { return "" }
@@ -4773,6 +5024,7 @@ enum LabReportAIDiagnostics {
         lines.append("ContentTransform SystemLanguageModel")
         lines.append("- availability: \(systemAvailabilityDescription(transformModel.availability))")
         lines.append("- supports current locale: \(transformModel.supportsLocale(Locale.current))")
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *) {
             lines.append("")
             lines.append("PrivateCloudComputeLanguageModel")
@@ -4789,6 +5041,11 @@ enum LabReportAIDiagnostics {
             lines.append("PrivateCloudComputeLanguageModel")
             lines.append("- availability: unavailable.requiresIOS27")
         }
+        #else
+        lines.append("")
+        lines.append("PrivateCloudComputeLanguageModel")
+        lines.append("- availability: unavailable.notCompiledWithIOS27SDK")
+        #endif
         lines.append("")
         lines.append(await runTextProbe(
             name: "default plain English text",
@@ -4807,10 +5064,12 @@ enum LabReportAIDiagnostics {
         lines.append(await runStructuredProbe(model: transformModel))
         lines.append("")
         lines.append(await runMetadataNoMethodBoundaryProbe(model: transformModel))
+        #if FOUNDATION_MODELS_IOS27_BETA
         if #available(iOS 27.0, *) {
             lines.append("")
             lines.append(await runPrivateCloudStructuredProbe())
         }
+        #endif
         lines.append("")
         lines.append(await runProductionLabTextExtractionProbe())
         lines.append("")
@@ -4820,11 +5079,11 @@ enum LabReportAIDiagnostics {
     }
 
     private static var diagnosticOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 96)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 96)
     }
 
     private static var boundaryOptions: GenerationOptions {
-        GenerationOptions(samplingMode: .greedy, temperature: 0, maximumResponseTokens: 360)
+        GenerationOptions(sampling: .greedy, temperature: 0, maximumResponseTokens: 360)
     }
 
     private static func runTextProbe(
@@ -4919,6 +5178,7 @@ enum LabReportAIDiagnostics {
         }
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func runPrivateCloudStructuredProbe() async -> String {
         guard appHasPrivateCloudComputeEntitlement() else {
@@ -4945,6 +5205,7 @@ enum LabReportAIDiagnostics {
             return "private cloud structured generation: FAIL \(describe(error))"
         }
     }
+    #endif
 
     private static func runProductionLabTextExtractionProbe() async -> String {
         let fallback = HormoneLabResultParser.parseReport(
@@ -5079,6 +5340,7 @@ enum LabReportAIDiagnostics {
         var method: String
     }
 
+    #if FOUNDATION_MODELS_IOS27_BETA
     @available(iOS 27.0, *)
     private static func privateCloudAvailabilityDescription(_ availability: PrivateCloudComputeLanguageModel.Availability) -> String {
         switch availability {
@@ -5095,6 +5357,7 @@ enum LabReportAIDiagnostics {
             }
         }
     }
+    #endif
 
     private static func systemAvailabilityDescription(_ availability: SystemLanguageModel.Availability) -> String {
         switch availability {

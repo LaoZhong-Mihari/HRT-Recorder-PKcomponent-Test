@@ -112,6 +112,7 @@ enum LabReportOCRFallbackSelfTest {
         verifyEnglishReportRows()
         verifyPatientPortalCardLayoutRows()
         verifyInternationalCompactRows()
+        verifyGenericInternationalOtherRows()
         verifyColumnOrderVariantRows()
         verifyAdministrativeHintNoiseDoesNotWin()
     }
@@ -347,6 +348,60 @@ enum LabReportOCRFallbackSelfTest {
                   LabReportSelfTestVerifier.analyteSummary(report))
         }
     }
+
+    private static func verifyGenericInternationalOtherRows() {
+        let report = HormoneLabResultParser.parseReport(
+            genericInternationalFixture,
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        let expected: [(String, Double, String)] = [
+            ("TSH", 2.10, "mIU/L"),
+            ("Glukose", 5.4, "mmol/L"),
+            ("Ferritin", 88.0, "ng/mL"),
+            ("HbA1c", 5.4, "%"),
+            ("Leukozyten", 6.8, "10^9/L"),
+            ("25-OH Vitamin D", 32.0, "ng/mL")
+        ]
+        var failures: [String] = []
+        for (name, value, unit) in expected {
+            guard let analyte = report.analytes.first(where: { $0.kind == .other && $0.displayName == name }) else {
+                failures.append("missing \(name)")
+                continue
+            }
+            if abs((analyte.value ?? .nan) - value) > 0.001 {
+                failures.append("\(name) value \(analyte.value.map { String($0) } ?? "nil") != \(value)")
+            }
+            if analyte.unitSymbol != unit {
+                failures.append("\(name) unit \(analyte.unitSymbol) != \(unit)")
+            }
+        }
+        let reportedText = report.reportedAt.map { LabReportSelfTestVerifier.formatted($0) }
+        if reportedText != "2026-06-14 12:00" {
+            failures.append("reportedAt \(reportedText ?? "nil")")
+        }
+
+        if failures.isEmpty {
+            NSLog("LAB_OCR_GENERIC_INTERNATIONAL_SELF_TEST PASS")
+        } else {
+            NSLog("LAB_OCR_GENERIC_INTERNATIONAL_SELF_TEST FAIL failures=%@ analytes=%@",
+                  failures.joined(separator: "; "),
+                  LabReportSelfTestVerifier.analyteSummary(report))
+        }
+    }
+
+    private static let genericInternationalFixture = """
+    Klinikum Berlin Laborbefund
+    Abnahme: 14.06.2026 07:30
+    Befunddatum: 14.06.2026 12:00
+    Analyse Ergebnis Einheit Referenzbereich
+    TSH 2,10 mIU/L 0,27-4,20
+    Glukose 5,4 mmol/L 3,9-5,6
+    Ferritin 88 ng/mL 30-400
+    HbA1c 5,4 % 4,0-5,6
+    Leukozyten 6,8 10^9/L 4,0-10,0
+    25-OH Vitamin D 32 ng/mL 20-50
+    """
 
     private static func verifyAdministrativeHintNoiseDoesNotWin() {
         let report = HormoneLabResultParser.parseReport(
