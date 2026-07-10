@@ -7,7 +7,12 @@ enum DoseRecordingError: LocalizedError {
     case missingRoute
     case missingDoseAmount
     case missingRecordOnlyMedication
+    case missingMedication
+    case inconsistentMedication
+    case disabledMedicationPlan
     case unsupportedCompound
+    case invalidDoseConfiguration
+    case invalidRecordedAt
     case readFailed
     case writeFailed
 
@@ -25,8 +30,18 @@ enum DoseRecordingError: LocalizedError {
             return String(localized: "Tell me the dose amount to record.")
         case .missingRecordOnlyMedication:
             return String(localized: "Tell me which record-only medication to record.")
+        case .missingMedication:
+            return String(localized: "Tell me the specific medication or choose an active medication plan.")
+        case .inconsistentMedication:
+            return String(localized: "Those medication details do not describe the same dose. Please review them before recording.")
+        case .disabledMedicationPlan:
+            return String(localized: "That medication plan is paused. Enable it or choose an active plan.")
         case .unsupportedCompound:
             return String(localized: "That compound is not supported for the selected route.")
+        case .invalidDoseConfiguration:
+            return String(localized: "Those dose details are incomplete or inconsistent. Please review them before recording.")
+        case .invalidRecordedAt:
+            return String(localized: "Use the current time or a past time for a dose record.")
         case .readFailed:
             return String(localized: "I could not read your saved dosing data.")
         case .writeFailed:
@@ -92,14 +107,11 @@ struct HormoneConcentrationSummary {
 }
 
 enum DoseRecordingService {
-    private static let eventsFileName = "dose_events.json"
     private static let medicationPlansFileName = "medication_plans.json"
     private static let bodyWeightKey = "user.weightKg"
-    private static let eventsModifiedKey = "dose.events.modifiedAt"
-    private static let lock = NSLock()
 
     static func loadPersistedEvents() throws -> [DoseEvent] {
-        try loadValue(filename: eventsFileName, defaultValue: [])
+        try DoseStore.load().events
     }
 
     static func loadMedicationPlans() throws -> [MedicationPlan] {
@@ -108,32 +120,6 @@ enum DoseRecordingService {
 
     static func loadDoseOptions() throws -> [WidgetDoseOption] {
         WidgetSnapshotCoordinator.makeDoseOptions(from: try loadMedicationPlans())
-    }
-
-    static func defaultDoseOption(at date: Date = Date()) throws -> WidgetDoseOption? {
-        let plans = try loadMedicationPlans()
-        let options = WidgetSnapshotCoordinator.makeDoseOptions(from: plans)
-        let optionByID = Dictionary(uniqueKeysWithValues: options.map { ($0.id, $0) })
-
-        let nextOption = plans
-            .filter(\.isEnabled)
-            .compactMap { plan -> (Date, WidgetDoseOption)? in
-                guard let occurrence = plan.nextOccurrence(after: date) else {
-                    return nil
-                }
-                let optionID = WidgetDoseOption.makeID(
-                    planID: occurrence.planID,
-                    doseSlotID: occurrence.doseSlotID
-                )
-                guard let option = optionByID[optionID] else {
-                    return nil
-                }
-                return (occurrence.scheduledDate, option)
-            }
-            .min { lhs, rhs in lhs.0 < rhs.0 }?
-            .1
-
-        return nextOption ?? options.first
     }
 
     static func hormoneConcentration(
@@ -178,14 +164,17 @@ enum DoseRecordingService {
     }
 
     static func persistedEventsModifiedAt() -> TimeInterval {
-        UserDefaults.standard.double(forKey: eventsModifiedKey)
+        (try? DoseStore.load().modifiedAt) ?? 0
     }
 
     @discardableResult
-    static func recordDose(optionID: String, at date: Date = Date()) throws -> RecordedDoseSummary {
-        lock.lock()
-        defer { lock.unlock() }
-
+    static func recordDose(
+        optionID: String,
+        at date: Date = Date(),
+        mutationID: UUID = UUID(),
+        fingerprint: String? = nil
+    ) throws -> RecordedDoseSummary {
+        try validateRecordedAt(date)
         guard let parsedID = WidgetDoseOption.parseID(optionID) else {
             throw DoseRecordingError.invalidDoseOption
         }
@@ -194,18 +183,30 @@ enum DoseRecordingService {
         guard let plan = plans.first(where: { $0.id == parsedID.planID }) else {
             throw DoseRecordingError.missingMedicationPlan
         }
+        guard plan.isEnabled else {
+            throw DoseRecordingError.disabledMedicationPlan
+        }
 
-        let template = plan.template(for: date, doseSlotID: parsedID.doseSlotID)
+        guard let template = plan.exactTemplate(forDoseSlotID: parsedID.doseSlotID) else {
+            throw DoseRecordingError.invalidDoseOption
+        }
         guard template.hasConfiguredDose else {
             throw DoseRecordingError.missingConfiguredDose
         }
 
-        var events = try loadPersistedEvents()
         let event = makeDoseEvent(from: template, at: date)
-        try append(event, to: &events, plans: plans)
+        let result = try DoseStore.apply(
+            DoseStoreMutation(
+                id: mutationID,
+                operation: .upsert(event),
+                source: "planned-dose",
+                fingerprint: fingerprint
+            )
+        )
+        refreshProjections(with: result.snapshot, plans: plans)
 
         return RecordedDoseSummary(
-            event: event,
+            event: result.resolvedEvent ?? event,
             planName: plan.displayName,
             doseDescription: template.reminderDoseText,
             recordedAt: date
@@ -213,17 +214,26 @@ enum DoseRecordingService {
     }
 
     @discardableResult
-    static func recordDose(_ request: CustomDoseRecordingRequest) throws -> RecordedDoseSummary {
-        lock.lock()
-        defer { lock.unlock() }
-
+    static func recordDose(
+        _ request: CustomDoseRecordingRequest,
+        mutationID: UUID = UUID(),
+        fingerprint: String? = nil
+    ) throws -> RecordedDoseSummary {
+        try validateRecordedAt(request.recordedAt)
         let plans = try loadMedicationPlans()
-        var events = try loadPersistedEvents()
         let event = try makeDoseEvent(from: request)
-        try append(event, to: &events, plans: plans)
+        let result = try DoseStore.apply(
+            DoseStoreMutation(
+                id: mutationID,
+                operation: .upsert(event),
+                source: "custom-dose",
+                fingerprint: fingerprint
+            )
+        )
+        refreshProjections(with: result.snapshot, plans: plans)
 
         return RecordedDoseSummary(
-            event: event,
+            event: result.resolvedEvent ?? event,
             planName: String(localized: "Custom dose"),
             doseDescription: doseDescription(for: event),
             recordedAt: request.recordedAt
@@ -247,7 +257,18 @@ enum DoseRecordingService {
         let recordedAt = request.recordedAt
 
         if let recordOnlyOralMedication = request.recordOnlyOralMedication {
+            guard request.category == nil || request.category == .antiAndrogen,
+                  request.route == nil || request.route == .oral,
+                  request.compound == nil,
+                  request.releaseRateUGPerDay == nil,
+                  request.concentrationMGmL == nil,
+                  request.areaCM2 == nil,
+                  request.sublingualTier == nil,
+                  request.sublingualTheta == nil else {
+                throw DoseRecordingError.inconsistentMedication
+            }
             guard let enteredDoseMG = request.enteredDoseMG ?? request.activeEquivalentDoseMG,
+                  enteredDoseMG.isFinite,
                   enteredDoseMG > 0 else {
                 throw DoseRecordingError.missingDoseAmount
             }
@@ -269,13 +290,13 @@ enum DoseRecordingService {
         }
 
         let route = try resolvedRoute(from: request)
-        let requestedCategory = request.category ?? request.compound?.medicationCategory ?? .estradiol
-        let compound = request.compound ?? Compound.fallback(
-            for: requestedCategory,
-            route: route,
-            recordOnlyOralMedication: nil
-        )
+        guard let compound = request.compound else {
+            throw DoseRecordingError.missingMedication
+        }
         let category = request.category ?? compound.medicationCategory
+        guard category == compound.medicationCategory else {
+            throw DoseRecordingError.inconsistentMedication
+        }
 
         guard CompoundSupport.availableCompounds(for: category, route: route).contains(compound) else {
             throw DoseRecordingError.unsupportedCompound
@@ -284,23 +305,43 @@ enum DoseRecordingService {
         var doseMG = 0.0
         var extras: [DoseEvent.ExtraKey: Double] = [:]
 
-        if let concentrationMGmL = request.concentrationMGmL, concentrationMGmL > 0 {
+        if let concentrationMGmL = request.concentrationMGmL {
+            guard concentrationMGmL.isFinite, concentrationMGmL > 0 else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
             extras[.concentrationMGmL] = concentrationMGmL
         }
-        if let areaCM2 = request.areaCM2, areaCM2 > 0 {
+        if let areaCM2 = request.areaCM2 {
+            guard areaCM2.isFinite, areaCM2 > 0 else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
             extras[.areaCM2] = areaCM2
         }
 
         switch route {
         case .patchRemove:
+            guard request.enteredDoseMG == nil,
+                  request.activeEquivalentDoseMG == nil,
+                  request.releaseRateUGPerDay == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
             doseMG = 0
 
-        case .patchApply where (request.releaseRateUGPerDay ?? 0) > 0:
+        case .patchApply:
+            guard let releaseRate = request.releaseRateUGPerDay else {
+                throw DoseRecordingError.missingDoseAmount
+            }
+            guard releaseRate.isFinite, releaseRate > 0,
+                  request.enteredDoseMG == nil,
+                  request.activeEquivalentDoseMG == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
             doseMG = 0
-            extras[.releaseRateUGPerDay] = request.releaseRateUGPerDay
+            extras[.releaseRateUGPerDay] = releaseRate
 
         default:
             guard let enteredDoseMG = request.enteredDoseMG ?? request.activeEquivalentDoseMG,
+                  enteredDoseMG.isFinite,
                   enteredDoseMG > 0 else {
                 throw DoseRecordingError.missingDoseAmount
             }
@@ -323,7 +364,10 @@ enum DoseRecordingService {
 
         if route == .sublingual {
             if let theta = request.sublingualTheta {
-                extras[.sublingualTheta] = max(0.0, min(1.0, theta))
+                guard theta.isFinite, (0...1).contains(theta) else {
+                    throw DoseRecordingError.invalidDoseConfiguration
+                }
+                extras[.sublingualTheta] = theta
             } else if let tier = request.sublingualTier {
                 extras[.sublingualTier] = tierCode(for: tier)
             } else {
@@ -344,26 +388,23 @@ enum DoseRecordingService {
     }
 
     private static func resolvedRoute(from request: CustomDoseRecordingRequest) throws -> DoseEvent.Route {
-        if request.releaseRateUGPerDay != nil {
-            return .patchApply
-        }
         guard let route = request.route else {
             throw DoseRecordingError.missingRoute
         }
         return route
     }
 
-    private static func append(_ event: DoseEvent, to events: inout [DoseEvent], plans: [MedicationPlan]) throws {
-        events.append(event)
-        events.sort { $0.timeH < $1.timeH }
+    private static func validateRecordedAt(_ date: Date) throws {
+        let timestamp = date.timeIntervalSince1970
+        guard timestamp.isFinite,
+              date <= Date().addingTimeInterval(5 * 60) else {
+            throw DoseRecordingError.invalidRecordedAt
+        }
+    }
 
-        try saveEvents(events)
-
-        let modifiedAt = Date().timeIntervalSince1970
-        UserDefaults.standard.set(modifiedAt, forKey: eventsModifiedKey)
-
+    private static func refreshProjections(with snapshot: DoseStoreSnapshot, plans: [MedicationPlan]) {
         WidgetSnapshotCoordinator.writeSnapshot(
-            events: events,
+            events: snapshot.events,
             bodyWeightKG: persistedBodyWeightKG(),
             plans: plans
         )
@@ -406,35 +447,42 @@ enum DoseRecordingService {
 
     private static func loadValue<T: Decodable>(filename: String, defaultValue: T) throws -> T {
         let url = try fileURL(named: filename)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        let sourceURL: URL
+        if FileManager.default.fileExists(atPath: url.path) {
+            sourceURL = url
+        } else if let legacyURL = legacyFileURL(named: filename),
+                  FileManager.default.fileExists(atPath: legacyURL.path) {
+            sourceURL = legacyURL
+        } else {
             return defaultValue
         }
 
         do {
-            let data = try Data(contentsOf: url)
+            let data = try Data(contentsOf: sourceURL)
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw DoseRecordingError.readFailed
         }
     }
 
-    private static func saveEvents(_ events: [DoseEvent]) throws {
-        do {
-            let url = try fileURL(named: eventsFileName)
-            let data = try JSONEncoder().encode(events)
-            try data.write(to: url, options: .atomic)
-        } catch {
-            throw DoseRecordingError.writeFailed
-        }
-    }
-
     private static func fileURL(named fileName: String) throws -> URL {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: WidgetSharedStore.appGroupIdentifier
+        ) ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             return directory.appendingPathComponent(fileName)
         } catch {
             throw DoseRecordingError.writeFailed
         }
+    }
+
+    private static func legacyFileURL(named fileName: String) -> URL? {
+        let legacyDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let sharedDirectory = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: WidgetSharedStore.appGroupIdentifier
+        )
+        guard sharedDirectory?.path != legacyDirectory.path else { return nil }
+        return legacyDirectory.appendingPathComponent(fileName)
     }
 }

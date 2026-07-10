@@ -10,7 +10,7 @@ import SwiftUI
 @main
 struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
-    @StateObject private var store: PersistedStore<[DoseEvent]>
+    @StateObject private var doseStoreController: DoseStoreController
     @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
     @StateObject private var notificationCoordinator: NotificationCoordinator
     @StateObject private var timelineVM: DoseTimelineVM
@@ -18,21 +18,18 @@ struct HRTRecorderApp: App {
     @StateObject private var watchDoseReceiver = WatchDoseReceiver()
     
     init() {
-        let persistedStore = PersistedStore<[DoseEvent]>(
-            filename: "dose_events.json",
-            defaultValue: []
-        )
+        let doseStoreController = DoseStoreController()
         let persistedMedicationPlans = PersistedStore<[MedicationPlan]>(
             filename: "medication_plans.json",
-            defaultValue: []
+            defaultValue: [],
+            appGroupIdentifier: WidgetSharedStore.appGroupIdentifier
         )
         let notificationCoordinator = NotificationCoordinator()
-        _store = StateObject(wrappedValue: persistedStore)
+        _doseStoreController = StateObject(wrappedValue: doseStoreController)
         _medicationPlanStore = StateObject(wrappedValue: persistedMedicationPlans)
         _notificationCoordinator = StateObject(wrappedValue: notificationCoordinator)
-        _timelineVM = StateObject(wrappedValue: DoseTimelineVM(initialEvents: persistedStore.value) { updated in
-            persistedStore.value = updated
-            persistedStore.saveSync()
+        _timelineVM = StateObject(wrappedValue: DoseTimelineVM(initialEvents: doseStoreController.events) { updated in
+            doseStoreController.commitPresentationChanges(proposed: updated).events
         })
         _medicationVM = StateObject(
             wrappedValue: MedicationPlanVM(
@@ -49,8 +46,9 @@ struct HRTRecorderApp: App {
         WindowGroup {
             TimelineScreen(vm: timelineVM, medicationVM: medicationVM)
                 .task {
+                    doseStoreController.startObserving()
+                    doseStoreController.reload()
                     await medicationVM.configure()
-                    syncExternallyRecordedDosesIfNeeded()
                     refreshWidgetSnapshot(reloadTimelines: false)
                     AppIntentIndexingCoordinator.refreshMedicationIndex(plans: medicationVM.plans)
                     scheduleWidgetDoseHandoffConsumption()
@@ -59,7 +57,13 @@ struct HRTRecorderApp: App {
                             timelineVM.save(event, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
                         },
                         onReplaceAllEvents: { events, modifiedAt in
-                            timelineVM.replaceAllEvents(events, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
+                            timelineVM.mergeRemoteEvents(events, modifiedAt: modifiedAt > 0 ? modifiedAt : nil)
+                        },
+                        onDeleteEvents: { eventIDs, modifiedAt in
+                            timelineVM.removeEvents(
+                                withIDs: eventIDs,
+                                modifiedAt: modifiedAt > 0 ? modifiedAt : nil
+                            )
                         },
                         currentStateProvider: {
                             (
@@ -85,6 +89,13 @@ struct HRTRecorderApp: App {
                         eventsModifiedAt: timelineVM.eventsModifiedAt
                     )
                     refreshWidgetSnapshot()
+                }
+                .onReceive(doseStoreController.$snapshot) { snapshot in
+                    guard snapshot.events != timelineVM.events else { return }
+                    timelineVM.applyCanonicalSnapshot(
+                        snapshot.events,
+                        modifiedAt: snapshot.modifiedAt
+                    )
                 }
                 .onReceive(timelineVM.$result) { result in
                     watchDoseReceiver.syncToWatch(
@@ -123,7 +134,7 @@ struct HRTRecorderApp: App {
             if newPhase == .active {
                 scheduleWidgetDoseHandoffConsumption()
                 Task {
-                    syncExternallyRecordedDosesIfNeeded()
+                    doseStoreController.reload()
                     await timelineVM.beginBodyWeightHealthKitSync()
                     await timelineVM.refreshLatestBodyWeightSilently()
                     await medicationVM.refreshSystemState()
@@ -132,7 +143,6 @@ struct HRTRecorderApp: App {
                     AppIntentIndexingCoordinator.refreshMedicationIndex(plans: medicationVM.plans)
                 }
             } else if newPhase == .inactive || newPhase == .background {
-                store.saveSync()
                 medicationPlanStore.saveSync()
                 refreshWidgetSnapshot(reloadTimelines: false)
             }
@@ -145,19 +155,6 @@ struct HRTRecorderApp: App {
             bodyWeightKG: timelineVM.bodyWeightKG,
             plans: medicationVM.plans,
             reloadTimelines: reloadTimelines
-        )
-    }
-
-    @MainActor
-    private func syncExternallyRecordedDosesIfNeeded() {
-        guard let persistedEvents = try? DoseRecordingService.loadPersistedEvents(),
-              persistedEvents != timelineVM.events else {
-            return
-        }
-
-        timelineVM.replaceAllEvents(
-            persistedEvents,
-            modifiedAt: DoseRecordingService.persistedEventsModifiedAt()
         )
     }
 

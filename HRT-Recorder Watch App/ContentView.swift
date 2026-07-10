@@ -140,8 +140,8 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                 }
                 .onDelete { offsets in
-                    deleteVisibleEvents(at: offsets)
-                    syncService.replaceAll(events: store.events)
+                    let deletedIDs = deleteVisibleEvents(at: offsets)
+                    syncService.delete(eventIDs: deletedIDs)
                 }
             }
         }
@@ -167,16 +167,17 @@ struct ContentView: View {
         )
     }
 
-    private func deleteVisibleEvents(at offsets: IndexSet) {
+    private func deleteVisibleEvents(at offsets: IndexSet) -> [UUID] {
         let idsToDelete = offsets.compactMap { visibleEvents[safe: $0]?.id }
-        guard !idsToDelete.isEmpty else { return }
+        guard !idsToDelete.isEmpty else { return [] }
         let remaining = store.events.filter { !idsToDelete.contains($0.id) }
         store.replace(with: remaining)
+        return idsToDelete
     }
 
     private func save(_ event: WatchDoseEvent) {
         store.upsert(event)
-        syncService.replaceAll(events: store.events)
+        syncService.send(event: event)
     }
 }
 

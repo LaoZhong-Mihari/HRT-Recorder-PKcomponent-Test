@@ -109,7 +109,7 @@ struct IntentMedicationEntity: AppEntity, Identifiable, Sendable {
     static func allEntities(from plans: [MedicationPlan]) -> [IntentMedicationEntity] {
         let planEntities = plans
             .enumerated()
-            .filter { $0.element.primaryTemplate.hasConfiguredDose }
+            .filter { $0.element.isEnabled && $0.element.primaryTemplate.hasConfiguredDose }
             .map { index, plan in
                 IntentMedicationEntity(plan: plan, sortPriority: index)
             }
@@ -144,73 +144,17 @@ struct IntentMedicationEntity: AppEntity, Identifiable, Sendable {
         compound: Compound?,
         recordOnlyOralMedication: RecordOnlyOralMedication?
     ) -> [String] {
-        var terms = [
-            title,
-            subtitle,
-            "dose",
-            "dosing",
-            "medication",
-            "用药",
-            "记录用药"
-        ]
+        var terms = [title, subtitle]
 
         if let compound {
-            terms.append(contentsOf: compoundSearchTerms(compound))
+            let info = CompoundInfo.by(compound: compound)
+            terms.append(contentsOf: [compound.rawValue, compound.abbreviation, info.fullName])
         }
         if let recordOnlyOralMedication {
-            terms.append(contentsOf: recordOnlySearchTerms(recordOnlyOralMedication))
+            terms.append(recordOnlyOralMedication.displayName)
         }
 
         return Array(Set(terms.map(normalized).filter { !$0.isEmpty })).sorted()
-    }
-
-    private static func compoundSearchTerms(_ compound: Compound) -> [String] {
-        let info = CompoundInfo.by(compound: compound)
-        var terms = [
-            compound.rawValue,
-            compound.abbreviation,
-            info.fullName,
-            info.hormone.displayName,
-            info.hormone.rawValue
-        ]
-
-        switch compound {
-        case .E2:
-            terms += ["e2", "estradiol", "oestradiol"]
-        case .EB:
-            terms += ["eb", "estradiol benzoate", "benzoate"]
-        case .EV:
-            terms += ["ev", "estradiol valerate", "valerate"]
-        case .EC:
-            terms += ["ec", "estradiol cypionate", "cypionate"]
-        case .EN:
-            terms += ["en", "estradiol enanthate", "enanthate"]
-        case .T:
-            terms += ["t", "testosterone"]
-        case .TC:
-            terms += ["tc", "testosterone cypionate", "cypionate"]
-        case .TE:
-            terms += ["te", "testosterone enanthate", "enanthate"]
-        case .TU:
-            terms += ["tu", "testosterone undecanoate", "undecanoate"]
-        }
-
-        return terms
-    }
-
-    private static func recordOnlySearchTerms(_ medication: RecordOnlyOralMedication) -> [String] {
-        switch medication {
-        case .cyproteroneAcetate:
-            return ["cyproterone acetate", "cyproterone", "cpa"]
-        case .spironolactone:
-            return ["spironolactone", "spiro"]
-        case .bicalutamide:
-            return ["bicalutamide", "bica"]
-        case .finasteride:
-            return ["finasteride", "fina"]
-        case .dutasteride:
-            return ["dutasteride", "duta"]
-        }
     }
 
     private static func normalized(_ value: String) -> String {
@@ -254,13 +198,9 @@ struct IntentMedicationQuery: EntityStringQuery {
     }
 
     func defaultResult() async -> IntentMedicationEntity? {
-        do {
-            return try await MainActor.run {
-                try IntentMedicationEntity.allEntities(from: DoseRecordingService.loadMedicationPlans()).first
-            }
-        } catch {
-            return nil
-        }
+        // Medication is safety-critical input. Siri must not populate an
+        // arbitrary first plan or catalog item for a bare recording request.
+        nil
     }
 }
 
@@ -269,8 +209,9 @@ extension IntentMedicationEntity: IndexedEntity {
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = CSSearchableItemAttributeSet(contentType: .data)
         attributes.title = title
-        attributes.contentDescription = subtitle
-        attributes.keywords = searchTerms
+        // Keep the index minimal: dose, route, and free-form aliases remain in
+        // the live AppEntity query / on-device model context, not Spotlight.
+        attributes.keywords = [title]
         return attributes
     }
 }
@@ -280,13 +221,15 @@ extension DoseOptionEntity: IndexedEntity {
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = CSSearchableItemAttributeSet(contentType: .data)
         attributes.title = title
-        attributes.contentDescription = subtitle
-        attributes.keywords = searchTerms
+        attributes.keywords = [title]
         return attributes
     }
 }
 
 enum AppIntentIndexingCoordinator {
+    private static let medicationIDsKey = "appintent.indexedMedicationEntityIDs"
+    private static let doseOptionIDsKey = "appintent.indexedDoseOptionEntityIDs"
+
     static func refreshMedicationIndex(plans: [MedicationPlan]) {
         guard #available(iOS 18.0, macOS 15.0, visionOS 2.0, *) else { return }
 
@@ -295,10 +238,33 @@ enum AppIntentIndexingCoordinator {
             .makeDoseOptions(from: plans)
             .map(DoseOptionEntity.init)
 
+        let medicationIDs = Set(medicationEntities.map(\.id))
+        let doseOptionIDs = Set(plannedDoseEntities.map(\.id))
+        let previousMedicationIDs = Set(UserDefaults.standard.stringArray(forKey: medicationIDsKey) ?? [])
+        let previousDoseOptionIDs = Set(UserDefaults.standard.stringArray(forKey: doseOptionIDsKey) ?? [])
+        let deletedMedicationIDs = Array(previousMedicationIDs.subtracting(medicationIDs))
+        let deletedDoseOptionIDs = Array(previousDoseOptionIDs.subtracting(doseOptionIDs))
+        let medicationIDsKey = Self.medicationIDsKey
+        let doseOptionIDsKey = Self.doseOptionIDsKey
+
         Task.detached(priority: .utility) {
             do {
+                if !deletedMedicationIDs.isEmpty {
+                    try await CSSearchableIndex.default().deleteAppEntities(
+                        identifiedBy: deletedMedicationIDs,
+                        ofType: IntentMedicationEntity.self
+                    )
+                }
+                if !deletedDoseOptionIDs.isEmpty {
+                    try await CSSearchableIndex.default().deleteAppEntities(
+                        identifiedBy: deletedDoseOptionIDs,
+                        ofType: DoseOptionEntity.self
+                    )
+                }
                 try await CSSearchableIndex.default().indexAppEntities(medicationEntities, priority: 10)
                 try await CSSearchableIndex.default().indexAppEntities(plannedDoseEntities, priority: 8)
+                UserDefaults.standard.set(Array(medicationIDs), forKey: medicationIDsKey)
+                UserDefaults.standard.set(Array(doseOptionIDs), forKey: doseOptionIDsKey)
             } catch {
                 // Spotlight indexing is opportunistic; Siri and Shortcuts still have direct queries.
             }

@@ -99,7 +99,9 @@ enum WidgetSnapshotCoordinator {
         var options: [WidgetDoseOption] = []
 
         for (planIndex, plan) in plans.enumerated() {
-            guard plan.primaryTemplate.hasConfiguredDose else { continue }
+            // Paused plans remain visible in the medication editor, but are not
+            // valid recordable options for widgets, Siri, or Shortcuts.
+            guard plan.isEnabled, plan.primaryTemplate.hasConfiguredDose else { continue }
 
             if plan.recurrence.kind == .daily, !plan.resolvedDailyDoseSlots.isEmpty {
                 for (slotIndex, slot) in plan.resolvedDailyDoseSlots.enumerated() where slot.template.hasConfiguredDose {
@@ -110,7 +112,7 @@ enum WidgetSnapshotCoordinator {
                             doseSlotID: slot.id,
                             title: plan.displayName,
                             subtitle: "\(slot.time.formattedText) · \(slot.template.planSummaryText)",
-                            isEnabled: plan.isEnabled,
+                            isEnabled: true,
                             sortOrder: planIndex * 1000 + slotIndex
                         )
                     )
@@ -123,19 +125,14 @@ enum WidgetSnapshotCoordinator {
                         doseSlotID: nil,
                         title: plan.displayName,
                         subtitle: plan.primaryTemplate.planSummaryText,
-                        isEnabled: plan.isEnabled,
+                        isEnabled: true,
                         sortOrder: planIndex * 1000
                     )
                 )
             }
         }
 
-        return options.sorted {
-            if $0.isEnabled != $1.isEnabled {
-                return $0.isEnabled && !$1.isEnabled
-            }
-            return $0.sortOrder < $1.sortOrder
-        }
+        return options.sorted { $0.sortOrder < $1.sortOrder }
     }
 
     private static func preferredUnit(for hormone: SimulatedHormone) -> ConcentrationUnit {

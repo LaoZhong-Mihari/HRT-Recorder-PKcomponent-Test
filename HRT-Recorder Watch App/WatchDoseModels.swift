@@ -558,6 +558,11 @@ struct WatchDoseReplacePayload: Codable {
     let modifiedAt: TimeInterval
 }
 
+struct WatchDoseDeletePayload: Codable {
+    let eventIDs: [UUID]
+    let modifiedAt: TimeInterval
+}
+
 final class WatchDoseStore: ObservableObject {
     @Published private(set) var events: [WatchDoseEvent] = []
     @Published private(set) var eventsModifiedAt: TimeInterval = 0
@@ -654,6 +659,15 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
         enqueueOrSend(PendingUserInfo(key: "watchDoseEvent", data: payload, boolValue: nil))
     }
 
+    func delete(eventIDs: [UUID]) {
+        let payload = WatchDoseDeletePayload(
+            eventIDs: eventIDs,
+            modifiedAt: store?.eventsModifiedAt ?? Date().timeIntervalSince1970
+        )
+        guard let data = try? encoder.encode(payload) else { return }
+        enqueueOrSend(PendingUserInfo(key: "watchDoseDelete", data: data, boolValue: nil))
+    }
+
     func replaceAll(events: [WatchDoseEvent]) {
         let wrappedPayload = WatchDoseReplacePayload(
             events: events.map(WatchDoseBridgeEvent.init),
@@ -689,11 +703,9 @@ final class WatchDoseSyncService: NSObject, ObservableObject {
         }
 
         guard !userInfo.isEmpty else { return }
+        // A user-info transfer is durable. Sending the same payload through a
+        // second channel caused duplicate deliveries and racing snapshots.
         session.transferUserInfo(userInfo)
-
-        if session.isReachable {
-            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
-        }
     }
 
     private func flushPendingMessages() {

@@ -15,11 +15,20 @@ final class PersistedStore<T: Codable>: ObservableObject {
     private var cancellable: AnyCancellable?
 
     private let url: URL
+    private let legacyURL: URL?
     private var needsSave = false
 
-    init(filename: String, defaultValue: T) {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    init(
+        filename: String,
+        defaultValue: T,
+        appGroupIdentifier: String? = nil
+    ) {
+        let legacyDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appGroupIdentifier.flatMap {
+            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0)
+        } ?? legacyDirectory
         self.url = dir.appendingPathComponent(filename)
+        self.legacyURL = dir == legacyDirectory ? nil : legacyDirectory.appendingPathComponent(filename)
         self.value = defaultValue
         createDirIfNeeded(dir)
         load()
@@ -35,10 +44,21 @@ final class PersistedStore<T: Codable>: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: url) else { return }
+        let sourceURL: URL?
+        if FileManager.default.fileExists(atPath: url.path) {
+            sourceURL = url
+        } else {
+            sourceURL = legacyURL
+        }
+        guard let sourceURL, let data = try? Data(contentsOf: sourceURL) else { return }
         if let decoded = try? JSONDecoder().decode(T.self, from: data) {
             self.value = decoded
             self.needsSave = false
+            // One-time migration to the shared App Group makes plan data
+            // available to App Intents hosted outside the foreground process.
+            if sourceURL != url {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 

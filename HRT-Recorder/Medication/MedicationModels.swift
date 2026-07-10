@@ -559,6 +559,20 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         doseSlot(for: scheduledDate, doseSlotID: doseSlotID, calendar: calendar)?.template ?? primaryTemplate
     }
 
+    /// Resolves a template referenced by a persisted/App-Intent option ID.
+    /// Unlike `template(for:doseSlotID:)`, this intentionally never falls back
+    /// to another slot or the primary template. A deleted/reconfigured slot
+    /// must be selected again rather than silently recording the wrong dose.
+    nonisolated func exactTemplate(forDoseSlotID doseSlotID: UUID?) -> MedicationDoseTemplate? {
+        if recurrence.kind == .daily {
+            guard let doseSlotID else { return nil }
+            return resolvedDailyDoseSlots.first(where: { $0.id == doseSlotID })?.template
+        }
+
+        guard doseSlotID == nil else { return nil }
+        return template
+    }
+
     private nonisolated static func normalizedDailyDoseSlots(
         _ dailyDoseSlots: [MedicationPlanDoseSlot],
         fallbackTemplate: MedicationDoseTemplate,

@@ -37,7 +37,12 @@ enum BodyWeightSyncSource: String {
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
         didSet {
-            onChange?(events)
+            guard !isApplyingCanonicalSnapshot, let onChange else { return }
+            let canonicalEvents = onChange(events)
+            guard canonicalEvents != events else { return }
+            isApplyingCanonicalSnapshot = true
+            events = canonicalEvents.sorted { $0.timeH < $1.timeH }
+            isApplyingCanonicalSnapshot = false
         }
     }
     @Published var result: SimulationResult? = nil
@@ -82,7 +87,8 @@ final class DoseTimelineVM: ObservableObject {
     private var simulationGeneration: UInt64 = 0
     /// First event time used as zero reference (hours)
     private var baseT0: Double? = nil
-    private var onChange: (([DoseEvent]) -> Void)?
+    private var onChange: (([DoseEvent]) -> [DoseEvent])?
+    private var isApplyingCanonicalSnapshot = false
     init() {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         let saved = UserDefaults.standard.double(forKey: weightKey)
@@ -111,7 +117,7 @@ final class DoseTimelineVM: ObservableObject {
         runSimulation()
     }
 
-    init(initialEvents: [DoseEvent], onChange: (([DoseEvent]) -> Void)? = nil) {
+    init(initialEvents: [DoseEvent], onChange: (([DoseEvent]) -> [DoseEvent])? = nil) {
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         self.events = initialEvents
         self.onChange = onChange
@@ -186,9 +192,32 @@ final class DoseTimelineVM: ObservableObject {
         runSimulation()
     }
 
-    func replaceAllEvents(_ newEvents: [DoseEvent], modifiedAt: TimeInterval? = nil) {
+    /// Applies a repository snapshot without turning it into a new UI write.
+    func applyCanonicalSnapshot(_ newEvents: [DoseEvent], modifiedAt: TimeInterval? = nil) {
         eventsModifiedAt = resolvedModifiedAt(modifiedAt)
+        isApplyingCanonicalSnapshot = true
         events = newEvents.sorted { $0.timeH < $1.timeH }
+        isApplyingCanonicalSnapshot = false
+        runSimulation()
+    }
+
+    /// Legacy Watch snapshots do not carry deletions. Merge their events into
+    /// the canonical store rather than replacing phone/Siri entries.
+    func mergeRemoteEvents(_ newEvents: [DoseEvent], modifiedAt: TimeInterval? = nil) {
+        var merged = Dictionary(uniqueKeysWithValues: events.map { ($0.id, $0) })
+        for event in newEvents {
+            merged[event.id] = event
+        }
+        eventsModifiedAt = resolvedModifiedAt(modifiedAt)
+        events = merged.values.sorted { $0.timeH < $1.timeH }
+        runSimulation()
+    }
+
+    func removeEvents(withIDs ids: [UUID], modifiedAt: TimeInterval? = nil) {
+        guard !ids.isEmpty else { return }
+        let idSet = Set(ids)
+        eventsModifiedAt = resolvedModifiedAt(modifiedAt)
+        events.removeAll { idSet.contains($0.id) }
         runSimulation()
     }
 

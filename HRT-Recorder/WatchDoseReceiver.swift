@@ -9,15 +9,18 @@ final class WatchDoseReceiver: NSObject, ObservableObject {
 
     private var onReceiveDoseEvent: ((DoseEvent, TimeInterval) -> Void)?
     private var onReplaceAllEvents: (([DoseEvent], TimeInterval) -> Void)?
+    private var onDeleteEvents: (([UUID], TimeInterval) -> Void)?
     private var currentStateProvider: (() -> (events: [DoseEvent], result: SimulationResult?, bodyWeightKG: Double, eventsModifiedAt: TimeInterval))?
 
     func start(
         onReceiveDoseEvent: @escaping (DoseEvent, TimeInterval) -> Void,
         onReplaceAllEvents: @escaping ([DoseEvent], TimeInterval) -> Void,
+        onDeleteEvents: @escaping ([UUID], TimeInterval) -> Void,
         currentStateProvider: @escaping () -> (events: [DoseEvent], result: SimulationResult?, bodyWeightKG: Double, eventsModifiedAt: TimeInterval)
     ) {
         self.onReceiveDoseEvent = onReceiveDoseEvent
         self.onReplaceAllEvents = onReplaceAllEvents
+        self.onDeleteEvents = onDeleteEvents
         self.currentStateProvider = currentStateProvider
 
         guard WCSession.isSupported() else { return }
@@ -128,6 +131,13 @@ extension WatchDoseReceiver: WCSessionDelegate {
             }
 
             self.onReplaceAllEvents?(decoded.events, decoded.modifiedAt)
+            self.pushCurrentSnapshotToWatch()
+            return
+        }
+
+        if let payload = userInfo["watchDoseDelete"] as? Data,
+           let decoded = try? decoder.decode(WatchDoseDeletePayload.self, from: payload) {
+            self.onDeleteEvents?(decoded.eventIDs, decoded.modifiedAt)
             self.pushCurrentSnapshotToWatch()
             return
         }
@@ -252,6 +262,11 @@ struct WatchDoseEventPayload: Codable {
 
 struct WatchDoseReplacePayload: Codable {
     let events: [WatchDoseBridgeEvent]
+    let modifiedAt: TimeInterval
+}
+
+struct WatchDoseDeletePayload: Codable {
+    let eventIDs: [UUID]
     let modifiedAt: TimeInterval
 }
 

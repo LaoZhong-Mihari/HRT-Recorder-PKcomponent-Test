@@ -430,7 +430,7 @@ struct SublingualTheta {
 }
 
 enum CompoundSupport {
-    static func availableCompounds(for category: MedicationCategory, route: DoseEvent.Route) -> [Compound] {
+    nonisolated static func availableCompounds(for category: MedicationCategory, route: DoseEvent.Route) -> [Compound] {
         switch category {
         case .antiAndrogen:
             return [.E2]

@@ -248,14 +248,16 @@ final class MedicationPlanVM: ObservableObject {
     @discardableResult
     func prepareDoseSeed(forWidgetOptionID optionID: String, requestedAt: Date = Date()) -> Bool {
         guard let parsedID = WidgetDoseOption.parseID(optionID),
-              let plan = plans.first(where: { $0.id == parsedID.planID }) else {
+              let plan = plans.first(where: { $0.id == parsedID.planID }),
+              plan.isEnabled,
+              let template = plan.exactTemplate(forDoseSlotID: parsedID.doseSlotID) else {
             return false
         }
 
-        pendingDoseSeed = makeSeed(
-            for: plan,
-            at: requestedAt,
-            doseSlotID: parsedID.doseSlotID
+        pendingDoseSeed = DoseEntrySeed(
+            date: requestedAt,
+            template: template,
+            title: plan.displayName
         )
         return true
     }

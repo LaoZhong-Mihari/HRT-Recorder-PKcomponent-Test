@@ -8339,6 +8339,180 @@
         }
       }
     },
+    "A patch release rate cannot be combined with a mass dose." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贴片释放速率不能与质量剂量同时使用。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "貼片釋放速率不能與質量劑量同時使用。" } }
+      }
+    },
+    "A record-only medication cannot be combined with that hormone category." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅记录药物不能与该激素类别组合。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅記錄藥物不能與該激素類別組合。" } }
+      }
+    },
+    "Apple Intelligence is unavailable. Please use the structured dose fields or review the dose in HRT Recorder." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Apple 智能当前不可用。请使用结构化剂量字段，或在 HRT Recorder 中核对剂量。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "Apple 智能目前無法使用。請使用結構化劑量欄位，或在 HRT Recorder 中核對劑量。" } }
+      }
+    },
+    "I could not confidently understand that dose. Please review it in HRT Recorder." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我无法可靠理解这条剂量。请在 HRT Recorder 中核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我無法可靠理解這筆劑量。請在 HRT Recorder 中核對。" } }
+      }
+    },
+    "I could not verify that medication plan. Please choose an active plan again." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我无法核实该用药计划。请重新选择一个启用的计划。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我無法核實該用藥計劃。請重新選擇一個啟用的計劃。" } }
+      }
+    },
+    "I could not verify that medication. Please choose it again." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "我无法核实该药物。请重新选择。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "我無法核實該藥物。請重新選擇。" } }
+      }
+    },
+    "I need a specific medication, route, and dose before I can record it." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "记录前我需要明确的药物、给药途径和剂量。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "記錄前我需要明確的藥物、給藥途徑和劑量。" } }
+      }
+    },
+    "Please provide the concentration in mg/mL with a volume dose." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "体积剂量请同时提供 mg/mL 浓度。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "體積劑量請同時提供 mg/mL 濃度。" } }
+      }
+    },
+    "Please provide the patch release rate in micrograms per day." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请提供贴片每天的微克释放速率。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請提供貼片每天的微克釋放速率。" } }
+      }
+    },
+    "Please specify the dosing route. I will not guess it." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请说明给药途径；我不会猜测。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請說明給藥途徑；我不會猜測。" } }
+      }
+    },
+    "Please specify the exact medication or compound. I will not guess it." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请说明确切的药物或化合物；我不会猜测。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請說明確切的藥物或化合物；我不會猜測。" } }
+      }
+    },
+    "Please specify which active planned dose to record." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请说明要记录哪一项启用的计划剂量。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請說明要記錄哪一項啟用的計劃劑量。" } }
+      }
+    },
+    "Record %@ at %@?" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "要在 %2$@ 记录 %1$@ 吗？" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "要在 %2$@ 記錄 %1$@ 嗎？" } }
+      }
+    },
+    "Record %@ (%@) at %@?" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "要在 %3$@ 记录 %1$@（%2$@）吗？" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "要在 %3$@ 記錄 %1$@（%2$@）嗎？" } }
+      }
+    },
+    "Record the selected planned dose at %@?" : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "要在 %@ 记录所选计划剂量吗？" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "要在 %@ 記錄所選計劃劑量嗎？" } }
+      }
+    },
+    "Record-only medications can only be recorded as oral medications." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仅记录药物只能按口服药物记录。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "僅記錄藥物只能按口服藥物記錄。" } }
+      }
+    },
+    "Removing a patch should not include a dose amount or release rate." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "移除贴片不应包含剂量或释放速率。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "移除貼片不應包含劑量或釋放速率。" } }
+      }
+    },
+    "Tell me the specific medication or choose an active medication plan." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请告诉我具体药物，或选择一个启用的用药计划。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請告訴我具體藥物，或選擇一個啟用的用藥計劃。" } }
+      }
+    },
+    "That medication plan is paused. Enable it or choose an active plan." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "该用药计划已暂停。请启用它或选择一个启用的计划。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "該用藥計劃已暫停。請啟用它或選擇一個啟用的計劃。" } }
+      }
+    },
+    "That phrase mixes a planned dose with custom dose details. Please choose one before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这句话同时包含计划剂量和自定义剂量信息。请先选择其中一种。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這句話同時包含計劃劑量和自訂劑量資訊。請先選擇其中一種。" } }
+      }
+    },
+    "The concentration or volume is outside a safe recording range." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "浓度或体积超出可安全记录的范围。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "濃度或體積超出可安全記錄的範圍。" } }
+      }
+    },
+    "The dose does not match the stated concentration and volume. Please review it before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "剂量与所述浓度和体积不一致。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "劑量與所述濃度和體積不一致。請在記錄前核對。" } }
+      }
+    },
+    "The selected concentration conflicts with the spoken concentration. Please review it before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选浓度与口述浓度冲突。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選濃度與口述濃度衝突。請在記錄前核對。" } }
+      }
+    },
+    "The selected dose conflicts with the spoken dose. Please review it before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选剂量与口述剂量冲突。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選劑量與口述劑量衝突。請在記錄前核對。" } }
+      }
+    },
+    "The selected medication conflicts with the spoken medication. Please review it before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选药物与口述药物冲突。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選藥物與口述藥物衝突。請在記錄前核對。" } }
+      }
+    },
+    "The selected route conflicts with the spoken route. Please review it before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所选给药途径与口述途径冲突。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "所選給藥途徑與口述途徑衝突。請在記錄前核對。" } }
+      }
+    },
+    "Those dose details are incomplete or inconsistent. Please review them before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这些剂量信息不完整或不一致。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這些劑量資訊不完整或不一致。請在記錄前核對。" } }
+      }
+    },
+    "Those medication details do not describe the same dose. Please review them before recording." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这些药物信息并非同一剂量。请在记录前核对。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "這些藥物資訊並非同一劑量。請在記錄前核對。" } }
+      }
+    },
+    "Use the current time or a past time for a dose record." : {
+      "localizations" : {
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请使用当前时间或过去的时间记录剂量。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "請使用目前時間或過去的時間記錄劑量。" } }
+      }
+    },
     "You need a dose template before saving the plan." : {
       "extractionState" : "stale",
       "localizations" : {
