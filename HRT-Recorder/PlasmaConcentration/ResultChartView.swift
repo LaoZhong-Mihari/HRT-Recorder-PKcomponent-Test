@@ -11,12 +11,7 @@ import Charts
 import Combine
 import UIKit
 
-private struct ResultChartPoint: Identifiable {
-    let hour: Double
-    let concentration: Double
-
-    var id: Double { hour }
-}
+private typealias ResultChartPoint = ResultChartScaleSample
 
 private struct ResultChartLabPoint: Identifiable {
     let id: UUID
@@ -267,10 +262,10 @@ struct ResultChartView: View {
 
         self.chartPoints = points
         self.labPoints = labPoints
-        self.chartMaxConcentration = max(
-            points.lazy.map(\.concentration).max() ?? 0,
-            labPoints.lazy.map(\.concentration).max() ?? 0
-        )
+        self.chartMaxConcentration = ResultChartScale.maximumValidConcentration(
+            predicted: points.lazy.map(\.concentration),
+            measured: labPoints.lazy.map(\.concentration)
+        ) ?? 0
     }
 
     private var isPad: Bool {
@@ -393,7 +388,7 @@ struct ResultChartView: View {
             return ResultChartWindow(
                 points: ArraySlice<ResultChartPoint>(),
                 labPoints: [],
-                yAxisDomain: ResultChartFormatter.yAxisDomain(forMaximum: chartMaxConcentration)
+                yAxisDomain: ResultChartScale.yAxisDomain(forMaximum: chartMaxConcentration)
             )
         }
 
@@ -403,15 +398,32 @@ struct ResultChartView: View {
         let sliceEnd = min(max(lastVisibleIndex + 1, sliceStart + 1), chartPoints.endIndex)
         let visiblePoints = chartPoints[sliceStart..<sliceEnd]
         let visibleLabPoints = labPoints.filter { visibleDomain.contains($0.hour) }
-        let maxConcentration = max(
-            visiblePoints.lazy.map(\.concentration).max() ?? chartMaxConcentration,
-            visibleLabPoints.lazy.map(\.concentration).max() ?? chartMaxConcentration
+
+        // Read slightly beyond the visible window so the Y axis can adapt to
+        // nearby peaks before they enter the plot instead of jumping at an edge.
+        let contextDomain = ResultChartScale.contextDomain(
+            around: visibleDomain,
+            within: totalDomain
         )
+        let contextLabPoints = labPoints.map {
+            ResultChartScaleSample(hour: $0.hour, concentration: $0.concentration)
+        }
+        let boundaryConcentrations = [
+            sim.concentration(at: contextDomain.lowerBound),
+            sim.concentration(at: contextDomain.upperBound)
+        ]
+        .compactMap { $0 }
+        let maxConcentration = ResultChartScale.maximumValidConcentration(
+            predicted: chartPoints,
+            measured: contextLabPoints,
+            in: contextDomain,
+            boundaryConcentrations: boundaryConcentrations
+        ) ?? 0
 
         return ResultChartWindow(
             points: visiblePoints,
             labPoints: visibleLabPoints,
-            yAxisDomain: ResultChartFormatter.yAxisDomain(forMaximum: maxConcentration)
+            yAxisDomain: ResultChartScale.yAxisDomain(forMaximum: maxConcentration)
         )
     }
 
@@ -918,16 +930,28 @@ private enum ResultChartFormatter {
         String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
     }
 
-    static func yAxisDomain(forMaximum concentration: Double) -> ClosedRange<Double> {
-        let topBoundary = max(concentration, 50) * 1.1
-        return 0...topBoundary
-    }
-
     static func yAxisLabel(for concentration: Double, unit: ConcentrationUnit) -> String {
-        if concentration >= 10 {
-            return String(format: "%.0f %@", locale: Locale.current, concentration, unit.symbol)
+        let magnitude = abs(concentration)
+        let fractionDigits: Int
+        if magnitude == 0 || magnitude >= 10 {
+            fractionDigits = 0
+        } else if magnitude >= 1 {
+            fractionDigits = 1
+        } else if magnitude >= 0.1 {
+            fractionDigits = 2
+        } else if magnitude >= 0.01 {
+            fractionDigits = 3
+        } else {
+            fractionDigits = 4
         }
-        return String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
+
+        return String(
+            format: "%.*f %@",
+            locale: Locale.current,
+            fractionDigits,
+            concentration,
+            unit.symbol
+        )
     }
 
     static func axisStep(for visibleHours: Double, targetLabelCount: Int) -> Double {
