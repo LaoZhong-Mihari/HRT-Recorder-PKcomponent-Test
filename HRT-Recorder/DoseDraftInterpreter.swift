@@ -18,9 +18,10 @@ struct DoseDraftFields {
     var sublingualTier: SublingualTier?
     var sublingualTheta: Double?
     var recordedAt: Date
+    var recordedAtWasExplicit: Bool
 
     static func empty(recordedAt: Date) -> DoseDraftFields {
-        DoseDraftFields(recordedAt: recordedAt)
+        DoseDraftFields(recordedAt: recordedAt, recordedAtWasExplicit: false)
     }
 }
 
@@ -131,6 +132,7 @@ struct ModelDoseDraft {
     var activeEquivalentMG: Double?
     var sublingualTier: String?
     var sublingualTheta: Double?
+    var recordedAtISO8601: String?
 
     nonisolated static let empty = ModelDoseDraft()
 }
@@ -149,6 +151,15 @@ protocol DoseDraftInterpreting {
 }
 
 enum DoseDraftInterpreter {
+    nonisolated static var canInterpretNaturalLanguage: Bool {
+        #if os(iOS) && canImport(FoundationModels)
+        if #available(iOS 27.0, *) {
+            return FoundationModelDoseDraftInterpreter.isAvailable
+        }
+        #endif
+        return false
+    }
+
     static func interpret(
         phrase: String,
         context: DoseInterpretationContext
@@ -187,22 +198,52 @@ enum DoseRecordCommand {
                 recordedAt.formatted(date: .omitted, time: .shortened)
             )
         case .custom(let request, _, _):
-            let doseDescription: String
+            var details: [String] = []
             if let medication = request.recordOnlyOralMedication {
-                doseDescription = "\(request.enteredDoseMG ?? request.activeEquivalentDoseMG ?? 0) mg \(medication.displayName)"
+                details.append(medication.displayName)
             } else if let releaseRate = request.releaseRateUGPerDay {
-                doseDescription = "\(releaseRate) mcg/day patch"
+                details.append(request.compound?.abbreviation ?? "patch")
+                details.append("\(Self.number(releaseRate)) mcg/day")
             } else if request.route == .patchRemove {
-                doseDescription = "remove \(request.compound?.rawValue ?? "the") patch"
+                details.append("remove \(request.compound?.abbreviation ?? "the") patch")
             } else {
-                doseDescription = "\(request.enteredDoseMG ?? request.activeEquivalentDoseMG ?? 0) mg \(request.compound?.rawValue ?? "medication")"
+                details.append(request.compound?.abbreviation ?? "medication")
+            }
+            if let entered = request.enteredDoseMG {
+                details.append("\(Self.number(entered)) mg raw dose")
+            }
+            if let active = request.activeEquivalentDoseMG {
+                details.append("\(Self.number(active)) mg active equivalent")
+            }
+            if let route = request.route {
+                details.append(route.planLabel)
+            }
+            if let concentration = request.concentrationMGmL {
+                if let volume = request.volumeML {
+                    details.append("\(Self.number(volume)) mL × \(Self.number(concentration)) mg/mL")
+                } else {
+                    details.append("\(Self.number(concentration)) mg/mL")
+                }
+            }
+            if let area = request.areaCM2 {
+                details.append("\(Self.number(area)) cm²")
+            }
+            if let tier = request.sublingualTier {
+                details.append("sublingual \(tier.rawValue) hold")
+            }
+            if let theta = request.sublingualTheta {
+                details.append("sublingual fraction \(Self.number(theta))")
             }
             return String.localizedStringWithFormat(
                 String(localized: "Record %@ at %@?"),
-                doseDescription,
+                details.joined(separator: ", "),
                 request.recordedAt.formatted(date: .omitted, time: .shortened)
             )
         }
+    }
+
+    private static func number(_ value: Double) -> String {
+        String(format: "%.6g", locale: Locale.current, value)
     }
 }
 
@@ -235,7 +276,28 @@ enum DoseDraftValidator {
             return .failure(message)
         }
 
+        let resolvedRecordedAt: Date
+        if let modelTimestamp = nonNone(model.recordedAtISO8601) {
+            guard let modelDate = parseISO8601Date(modelTimestamp) else {
+                return .failure(String(localized: "I could not verify the spoken dose time. Please choose the time explicitly."))
+            }
+            if explicit.recordedAtWasExplicit,
+               abs(explicit.recordedAt.timeIntervalSince(modelDate)) > 60 {
+                return .failure(String(localized: "The selected time conflicts with the spoken time. Please review it before recording."))
+            }
+            resolvedRecordedAt = explicit.recordedAtWasExplicit ? explicit.recordedAt : modelDate
+        } else {
+            resolvedRecordedAt = explicit.recordedAt
+        }
+        guard resolvedRecordedAt <= Date().addingTimeInterval(5 * 60) else {
+            return .failure(String(localized: "Use the current time or a past time for a dose record."))
+        }
+
+        let modelAction = nonNone(model.action)
         if let planToken = nonNone(model.planToken) {
+            guard modelAction == "planned" else {
+                return .failure(String(localized: "The requested action conflicts with the selected plan. Please choose planned or custom dosing again."))
+            }
             guard let plan = context.activePlans.first(where: { $0.token == planToken }) else {
                 return .failure(String(localized: "I could not verify that medication plan. Please choose an active plan again."))
             }
@@ -247,22 +309,25 @@ enum DoseDraftValidator {
                     optionID: plan.optionID,
                     planTitle: plan.displayName,
                     planSummary: plan.summary,
-                    recordedAt: explicit.recordedAt,
+                    recordedAt: resolvedRecordedAt,
                     mutationID: mutationID,
                     fingerprint: fingerprint(
                         kind: "planned",
-                        values: [plan.optionID, roundedTime(explicit.recordedAt)]
+                        values: [plan.optionID, roundedTime(resolvedRecordedAt)]
                     )
                 )
             )
         }
 
-        if model.action == "planned" {
+        if modelAction == "planned" {
             return .failure(String(localized: "Please specify which active planned dose to record."))
         }
 
-        guard model.action != "clarify" else {
+        guard modelAction != "clarify" else {
             return .failure(String(localized: "I need a specific medication, route, and dose before I can record it."))
+        }
+        if let modelAction, modelAction != "custom" {
+            return .failure(String(localized: "I could not verify whether this is a planned or custom dose."))
         }
 
         let modelMedication = nonNone(model.medicationToken).flatMap { token in
@@ -278,6 +343,28 @@ enum DoseDraftValidator {
         }
 
         let medication = explicit.medication ?? modelMedication
+        if let medication {
+            if let selectedCategory = explicit.category, selectedCategory != medication.category {
+                return .failure(String(localized: "The selected medication conflicts with the hormone category. Please review it before recording."))
+            }
+            if let selectedRoute = explicit.route,
+               let medicationRoute = medication.route,
+               selectedRoute != medicationRoute {
+                return .failure(String(localized: "The selected medication conflicts with the dosing route. Please review it before recording."))
+            }
+            if let selectedCompound = explicit.compound {
+                guard medication.recordOnlyOralMedication == nil,
+                      medication.compound == nil || medication.compound == selectedCompound else {
+                    return .failure(String(localized: "The selected medication conflicts with the compound. Please review it before recording."))
+                }
+            }
+            if let selectedRecordOnly = explicit.recordOnlyOralMedication {
+                guard medication.compound == nil,
+                      medication.recordOnlyOralMedication == nil || medication.recordOnlyOralMedication == selectedRecordOnly else {
+                    return .failure(String(localized: "The selected record-only medication conflicts with the medication. Please review it before recording."))
+                }
+            }
+        }
         var category = explicit.category ?? medication?.category
         var route = explicit.route ?? medication?.route
         var compound = explicit.compound ?? medication?.compound
@@ -318,7 +405,22 @@ enum DoseDraftValidator {
             return .failure(String(localized: "Please specify the dosing route. I will not guess it."))
         }
 
+        if model.amount != nil,
+           !["mg", "mcg", "mL"].contains(model.amountUnit ?? "") {
+            return .failure(String(localized: "Please say the dose unit explicitly as mg, mcg, or mL."))
+        }
         let modelAmountMG = amountMG(from: model)
+        let modelVolume: Double?
+        if model.amountUnit == "mL" {
+            if let statedVolume = model.volumeML,
+               let amount = model.amount,
+               !approximatelyEqual(statedVolume, amount) {
+                return .failure(String(localized: "The spoken volume is inconsistent. Please review it before recording."))
+            }
+            modelVolume = model.volumeML ?? model.amount
+        } else {
+            modelVolume = model.volumeML
+        }
         if let explicitDose = explicit.enteredDoseMG,
            let modelAmountMG,
            !approximatelyEqual(explicitDose, modelAmountMG) {
@@ -329,21 +431,50 @@ enum DoseDraftValidator {
            !approximatelyEqual(explicitConcentration, modelConcentration) {
             return .failure(String(localized: "The selected concentration conflicts with the spoken concentration. Please review it before recording."))
         }
+        if conflicting(explicit.activeEquivalentDoseMG, model.activeEquivalentMG) {
+            return .failure(String(localized: "The selected equivalent dose conflicts with the spoken equivalent dose. Please review it before recording."))
+        }
+        if conflicting(explicit.volumeML, modelVolume) {
+            return .failure(String(localized: "The selected volume conflicts with the spoken volume. Please review it before recording."))
+        }
+        if conflicting(explicit.areaCM2, model.areaCM2) {
+            return .failure(String(localized: "The selected gel area conflicts with the spoken gel area. Please review it before recording."))
+        }
+        if conflicting(explicit.releaseRateUGPerDay, model.releaseRateUGPerDay) {
+            return .failure(String(localized: "The selected patch release rate conflicts with the spoken release rate. Please review it before recording."))
+        }
+        if conflicting(explicit.sublingualTheta, model.sublingualTheta) {
+            return .failure(String(localized: "The selected sublingual fraction conflicts with the spoken fraction. Please review it before recording."))
+        }
+
+        let modelTier = sublingualTier(from: model.sublingualTier)
+        if nonNone(model.sublingualTier) != nil, modelTier == nil {
+            return .failure(String(localized: "I could not verify the sublingual hold setting. Please choose it again."))
+        }
+        if let explicitTier = explicit.sublingualTier,
+           let modelTier,
+           explicitTier != modelTier {
+            return .failure(String(localized: "The selected sublingual hold conflicts with the spoken hold. Please review it before recording."))
+        }
 
         let concentration = explicit.concentrationMGmL ?? model.concentrationMGmL
-        let volume = explicit.volumeML ?? model.volumeML
+        let volume = explicit.volumeML ?? modelVolume
         var enteredDoseMG = explicit.enteredDoseMG ?? modelAmountMG
+        if let concentration, !validPositive(concentration, upperBound: 1_000) {
+            return .failure(String(localized: "The concentration is outside a safe recording range."))
+        }
+        if let volume, !validPositive(volume, upperBound: 100) {
+            return .failure(String(localized: "The volume is outside a safe recording range."))
+        }
+        if volume != nil, concentration == nil {
+            return .failure(String(localized: "Please provide the concentration in mg/mL with a volume dose."))
+        }
         if let concentration, let volume {
-            guard validPositive(concentration, upperBound: 1_000), validPositive(volume, upperBound: 100) else {
-                return .failure(String(localized: "The concentration or volume is outside a safe recording range."))
-            }
             let calculatedDose = concentration * volume
             if let enteredDoseMG, !approximatelyEqual(enteredDoseMG, calculatedDose) {
                 return .failure(String(localized: "The dose does not match the stated concentration and volume. Please review it before recording."))
             }
             enteredDoseMG = calculatedDose
-        } else if model.amountUnit == "mL" {
-            return .failure(String(localized: "Please provide the concentration in mg/mL with a volume dose."))
         }
 
         let activeEquivalent = explicit.activeEquivalentDoseMG ?? model.activeEquivalentMG
@@ -353,39 +484,75 @@ enum DoseDraftValidator {
         if let activeEquivalent, !validPositive(activeEquivalent, upperBound: 10_000) {
             return .failure(String(localized: "The equivalent dose is outside a safe recording range."))
         }
+        if recordOnly != nil, activeEquivalent != nil {
+            return .failure(String(localized: "A record-only medication does not use an active-equivalent dose."))
+        }
+        if let enteredDoseMG, let activeEquivalent, let compound {
+            let expectedActive = enteredDoseMG * CompoundInfo.by(compound: compound).toActiveFactor
+            guard approximatelyEquivalent(activeEquivalent, expectedActive) else {
+                return .failure(String(localized: "The raw dose and active-equivalent dose do not describe the same amount."))
+            }
+        }
 
         let releaseRate = explicit.releaseRateUGPerDay ?? model.releaseRateUGPerDay
         if let releaseRate, !validPositive(releaseRate, upperBound: 10_000) {
             return .failure(String(localized: "The patch release rate is outside a safe recording range."))
         }
 
-        let tier = explicit.sublingualTier ?? sublingualTier(from: model.sublingualTier)
+        let tier = explicit.sublingualTier ?? modelTier
         let theta = explicit.sublingualTheta ?? model.sublingualTheta
         if let theta, !theta.isFinite || !(0...1).contains(theta) {
             return .failure(String(localized: "The sublingual absorption fraction must be between 0 and 1."))
         }
-        if let area = explicit.areaCM2 ?? model.areaCM2, !validPositive(area, upperBound: 10_000) {
+        let area = explicit.areaCM2 ?? model.areaCM2
+        if let area, !validPositive(area, upperBound: 10_000) {
             return .failure(String(localized: "The gel application area is outside a safe recording range."))
         }
 
         switch resolvedRoute {
+        case .injection:
+            guard area == nil, releaseRate == nil, tier == nil, theta == nil else {
+                return .failure(String(localized: "Those extra dose details do not apply to an injection."))
+            }
+            guard enteredDoseMG != nil || activeEquivalent != nil else {
+                return .failure(String(localized: "Please provide the dose amount to record."))
+            }
+        case .gel:
+            guard concentration == nil, volume == nil, releaseRate == nil, tier == nil, theta == nil else {
+                return .failure(String(localized: "Those extra dose details do not apply to a gel dose."))
+            }
+            guard enteredDoseMG != nil || activeEquivalent != nil else {
+                return .failure(String(localized: "Please provide the dose amount to record."))
+            }
+        case .oral:
+            guard concentration == nil, volume == nil, area == nil, releaseRate == nil, tier == nil, theta == nil else {
+                return .failure(String(localized: "Those extra dose details do not apply to an oral dose."))
+            }
+            guard enteredDoseMG != nil || activeEquivalent != nil else {
+                return .failure(String(localized: "Please provide the dose amount to record."))
+            }
+        case .sublingual:
+            guard concentration == nil, volume == nil, area == nil, releaseRate == nil else {
+                return .failure(String(localized: "Those extra dose details do not apply to a sublingual dose."))
+            }
+            guard tier == nil || theta == nil else {
+                return .failure(String(localized: "Choose either a sublingual hold setting or a custom fraction, not both."))
+            }
+            guard enteredDoseMG != nil || activeEquivalent != nil else {
+                return .failure(String(localized: "Please provide the dose amount to record."))
+            }
         case .patchApply:
             guard releaseRate != nil else {
                 return .failure(String(localized: "Please provide the patch release rate in micrograms per day."))
             }
-            guard enteredDoseMG == nil, activeEquivalent == nil else {
-                return .failure(String(localized: "A patch release rate cannot be combined with a mass dose."))
+            guard enteredDoseMG == nil, activeEquivalent == nil,
+                  concentration == nil, volume == nil, area == nil, tier == nil, theta == nil else {
+                return .failure(String(localized: "A patch release rate cannot be combined with other dose details."))
             }
         case .patchRemove:
-            guard enteredDoseMG == nil, activeEquivalent == nil, releaseRate == nil else {
-                return .failure(String(localized: "Removing a patch should not include a dose amount or release rate."))
-            }
-        default:
-            guard enteredDoseMG != nil || activeEquivalent != nil else {
-                return .failure(String(localized: "Please provide the dose amount to record."))
-            }
-            guard releaseRate == nil else {
-                return .failure(String(localized: "A release rate can only be recorded when applying a patch."))
+            guard enteredDoseMG == nil, activeEquivalent == nil, releaseRate == nil,
+                  concentration == nil, volume == nil, area == nil, tier == nil, theta == nil else {
+                return .failure(String(localized: "Removing a patch should not include dose details."))
             }
         }
 
@@ -413,11 +580,12 @@ enum DoseDraftValidator {
             compound: finalCompound,
             recordOnlyOralMedication: recordOnly,
             concentrationMGmL: concentration,
-            areaCM2: explicit.areaCM2 ?? model.areaCM2,
+            volumeML: volume,
+            areaCM2: area,
             releaseRateUGPerDay: releaseRate,
             sublingualTier: tier,
             sublingualTheta: theta,
-            recordedAt: explicit.recordedAt
+            recordedAt: resolvedRecordedAt
         )
         let fingerprintValues = [
             "custom",
@@ -428,8 +596,12 @@ enum DoseDraftValidator {
             decimal(enteredDoseMG),
             decimal(activeEquivalent),
             decimal(concentration),
+            decimal(volume),
+            decimal(area),
             decimal(releaseRate),
-            roundedTime(explicit.recordedAt)
+            tier?.rawValue ?? "",
+            decimal(theta),
+            roundedTime(resolvedRecordedAt)
         ]
         return .success(
             .custom(
@@ -453,13 +625,14 @@ enum DoseDraftValidator {
     private nonisolated static func modelHasCustomValues(_ draft: ModelDoseDraft) -> Bool {
         nonNone(draft.medicationToken) != nil || nonNone(draft.route) != nil || draft.amount != nil ||
             draft.concentrationMGmL != nil || draft.volumeML != nil || draft.areaCM2 != nil ||
-            draft.releaseRateUGPerDay != nil || draft.activeEquivalentMG != nil || draft.sublingualTheta != nil
+            draft.releaseRateUGPerDay != nil || draft.activeEquivalentMG != nil ||
+            nonNone(draft.sublingualTier) != nil || draft.sublingualTheta != nil
     }
 
     private nonisolated static func amountMG(from draft: ModelDoseDraft) -> Double? {
         guard let amount = draft.amount else { return nil }
         switch draft.amountUnit {
-        case "mg", "unspecified", nil:
+        case "mg":
             return amount
         case "mcg":
             return amount / 1_000
@@ -491,6 +664,23 @@ enum DoseDraftValidator {
         abs(lhs - rhs) <= max(0.001, max(abs(lhs), abs(rhs)) * 0.001)
     }
 
+    private nonisolated static func approximatelyEquivalent(_ lhs: Double, _ rhs: Double) -> Bool {
+        abs(lhs - rhs) <= max(0.01, max(abs(lhs), abs(rhs)) * 0.02)
+    }
+
+    private nonisolated static func conflicting(_ explicit: Double?, _ interpreted: Double?) -> Bool {
+        guard let explicit, let interpreted else { return false }
+        return !approximatelyEqual(explicit, interpreted)
+    }
+
+    private nonisolated static func parseISO8601Date(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+
     private nonisolated static func roundedTime(_ date: Date) -> String {
         String(Int(date.timeIntervalSince1970 / 30))
     }
@@ -509,12 +699,17 @@ import FoundationModels
 
 @available(iOS 27.0, *)
 private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
+    nonisolated static var isAvailable: Bool {
+        let model = SystemLanguageModel.default
+        return model.isAvailable && model.supportsLocale(.current)
+    }
+
     func interpret(
         phrase: String,
         context: DoseInterpretationContext
     ) async -> DoseDraftInterpretation {
         let model = SystemLanguageModel.default
-        guard model.isAvailable, model.supportsLocale(.current) else { return .unavailable }
+        guard Self.isAvailable else { return .unavailable }
 
         do {
             let none = "__none__"
@@ -536,7 +731,8 @@ private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
                     .init(name: "releaseRateUGPerDay", schema: .init(type: Double.self, guides: [.range(0...10_000)]), isOptional: true),
                     .init(name: "activeEquivalentMG", schema: .init(type: Double.self, guides: [.range(0...10_000)]), isOptional: true),
                     .init(name: "sublingualTier", schema: .init(name: "SublingualTier", anyOf: ["quick", "casual", "standard", "strict"]), isOptional: true),
-                    .init(name: "sublingualTheta", schema: .init(type: Double.self, guides: [.range(0...1)]), isOptional: true)
+                    .init(name: "sublingualTheta", schema: .init(type: Double.self, guides: [.range(0...1)]), isOptional: true),
+                    .init(name: "recordedAtISO8601", schema: .init(type: String.self), isOptional: true)
                 ]
             )
             let schema = try GenerationSchema(root: root, dependencies: [])
@@ -544,7 +740,7 @@ private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
             let response = try await session.respond(
                 to: phrase,
                 schema: schema,
-                options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 220)
+                options: generationOptions
             )
             let content = response.content
             return .candidate(
@@ -561,7 +757,8 @@ private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
                     releaseRateUGPerDay: try content.value(Double?.self, forProperty: "releaseRateUGPerDay"),
                     activeEquivalentMG: try content.value(Double?.self, forProperty: "activeEquivalentMG"),
                     sublingualTier: try content.value(String?.self, forProperty: "sublingualTier"),
-                    sublingualTheta: try content.value(Double?.self, forProperty: "sublingualTheta")
+                    sublingualTheta: try content.value(Double?.self, forProperty: "sublingualTheta"),
+                    recordedAtISO8601: try content.value(String?.self, forProperty: "recordedAtISO8601")
                 )
             )
         } catch {
@@ -569,7 +766,19 @@ private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
         }
     }
 
+    private var generationOptions: GenerationOptions {
+        #if FOUNDATION_MODELS_IOS27
+        return GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 260)
+        #else
+        return GenerationOptions(sampling: .greedy, maximumResponseTokens: 260)
+        #endif
+    }
+
     private func instructions(context: DoseInterpretationContext) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = .current
+        let referenceTime = formatter.string(from: Date())
         let planLines = context.activePlans.map {
             "\($0.token) | \($0.displayName) | \($0.summary)"
         }.joined(separator: "\n")
@@ -578,7 +787,8 @@ private struct FoundationModelDoseDraftInterpreter: DoseDraftInterpreting {
         }.joined(separator: "\n")
         return """
         Extract facts from the user's dose-recording phrase only. This is not medical advice and you must never recommend, calculate a regimen, or invent a value.
-        Return `clarify` whenever medication, route, amount, unit, concentration, or action is ambiguous. Preserve the user's numbers and units. Select a plan token only when the user explicitly refers to that listed active plan; never choose a next, default, or future plan. Select medication and plan tokens only from the supplied catalog. Do not infer a compound from a category. Put an explicitly stated active-equivalent value in `activeEquivalentMG`; otherwise put the dose in `amount`. A volume needs an explicit mg/mL concentration. A patch removal carries no dose. A patch application uses a micrograms-per-day release rate.
+        Return `clarify` whenever medication, route, amount, unit, concentration, or action is ambiguous. Preserve the user's numbers and units. Never assume mg when a unit is missing. Select a plan token only when the user explicitly refers to that listed active plan; never choose a next, default, or future plan. Select medication and plan tokens only from the supplied catalog. Do not infer a compound from a category. Put an explicitly stated active-equivalent value in `activeEquivalentMG`; otherwise put the dose in `amount`. Put a spoken volume in `volumeML`, not in the mass dose. A volume needs an explicit mg/mL concentration. A patch removal carries no dose. A patch application uses a micrograms-per-day release rate.
+        The current local reference time is \(referenceTime). Set `recordedAtISO8601` only when the user explicitly states or clearly implies a past/current occurrence time (including relative phrases such as yesterday evening). Resolve it to an ISO 8601 timestamp with time-zone offset. Leave it absent when no occurrence time is expressed; never invent or move a dose into the future.
 
         Active planned doses:
         \(planLines)

@@ -11,6 +11,7 @@ import SwiftUI
 struct HRTRecorderApp: App {
     @Environment(\.scenePhase) private var phase
     @StateObject private var doseStoreController: DoseStoreController
+    @StateObject private var labReportStore: PersistedStore<[LabReport]>
     @StateObject private var medicationPlanStore: PersistedStore<[MedicationPlan]>
     @StateObject private var notificationCoordinator: NotificationCoordinator
     @StateObject private var timelineVM: DoseTimelineVM
@@ -18,7 +19,25 @@ struct HRTRecorderApp: App {
     @StateObject private var watchDoseReceiver = WatchDoseReceiver()
     
     init() {
+        #if DEBUG && LAB_REPORT_SELF_TESTS
+        LabReportOCRFallbackSelfTest.runIfRequested()
+        Task {
+            await LabReportImagePipelineSelfTest.runIfRequested()
+        }
+        #endif
+
         let doseStoreController = DoseStoreController()
+        let persistedLabReports = PersistedStore<[LabReport]>(
+            filename: "lab_reports.json",
+            defaultValue: []
+        )
+        let legacyLabSamples = PersistedStore<[LabSample]>(
+            filename: "lab_samples.json",
+            defaultValue: []
+        )
+        if persistedLabReports.value.isEmpty, !legacyLabSamples.value.isEmpty {
+            persistedLabReports.value = Self.legacyReports(from: legacyLabSamples.value)
+        }
         let persistedMedicationPlans = PersistedStore<[MedicationPlan]>(
             filename: "medication_plans.json",
             defaultValue: [],
@@ -26,11 +45,21 @@ struct HRTRecorderApp: App {
         )
         let notificationCoordinator = NotificationCoordinator()
         _doseStoreController = StateObject(wrappedValue: doseStoreController)
+        _labReportStore = StateObject(wrappedValue: persistedLabReports)
         _medicationPlanStore = StateObject(wrappedValue: persistedMedicationPlans)
         _notificationCoordinator = StateObject(wrappedValue: notificationCoordinator)
-        _timelineVM = StateObject(wrappedValue: DoseTimelineVM(initialEvents: doseStoreController.events) { updated in
-            doseStoreController.commitPresentationChanges(proposed: updated).events
-        })
+        _timelineVM = StateObject(
+            wrappedValue: DoseTimelineVM(
+                initialEvents: doseStoreController.events,
+                initialLabReports: persistedLabReports.value,
+                onChange: { updated in
+                    doseStoreController.commitPresentationChanges(proposed: updated).events
+                },
+                onLabReportsChange: { updated in
+                    persistedLabReports.value = updated
+                }
+            )
+        )
         _medicationVM = StateObject(
             wrappedValue: MedicationPlanVM(
                 initialPlans: persistedMedicationPlans.value,
@@ -114,6 +143,9 @@ struct HRTRecorderApp: App {
                     )
                     refreshWidgetSnapshot()
                 }
+                .onReceive(timelineVM.$labReports) { _ in
+                    refreshWidgetSnapshot()
+                }
                 .onReceive(timelineVM.$eventsModifiedAt) { eventsModifiedAt in
                     watchDoseReceiver.syncToWatch(
                         events: timelineVM.events,
@@ -143,6 +175,7 @@ struct HRTRecorderApp: App {
                     AppIntentIndexingCoordinator.refreshMedicationIndex(plans: medicationVM.plans)
                 }
             } else if newPhase == .inactive || newPhase == .background {
+                labReportStore.saveSync()
                 medicationPlanStore.saveSync()
                 refreshWidgetSnapshot(reloadTimelines: false)
             }
@@ -153,6 +186,7 @@ struct HRTRecorderApp: App {
         WidgetSnapshotCoordinator.writeSnapshot(
             events: timelineVM.events,
             bodyWeightKG: timelineVM.bodyWeightKG,
+            labSamples: timelineVM.labSamples,
             plans: medicationVM.plans,
             reloadTimelines: reloadTimelines
         )
@@ -176,5 +210,30 @@ struct HRTRecorderApp: App {
             forWidgetOptionID: handoff.optionID,
             requestedAt: handoff.requestedAt
         )
+    }
+
+    private static func legacyReports(from samples: [LabSample]) -> [LabReport] {
+        let grouped = Dictionary(grouping: samples) { sample in
+            sample.reportID ?? sample.id
+        }
+        return grouped.map { reportID, samples in
+            let collectedAt = samples.map(\.collectedAt).min() ?? Date()
+            return LabReport(
+                id: reportID,
+                collectedAt: collectedAt,
+                sourceKind: .manual,
+                analytes: samples.map { sample in
+                    LabAnalyteResult(
+                        id: sample.id,
+                        kind: sample.hormone == .estradiol ? .estradiol : .testosterone,
+                        name: sample.analyteName ?? sample.hormone.displayName,
+                        value: sample.concentration,
+                        unitSymbol: sample.unit.symbol,
+                        concentrationUnit: sample.unit,
+                        sourceLine: sample.sourceLine
+                    )
+                }
+            )
+        }.sorted { $0.collectedAt < $1.collectedAt }
     }
 }

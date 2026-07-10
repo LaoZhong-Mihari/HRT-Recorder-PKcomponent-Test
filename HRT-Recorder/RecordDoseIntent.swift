@@ -286,6 +286,9 @@ struct RecordDoseIntent: AppIntent {
     @Parameter(title: "Concentration", description: "Injection concentration in mg/mL when explicitly stated.")
     var concentrationMGmL: Double?
 
+    @Parameter(title: "Volume", description: "Injection volume in mL when explicitly stated.")
+    var volumeML: Double?
+
     @Parameter(title: "Gel Area", description: "Gel application area in square centimeters when explicitly stated.")
     var areaCM2: Double?
 
@@ -311,6 +314,7 @@ struct RecordDoseIntent: AppIntent {
         activeEquivalentDoseMG = nil
         recordOnlyMedication = nil
         concentrationMGmL = nil
+        volumeML = nil
         areaCM2 = nil
         releaseRateUGPerDay = nil
         sublingualTier = nil
@@ -321,7 +325,7 @@ struct RecordDoseIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let mutationID = UUID()
         let occurredAt = recordedAt ?? Date()
-        let explicit = makeExplicitFields(recordedAt: occurredAt)
+        var explicit = makeExplicitFields(recordedAt: occurredAt)
         let plans: [MedicationPlan]
         do {
             plans = try await MainActor.run { try DoseRecordingService.loadMedicationPlans() }
@@ -330,12 +334,25 @@ struct RecordDoseIntent: AppIntent {
         }
         let context = await MainActor.run { DoseInterpretationContext.make(from: plans) }
 
-        var phrase = dosePhrase?.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let naturalLanguageAvailable = DoseDraftInterpreter.canInterpretNaturalLanguage
+        var phrase = naturalLanguageAvailable
+            ? dosePhrase?.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        if !naturalLanguageAvailable {
+            explicit = try await requestStructuredFallback(starting: explicit)
+        }
+
         for attempt in 0..<2 {
-            let interpretation: DoseDraftInterpretation
+            var interpretation: DoseDraftInterpretation
             if let phrase, !phrase.isEmpty {
                 interpretation = await DoseDraftInterpreter.interpret(phrase: phrase, context: context)
             } else {
+                interpretation = .candidate(.empty)
+            }
+
+            if case .unavailable = interpretation {
+                explicit = try await requestStructuredFallback(starting: explicit)
+                phrase = nil
                 interpretation = .candidate(.empty)
             }
 
@@ -346,8 +363,8 @@ struct RecordDoseIntent: AppIntent {
                 mutationID: mutationID
             ) {
             case .success(let command):
+                try await confirm(command)
                 do {
-                    try await confirm(command)
                     let dialog = try await MainActor.run { try execute(command).dialogText }
                     return .result(dialog: "\(dialog)")
                 } catch {
@@ -368,18 +385,64 @@ struct RecordDoseIntent: AppIntent {
         return .result(dialog: "I need the medication, route, and dose amount before I can record it.")
     }
 
-    private func makeExplicitFields(recordedAt: Date) -> DoseDraftFields {
-        let medicationCandidate = medication.map {
-            DoseMedicationCandidate(
-                token: "explicit",
-                identifier: $0.id,
-                displayName: $0.title,
-                category: $0.category,
-                route: $0.route,
-                compound: $0.compound,
-                recordOnlyOralMedication: $0.recordOnlyOralMedication
+    private func requestStructuredFallback(starting initial: DoseDraftFields) async throws -> DoseDraftFields {
+        var fields = initial
+
+        if fields.medication == nil,
+           fields.compound == nil,
+           fields.recordOnlyOralMedication == nil {
+            let selected = try await $medication.requestValue(
+                "Which exact medication should I record?"
             )
+            fields.medication = medicationCandidate(from: selected)
         }
+
+        let medicationRoute: DoseEvent.Route? = fields.recordOnlyOralMedication != nil
+            ? .oral
+            : fields.medication?.route
+        if fields.route == nil, medicationRoute == nil {
+            let selected = try await $route.requestValue(
+                "How did you take it—by injection, oral, sublingual, gel, applying a patch, or removing a patch?"
+            )
+            fields.route = selected.route
+        }
+
+        switch fields.route ?? medicationRoute {
+        case .patchApply:
+            if fields.releaseRateUGPerDay == nil {
+                fields.releaseRateUGPerDay = try await $releaseRateUGPerDay.requestValue(
+                    "What is the patch release rate in micrograms per day?"
+                )
+            }
+        case .patchRemove:
+            break
+        case .injection:
+            if fields.volumeML != nil, fields.concentrationMGmL == nil {
+                fields.concentrationMGmL = try await $concentrationMGmL.requestValue(
+                    "What is the injection concentration in milligrams per milliliter?"
+                )
+            }
+            if fields.enteredDoseMG == nil,
+               fields.activeEquivalentDoseMG == nil,
+               !(fields.concentrationMGmL != nil && fields.volumeML != nil) {
+                fields.enteredDoseMG = try await $enteredDoseMG.requestValue(
+                    "What is the dose amount in milligrams?"
+                )
+            }
+        case .gel, .oral, .sublingual, .none:
+            if fields.enteredDoseMG == nil,
+               fields.activeEquivalentDoseMG == nil,
+               !(fields.concentrationMGmL != nil && fields.volumeML != nil) {
+                fields.enteredDoseMG = try await $enteredDoseMG.requestValue(
+                    "What is the dose amount in milligrams?"
+                )
+            }
+        }
+        return fields
+    }
+
+    private func makeExplicitFields(recordedAt: Date) -> DoseDraftFields {
+        let medicationCandidate = medication.map(medicationCandidate(from:))
         return DoseDraftFields(
             medication: medicationCandidate,
             category: category?.category,
@@ -389,19 +452,32 @@ struct RecordDoseIntent: AppIntent {
             enteredDoseMG: enteredDoseMG,
             activeEquivalentDoseMG: activeEquivalentDoseMG,
             concentrationMGmL: concentrationMGmL,
-            volumeML: nil,
+            volumeML: volumeML,
             areaCM2: areaCM2,
             releaseRateUGPerDay: releaseRateUGPerDay,
             sublingualTier: sublingualTier?.tier,
             sublingualTheta: sublingualTheta,
-            recordedAt: recordedAt
+            recordedAt: recordedAt,
+            recordedAtWasExplicit: self.recordedAt != nil
+        )
+    }
+
+    private func medicationCandidate(from entity: IntentMedicationEntity) -> DoseMedicationCandidate {
+        DoseMedicationCandidate(
+            token: "explicit",
+            identifier: entity.id,
+            displayName: entity.title,
+            category: entity.category,
+            route: entity.route,
+            compound: entity.compound,
+            recordOnlyOralMedication: entity.recordOnlyOralMedication
         )
     }
 
     private func hasStructuredValues(_ fields: DoseDraftFields) -> Bool {
         fields.medication != nil || fields.category != nil || fields.route != nil || fields.compound != nil ||
             fields.recordOnlyOralMedication != nil || fields.enteredDoseMG != nil || fields.activeEquivalentDoseMG != nil ||
-            fields.concentrationMGmL != nil || fields.areaCM2 != nil || fields.releaseRateUGPerDay != nil ||
+            fields.concentrationMGmL != nil || fields.volumeML != nil || fields.areaCM2 != nil || fields.releaseRateUGPerDay != nil ||
             fields.sublingualTier != nil || fields.sublingualTheta != nil
     }
 
@@ -470,22 +546,23 @@ struct RecordPlannedDoseIntent: AppIntent {
         let fingerprint = DoseStore.fingerprint(for: [
             "planned", doseOption.id, String(Int(occurredAt.timeIntervalSince1970 / 30))
         ])
+        if #available(iOS 18.0, *) {
+            let confirmation = String.localizedStringWithFormat(
+                String(localized: "Record %@ (%@) at %@?"),
+                doseOption.title,
+                doseOption.subtitle,
+                occurredAt.formatted(date: .omitted, time: .shortened)
+            )
+            try await requestConfirmation(
+                conditions: [],
+                actionName: .log,
+                dialog: IntentDialog(stringLiteral: confirmation)
+            )
+        } else {
+            try await requestConfirmation()
+        }
+
         do {
-            if #available(iOS 18.0, *) {
-                let confirmation = String.localizedStringWithFormat(
-                    String(localized: "Record %@ (%@) at %@?"),
-                    doseOption.title,
-                    doseOption.subtitle,
-                    occurredAt.formatted(date: .omitted, time: .shortened)
-                )
-                try await requestConfirmation(
-                    conditions: [],
-                    actionName: .log,
-                    dialog: IntentDialog(stringLiteral: confirmation)
-                )
-            } else {
-                try await requestConfirmation()
-            }
             let dialog = try await MainActor.run {
                 try DoseRecordingService.recordDose(
                     optionID: doseOption.id,

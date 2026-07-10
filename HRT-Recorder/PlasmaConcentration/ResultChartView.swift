@@ -18,6 +18,13 @@ private struct ResultChartPoint: Identifiable {
     var id: Double { hour }
 }
 
+private struct ResultChartLabPoint: Identifiable {
+    let id: UUID
+    let hour: Double
+    let concentration: Double
+    let name: String
+}
+
 private struct ResultChartBadge: View {
     let text: String
 
@@ -25,6 +32,7 @@ private struct ResultChartBadge: View {
         Text(text)
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.white)
+            .multilineTextAlignment(.leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(Capsule().fill(Color.black))
@@ -33,6 +41,7 @@ private struct ResultChartBadge: View {
 
 private struct ResultChartWindow {
     let points: ArraySlice<ResultChartPoint>
+    let labPoints: [ResultChartLabPoint]
     let yAxisDomain: ClosedRange<Double>
 }
 
@@ -208,6 +217,7 @@ struct ResultChartView: View {
     let availableUnits: [ConcentrationUnit]
     let onSelectUnit: ((ConcentrationUnit) -> Void)?
     private let chartPoints: [ResultChartPoint]
+    private let labPoints: [ResultChartLabPoint]
     private let chartMaxConcentration: Double
     private let preferredChartHeight: CGFloat?
 
@@ -223,6 +233,7 @@ struct ResultChartView: View {
 
     init(
         sim: SimulationResult,
+        labSamples: [LabSample] = [],
         availableUnits: [ConcentrationUnit] = [],
         preferredChartHeight: CGFloat? = nil,
         onSelectUnit: ((ConcentrationUnit) -> Void)? = nil
@@ -235,9 +246,31 @@ struct ResultChartView: View {
         let points = Array(zip(sim.timeH, sim.concentrations)).map { hour, concentration in
             ResultChartPoint(hour: hour, concentration: concentration)
         }
+        let hormone = sim.displayMetadata.hormone
+        let unit = sim.concentrationUnit
+        let labPoints = labSamples
+            .filter { $0.hormone == hormone }
+            .map { sample in
+                ResultChartLabPoint(
+                    id: sample.id,
+                    hour: sample.timeH,
+                    concentration: ConcentrationUnit.convert(
+                        sample.concentration,
+                        from: sample.unit,
+                        to: unit,
+                        hormone: hormone
+                    ),
+                    name: sample.analyteName ?? hormone.displayName
+                )
+            }
+            .sorted { $0.hour < $1.hour }
 
         self.chartPoints = points
-        self.chartMaxConcentration = points.lazy.map(\.concentration).max() ?? 0
+        self.labPoints = labPoints
+        self.chartMaxConcentration = max(
+            points.lazy.map(\.concentration).max() ?? 0,
+            labPoints.lazy.map(\.concentration).max() ?? 0
+        )
     }
 
     private var isPad: Bool {
@@ -359,6 +392,7 @@ struct ResultChartView: View {
         guard !chartPoints.isEmpty else {
             return ResultChartWindow(
                 points: ArraySlice<ResultChartPoint>(),
+                labPoints: [],
                 yAxisDomain: ResultChartFormatter.yAxisDomain(forMaximum: chartMaxConcentration)
             )
         }
@@ -368,16 +402,21 @@ struct ResultChartView: View {
         let sliceStart = max(firstVisibleIndex - 1, chartPoints.startIndex)
         let sliceEnd = min(max(lastVisibleIndex + 1, sliceStart + 1), chartPoints.endIndex)
         let visiblePoints = chartPoints[sliceStart..<sliceEnd]
-        let maxConcentration = visiblePoints.lazy.map(\.concentration).max() ?? chartMaxConcentration
+        let visibleLabPoints = labPoints.filter { visibleDomain.contains($0.hour) }
+        let maxConcentration = max(
+            visiblePoints.lazy.map(\.concentration).max() ?? chartMaxConcentration,
+            visibleLabPoints.lazy.map(\.concentration).max() ?? chartMaxConcentration
+        )
 
         return ResultChartWindow(
             points: visiblePoints,
+            labPoints: visibleLabPoints,
             yAxisDomain: ResultChartFormatter.yAxisDomain(forMaximum: maxConcentration)
         )
     }
 
     private var chartInterpolationMethod: InterpolationMethod {
-        isInteracting ? .linear : .catmullRom
+        .catmullRom
     }
 
     private var xAxisValues: [Double] {
@@ -503,6 +542,7 @@ struct ResultChartView: View {
         return Chart {
             areaMarks(points: window.points)
             lineMarks(points: window.points)
+            labPointMarks(points: window.labPoints)
             focusMarks
         }
         .chartXScale(domain: visibleDomain)
@@ -631,8 +671,31 @@ struct ResultChartView: View {
     }
 
     @ChartContentBuilder
+    private func labPointMarks(points: [ResultChartLabPoint]) -> some ChartContent {
+        ForEach(points) { point in
+            PointMark(
+                x: .value(xAxisLabel, point.hour),
+                y: .value(yAxisLabel, point.concentration)
+            )
+            .symbolSize(120)
+            .foregroundStyle(Color.orange)
+            .symbol {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 11, height: 11)
+                    Circle()
+                        .stroke(Color.white, lineWidth: 2)
+                        .frame(width: 15, height: 15)
+                }
+            }
+        }
+    }
+
+    @ChartContentBuilder
     private var focusMarks: some ChartContent {
         if let point = displayPoint {
+            let labPoint = nearestLabPoint(to: point.hour)
             RuleMark(x: .value(xAxisLabel, point.hour))
                 .lineStyle(ruleLineStyle)
                 .foregroundStyle(Color.primary.opacity(interactiveHour == nil ? 0.7 : 0.85))
@@ -649,7 +712,7 @@ struct ResultChartView: View {
                 }
             }
             .annotation(position: .top) {
-                ResultChartBadge(text: ResultChartFormatter.concentrationLabel(for: point.concentration, unit: sim.concentrationUnit))
+                ResultChartBadge(text: focusBadgeText(predicted: point, lab: labPoint))
                     .fixedSize()
             }
         }
@@ -657,6 +720,29 @@ struct ResultChartView: View {
 
     private var ruleLineStyle: StrokeStyle {
         interactiveHour == nil ? StrokeStyle(lineWidth: 1, dash: [4, 4]) : StrokeStyle(lineWidth: 1.2)
+    }
+
+    private func nearestLabPoint(to hour: Double) -> ResultChartLabPoint? {
+        let threshold = max(1.0, visibleDomainLength * 0.02)
+        return labPoints
+            .filter { abs($0.hour - hour) <= threshold }
+            .min { abs($0.hour - hour) < abs($1.hour - hour) }
+    }
+
+    private func focusBadgeText(predicted point: ResultChartPoint, lab: ResultChartLabPoint?) -> String {
+        let predictedText = ResultChartFormatter.concentrationLabel(
+            for: point.concentration,
+            unit: sim.concentrationUnit
+        )
+        guard let lab else {
+            return "Predicted \(predictedText)"
+        }
+
+        let labText = ResultChartFormatter.concentrationLabel(
+            for: lab.concentration,
+            unit: sim.concentrationUnit
+        )
+        return "Predicted \(predictedText)\nLab \(lab.name): \(labText)"
     }
 
     var body: some View {

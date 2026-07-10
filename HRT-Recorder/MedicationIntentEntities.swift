@@ -229,6 +229,7 @@ extension DoseOptionEntity: IndexedEntity {
 enum AppIntentIndexingCoordinator {
     private static let medicationIDsKey = "appintent.indexedMedicationEntityIDs"
     private static let doseOptionIDsKey = "appintent.indexedDoseOptionEntityIDs"
+    private static var indexingTask: Task<Void, Never>?
 
     static func refreshMedicationIndex(plans: [MedicationPlan]) {
         guard #available(iOS 18.0, macOS 15.0, visionOS 2.0, *) else { return }
@@ -240,14 +241,18 @@ enum AppIntentIndexingCoordinator {
 
         let medicationIDs = Set(medicationEntities.map(\.id))
         let doseOptionIDs = Set(plannedDoseEntities.map(\.id))
-        let previousMedicationIDs = Set(UserDefaults.standard.stringArray(forKey: medicationIDsKey) ?? [])
-        let previousDoseOptionIDs = Set(UserDefaults.standard.stringArray(forKey: doseOptionIDsKey) ?? [])
-        let deletedMedicationIDs = Array(previousMedicationIDs.subtracting(medicationIDs))
-        let deletedDoseOptionIDs = Array(previousDoseOptionIDs.subtracting(doseOptionIDs))
         let medicationIDsKey = Self.medicationIDsKey
         let doseOptionIDsKey = Self.doseOptionIDsKey
+        let previousTask = indexingTask
 
-        Task.detached(priority: .utility) {
+        // Chain refreshes so an older detached index operation cannot finish
+        // after a newer plan snapshot and restore stale Spotlight entities.
+        indexingTask = Task(priority: .utility) {
+            await previousTask?.value
+            let previousMedicationIDs = Set(UserDefaults.standard.stringArray(forKey: medicationIDsKey) ?? [])
+            let previousDoseOptionIDs = Set(UserDefaults.standard.stringArray(forKey: doseOptionIDsKey) ?? [])
+            let deletedMedicationIDs = Array(previousMedicationIDs.subtracting(medicationIDs))
+            let deletedDoseOptionIDs = Array(previousDoseOptionIDs.subtracting(doseOptionIDs))
             do {
                 if !deletedMedicationIDs.isEmpty {
                     try await CSSearchableIndex.default().deleteAppEntities(

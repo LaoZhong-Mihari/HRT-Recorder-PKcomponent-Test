@@ -24,6 +24,8 @@
 	<string>public.app-category.medical</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan hormone lab reports and extract test result values on device.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.</string>
 	<key>NSHealthUpdateUsageDescription</key>

@@ -73,6 +73,7 @@ struct CustomDoseRecordingRequest {
     var compound: Compound?
     var recordOnlyOralMedication: RecordOnlyOralMedication?
     var concentrationMGmL: Double?
+    var volumeML: Double?
     var areaCM2: Double?
     var releaseRateUGPerDay: Double?
     var sublingualTier: SublingualTier?
@@ -260,14 +261,16 @@ enum DoseRecordingService {
             guard request.category == nil || request.category == .antiAndrogen,
                   request.route == nil || request.route == .oral,
                   request.compound == nil,
+                  request.activeEquivalentDoseMG == nil,
                   request.releaseRateUGPerDay == nil,
                   request.concentrationMGmL == nil,
+                  request.volumeML == nil,
                   request.areaCM2 == nil,
                   request.sublingualTier == nil,
                   request.sublingualTheta == nil else {
                 throw DoseRecordingError.inconsistentMedication
             }
-            guard let enteredDoseMG = request.enteredDoseMG ?? request.activeEquivalentDoseMG,
+            guard let enteredDoseMG = request.enteredDoseMG,
                   enteredDoseMG.isFinite,
                   enteredDoseMG > 0 else {
                 throw DoseRecordingError.missingDoseAmount
@@ -304,71 +307,153 @@ enum DoseRecordingService {
 
         var doseMG = 0.0
         var extras: [DoseEvent.ExtraKey: Double] = [:]
+        var enteredDoseMG = request.enteredDoseMG
+        let activeEquivalentDoseMG = request.activeEquivalentDoseMG
+        let concentrationMGmL = request.concentrationMGmL
+        let volumeML = request.volumeML
+        let areaCM2 = request.areaCM2
+        let releaseRateUGPerDay = request.releaseRateUGPerDay
+        let sublingualTier = request.sublingualTier
+        let sublingualTheta = request.sublingualTheta
 
-        if let concentrationMGmL = request.concentrationMGmL {
-            guard concentrationMGmL.isFinite, concentrationMGmL > 0 else {
-                throw DoseRecordingError.invalidDoseConfiguration
-            }
-            extras[.concentrationMGmL] = concentrationMGmL
+        if let concentrationMGmL,
+           (!concentrationMGmL.isFinite || concentrationMGmL <= 0 || concentrationMGmL > 1_000) {
+            throw DoseRecordingError.invalidDoseConfiguration
         }
-        if let areaCM2 = request.areaCM2 {
-            guard areaCM2.isFinite, areaCM2 > 0 else {
+        if let volumeML,
+           (!volumeML.isFinite || volumeML <= 0 || volumeML > 100 || concentrationMGmL == nil) {
+            throw DoseRecordingError.invalidDoseConfiguration
+        }
+        if let concentrationMGmL, let volumeML {
+            let calculatedDose = concentrationMGmL * volumeML
+            if let enteredDoseMG,
+               !approximatelyEqual(enteredDoseMG, calculatedDose) {
                 throw DoseRecordingError.invalidDoseConfiguration
             }
-            extras[.areaCM2] = areaCM2
+            enteredDoseMG = calculatedDose
+        }
+        if let areaCM2,
+           (!areaCM2.isFinite || areaCM2 <= 0 || areaCM2 > 10_000) {
+            throw DoseRecordingError.invalidDoseConfiguration
+        }
+        if let releaseRateUGPerDay,
+           (!releaseRateUGPerDay.isFinite || releaseRateUGPerDay <= 0 || releaseRateUGPerDay > 10_000) {
+            throw DoseRecordingError.invalidDoseConfiguration
+        }
+        if let sublingualTheta,
+           (!sublingualTheta.isFinite || !(0...1).contains(sublingualTheta)) {
+            throw DoseRecordingError.invalidDoseConfiguration
+        }
+        if let enteredDoseMG, let activeEquivalentDoseMG {
+            let expectedActive = enteredDoseMG * CompoundInfo.by(compound: compound).toActiveFactor
+            guard approximatelyEquivalent(activeEquivalentDoseMG, expectedActive) else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
         }
 
         switch route {
+        case .injection:
+            guard areaCM2 == nil,
+                  releaseRateUGPerDay == nil,
+                  sublingualTier == nil,
+                  sublingualTheta == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
+            if let concentrationMGmL {
+                extras[.concentrationMGmL] = concentrationMGmL
+            }
+
+        case .gel:
+            guard concentrationMGmL == nil,
+                  volumeML == nil,
+                  releaseRateUGPerDay == nil,
+                  sublingualTier == nil,
+                  sublingualTheta == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
+            if let areaCM2 {
+                extras[.areaCM2] = areaCM2
+            }
+
+        case .oral:
+            guard concentrationMGmL == nil,
+                  volumeML == nil,
+                  areaCM2 == nil,
+                  releaseRateUGPerDay == nil,
+                  sublingualTier == nil,
+                  sublingualTheta == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
+
+        case .sublingual:
+            guard concentrationMGmL == nil,
+                  volumeML == nil,
+                  areaCM2 == nil,
+                  releaseRateUGPerDay == nil,
+                  sublingualTier == nil || sublingualTheta == nil else {
+                throw DoseRecordingError.invalidDoseConfiguration
+            }
+
         case .patchRemove:
-            guard request.enteredDoseMG == nil,
-                  request.activeEquivalentDoseMG == nil,
-                  request.releaseRateUGPerDay == nil else {
+            guard enteredDoseMG == nil,
+                  activeEquivalentDoseMG == nil,
+                  releaseRateUGPerDay == nil,
+                  concentrationMGmL == nil,
+                  volumeML == nil,
+                  areaCM2 == nil,
+                  sublingualTier == nil,
+                  sublingualTheta == nil else {
                 throw DoseRecordingError.invalidDoseConfiguration
             }
             doseMG = 0
 
         case .patchApply:
-            guard let releaseRate = request.releaseRateUGPerDay else {
+            guard let releaseRate = releaseRateUGPerDay else {
                 throw DoseRecordingError.missingDoseAmount
             }
             guard releaseRate.isFinite, releaseRate > 0,
-                  request.enteredDoseMG == nil,
-                  request.activeEquivalentDoseMG == nil else {
+                  enteredDoseMG == nil,
+                  activeEquivalentDoseMG == nil,
+                  concentrationMGmL == nil,
+                  volumeML == nil,
+                  areaCM2 == nil,
+                  sublingualTier == nil,
+                  sublingualTheta == nil else {
                 throw DoseRecordingError.invalidDoseConfiguration
             }
             doseMG = 0
             extras[.releaseRateUGPerDay] = releaseRate
 
-        default:
-            guard let enteredDoseMG = request.enteredDoseMG ?? request.activeEquivalentDoseMG,
-                  enteredDoseMG.isFinite,
-                  enteredDoseMG > 0 else {
+        }
+
+        switch route {
+        case .patchApply, .patchRemove:
+            break
+        case .injection, .gel, .oral, .sublingual:
+            guard let enteredDose = enteredDoseMG ?? activeEquivalentDoseMG,
+                  enteredDose.isFinite,
+                  enteredDose > 0 else {
                 throw DoseRecordingError.missingDoseAmount
             }
 
-            if let activeEquivalentDoseMG = request.activeEquivalentDoseMG, activeEquivalentDoseMG > 0 {
+            if let activeEquivalentDoseMG, activeEquivalentDoseMG > 0 {
                 doseMG = activeEquivalentDoseMG
-                if let rawDose = request.enteredDoseMG, rawDose > 0, route != .patchApply {
+                if let rawDose = enteredDoseMG, rawDose > 0 {
                     extras[.rawCompoundDoseMG] = rawDose
                 }
-            } else if route == .patchApply {
-                doseMG = enteredDoseMG
             } else {
                 let factor = CompoundInfo.by(compound: compound).toActiveFactor
-                doseMG = enteredDoseMG * factor
+                doseMG = enteredDose * factor
                 if compound.info.isProdrug {
-                    extras[.rawCompoundDoseMG] = enteredDoseMG
+                    extras[.rawCompoundDoseMG] = enteredDose
                 }
             }
         }
 
         if route == .sublingual {
-            if let theta = request.sublingualTheta {
-                guard theta.isFinite, (0...1).contains(theta) else {
-                    throw DoseRecordingError.invalidDoseConfiguration
-                }
+            if let theta = sublingualTheta {
                 extras[.sublingualTheta] = theta
-            } else if let tier = request.sublingualTier {
+            } else if let tier = sublingualTier {
                 extras[.sublingualTier] = tierCode(for: tier)
             } else {
                 extras[.sublingualTier] = tierCode(for: .standard)
@@ -400,6 +485,14 @@ enum DoseRecordingService {
               date <= Date().addingTimeInterval(5 * 60) else {
             throw DoseRecordingError.invalidRecordedAt
         }
+    }
+
+    private static func approximatelyEqual(_ lhs: Double, _ rhs: Double) -> Bool {
+        abs(lhs - rhs) <= max(0.001, max(abs(lhs), abs(rhs)) * 0.001)
+    }
+
+    private static func approximatelyEquivalent(_ lhs: Double, _ rhs: Double) -> Bool {
+        abs(lhs - rhs) <= max(0.01, max(abs(lhs), abs(rhs)) * 0.02)
     }
 
     private static func refreshProjections(with snapshot: DoseStoreSnapshot, plans: [MedicationPlan]) {

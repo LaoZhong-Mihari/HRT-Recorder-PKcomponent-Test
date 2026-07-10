@@ -226,7 +226,7 @@ struct CompoundInfo: Sendable {
     let activeMolecularWeight: Double
     let isProdrug: Bool
 
-    var toActiveFactor: Double {
+    nonisolated var toActiveFactor: Double {
         activeMolecularWeight / molecularWeight
     }
 

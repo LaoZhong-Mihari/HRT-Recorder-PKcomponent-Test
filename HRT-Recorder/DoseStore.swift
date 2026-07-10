@@ -96,60 +96,93 @@ enum DoseStore {
     private static let fingerprintRetryWindow: TimeInterval = 60
 
     static func load() throws -> DoseStoreSnapshot {
-        lock.lock()
-        defer { lock.unlock() }
-
-        let url = try fileURL()
-        var document = DoseStoreDocument.empty
-        var readError: Error?
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
-            do {
-                document = try readDocument(at: coordinatedURL)
-            } catch {
-                readError = error
+        try withStoreLock {
+            let url = try fileURL()
+            var document = DoseStoreDocument.empty
+            var readError: Error?
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
+                do {
+                    document = try readDocument(at: coordinatedURL)
+                } catch {
+                    readError = error
+                }
             }
-        }
 
-        if let coordinationError { throw coordinationError }
-        if let readError { throw readError }
-        return snapshot(from: document)
+            if let coordinationError { throw coordinationError }
+            if let readError { throw readError }
+            return snapshot(from: document)
+        }
     }
 
     @discardableResult
     static func apply(_ mutation: DoseStoreMutation) throws -> DoseStoreApplyResult {
-        lock.lock()
-        defer { lock.unlock() }
+        let result: DoseStoreApplyResult = try withStoreLock {
+            let url = try fileURL()
+            var result: DoseStoreApplyResult?
+            var writeError: Error?
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+                do {
+                    var document = try readDocument(at: coordinatedURL)
+                    let now = Date()
 
-        let url = try fileURL()
-        var result: DoseStoreApplyResult?
-        var writeError: Error?
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
-            do {
-                var document = try readDocument(at: coordinatedURL)
-                let now = Date()
+                    if let existing = document.receipts.first(where: { $0.mutationID == mutation.id }) {
+                        result = DoseStoreApplyResult(
+                            snapshot: snapshot(from: document),
+                            didApply: false,
+                            resolvedEvent: existing.eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
+                        )
+                        return
+                    }
 
-                if let existing = document.receipts.first(where: { $0.mutationID == mutation.id }) {
-                    result = DoseStoreApplyResult(
-                        snapshot: snapshot(from: document),
-                        didApply: false,
-                        resolvedEvent: existing.eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
-                    )
-                    return
-                }
+                    if let fingerprint = mutation.fingerprint,
+                       let existing = document.receipts.last(where: {
+                           $0.fingerprint == fingerprint && now.timeIntervalSince($0.appliedAt) <= fingerprintRetryWindow
+                       }) {
+                        document.receipts.append(
+                            DoseStoreReceipt(
+                                mutationID: mutation.id,
+                                eventID: existing.eventID,
+                                fingerprint: fingerprint,
+                                appliedAt: now
+                            )
+                        )
+                        document.receipts = trimmedReceipts(document.receipts, now: now)
+                        try writeDocument(document, to: coordinatedURL)
+                        result = DoseStoreApplyResult(
+                            snapshot: snapshot(from: document),
+                            didApply: false,
+                            resolvedEvent: existing.eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
+                        )
+                        return
+                    }
 
-                if let fingerprint = mutation.fingerprint,
-                   let existing = document.receipts.last(where: {
-                       $0.fingerprint == fingerprint && now.timeIntervalSince($0.appliedAt) <= fingerprintRetryWindow
-                   }) {
+                    let eventID: UUID?
+                    switch mutation.operation {
+                    case .upsert(let event):
+                        if let index = document.events.firstIndex(where: { $0.id == event.id }) {
+                            document.events[index] = event
+                        } else {
+                            document.events.append(event)
+                        }
+                        document.events.sort { $0.timeH < $1.timeH }
+                        eventID = event.id
+
+                    case .delete(let id):
+                        document.events.removeAll { $0.id == id }
+                        eventID = id
+                    }
+
+                    document.revision &+= 1
+                    document.modifiedAt = now.timeIntervalSince1970
                     document.receipts.append(
                         DoseStoreReceipt(
                             mutationID: mutation.id,
-                            eventID: existing.eventID,
-                            fingerprint: fingerprint,
+                            eventID: eventID,
+                            fingerprint: mutation.fingerprint,
                             appliedAt: now
                         )
                     )
@@ -157,54 +190,22 @@ enum DoseStore {
                     try writeDocument(document, to: coordinatedURL)
                     result = DoseStoreApplyResult(
                         snapshot: snapshot(from: document),
-                        didApply: false,
-                        resolvedEvent: existing.eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
+                        didApply: true,
+                        resolvedEvent: eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
                     )
-                    return
+                } catch {
+                    writeError = error
                 }
-
-                let eventID: UUID?
-                switch mutation.operation {
-                case .upsert(let event):
-                    if let index = document.events.firstIndex(where: { $0.id == event.id }) {
-                        document.events[index] = event
-                    } else {
-                        document.events.append(event)
-                    }
-                    document.events.sort { $0.timeH < $1.timeH }
-                    eventID = event.id
-
-                case .delete(let id):
-                    document.events.removeAll { $0.id == id }
-                    eventID = id
-                }
-
-                document.revision &+= 1
-                document.modifiedAt = now.timeIntervalSince1970
-                document.receipts.append(
-                    DoseStoreReceipt(
-                        mutationID: mutation.id,
-                        eventID: eventID,
-                        fingerprint: mutation.fingerprint,
-                        appliedAt: now
-                    )
-                )
-                document.receipts = trimmedReceipts(document.receipts, now: now)
-                try writeDocument(document, to: coordinatedURL)
-                result = DoseStoreApplyResult(
-                    snapshot: snapshot(from: document),
-                    didApply: true,
-                    resolvedEvent: eventID.flatMap { id in document.events.first(where: { $0.id == id }) }
-                )
-            } catch {
-                writeError = error
             }
+
+            if let coordinationError { throw coordinationError }
+            if let writeError { throw writeError }
+            guard let result else { throw DoseStoreError.writeFailed }
+            return result
         }
 
-        if let coordinationError { throw coordinationError }
-        if let writeError { throw writeError }
-        guard let result else { throw DoseStoreError.writeFailed }
-
+        // NotificationCenter delivers synchronously. Always release the
+        // non-recursive store lock before observers call back into `load()`.
         notifyDidChange()
         return result
     }
@@ -216,60 +217,60 @@ enum DoseStore {
         baseline: [DoseEvent],
         proposed: [DoseEvent]
     ) throws -> DoseStoreSnapshot {
-        lock.lock()
-        defer { lock.unlock() }
+        let snapshotResult: DoseStoreSnapshot = try withStoreLock {
+            let url = try fileURL()
+            var snapshotResult: DoseStoreSnapshot?
+            var writeError: Error?
+            let coordinator = NSFileCoordinator()
+            var coordinationError: NSError?
+            coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+                do {
+                    var document = try readDocument(at: coordinatedURL)
+                    let baselineByID = Dictionary(uniqueKeysWithValues: baseline.map { ($0.id, $0) })
+                    let proposedByID = Dictionary(uniqueKeysWithValues: proposed.map { ($0.id, $0) })
+                    var changed = false
 
-        let url = try fileURL()
-        var snapshotResult: DoseStoreSnapshot?
-        var writeError: Error?
-        let coordinator = NSFileCoordinator()
-        var coordinationError: NSError?
-        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
-            do {
-                var document = try readDocument(at: coordinatedURL)
-                let baselineByID = Dictionary(uniqueKeysWithValues: baseline.map { ($0.id, $0) })
-                let proposedByID = Dictionary(uniqueKeysWithValues: proposed.map { ($0.id, $0) })
-                var changed = false
-
-                for (id, event) in proposedByID where baselineByID[id] != event {
-                    if let index = document.events.firstIndex(where: { $0.id == id }) {
-                        document.events[index] = event
-                    } else {
-                        document.events.append(event)
+                    for (id, event) in proposedByID where baselineByID[id] != event {
+                        if let index = document.events.firstIndex(where: { $0.id == id }) {
+                            document.events[index] = event
+                        } else {
+                            document.events.append(event)
+                        }
+                        changed = true
                     }
-                    changed = true
-                }
 
-                for id in baselineByID.keys where proposedByID[id] == nil {
-                    let originalCount = document.events.count
-                    document.events.removeAll { $0.id == id }
-                    changed = changed || document.events.count != originalCount
-                }
+                    for id in baselineByID.keys where proposedByID[id] == nil {
+                        let originalCount = document.events.count
+                        document.events.removeAll { $0.id == id }
+                        changed = changed || document.events.count != originalCount
+                    }
 
-                if changed {
-                    document.events.sort { $0.timeH < $1.timeH }
-                    document.revision &+= 1
-                    document.modifiedAt = Date().timeIntervalSince1970
-                    document.receipts.append(
-                        DoseStoreReceipt(
-                            mutationID: UUID(),
-                            eventID: nil,
-                            fingerprint: nil,
-                            appliedAt: Date()
+                    if changed {
+                        document.events.sort { $0.timeH < $1.timeH }
+                        document.revision &+= 1
+                        document.modifiedAt = Date().timeIntervalSince1970
+                        document.receipts.append(
+                            DoseStoreReceipt(
+                                mutationID: UUID(),
+                                eventID: nil,
+                                fingerprint: nil,
+                                appliedAt: Date()
+                            )
                         )
-                    )
-                    document.receipts = trimmedReceipts(document.receipts, now: Date())
-                    try writeDocument(document, to: coordinatedURL)
+                        document.receipts = trimmedReceipts(document.receipts, now: Date())
+                        try writeDocument(document, to: coordinatedURL)
+                    }
+                    snapshotResult = snapshot(from: document)
+                } catch {
+                    writeError = error
                 }
-                snapshotResult = snapshot(from: document)
-            } catch {
-                writeError = error
             }
-        }
 
-        if let coordinationError { throw coordinationError }
-        if let writeError { throw writeError }
-        guard let snapshotResult else { throw DoseStoreError.writeFailed }
+            if let coordinationError { throw coordinationError }
+            if let writeError { throw writeError }
+            guard let snapshotResult else { throw DoseStoreError.writeFailed }
+            return snapshotResult
+        }
 
         if snapshotResult.events != baseline {
             notifyDidChange()
@@ -280,6 +281,12 @@ enum DoseStore {
     nonisolated static func fingerprint(for canonicalValues: [String]) -> String {
         let data = canonicalValues.joined(separator: "\u{1F}").data(using: .utf8) ?? Data()
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func withStoreLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
 
     private static func snapshot(from document: DoseStoreDocument) -> DoseStoreSnapshot {

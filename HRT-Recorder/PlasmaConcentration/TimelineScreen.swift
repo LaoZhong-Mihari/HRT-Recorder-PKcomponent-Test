@@ -146,6 +146,7 @@ struct TimelineScreen: View {
                         } else {
                             TimelineChartOverlay(
                                 sim: sim,
+                                labSamples: vm.labSamples,
                                 availableUnits: vm.availableConcentrationUnits,
                                 chartHeight: chartDockedPlotHeight,
                                 onSelectUnit: { unit in vm.setSelectedConcentrationUnit(unit) },
@@ -241,11 +242,13 @@ struct TimelineScreen: View {
                     NavigationStack {
                         HealthSettingsView(
                             weightStatusText: vm.bodyWeightHealthStatusText,
+                            timelineVM: vm,
                             medicationVM: medicationVM,
                             onWidgetSettingsChanged: {
                                 WidgetSnapshotCoordinator.writeSnapshot(
                                     events: vm.events,
                                     bodyWeightKG: vm.bodyWeightKG,
+                                    labSamples: vm.labSamples,
                                     plans: medicationVM.plans
                                 )
                             },
@@ -290,6 +293,7 @@ struct TimelineScreen: View {
                     if let sim = vm.result, hasVisibleChart {
                         TimelineChartFullscreen(
                             sim: sim,
+                            labSamples: vm.labSamples,
                             availableUnits: vm.availableConcentrationUnits,
                             isPresented: $isChartFullscreenPresented,
                             onSelectUnit: { unit in vm.setSelectedConcentrationUnit(unit) }
@@ -398,6 +402,7 @@ private struct TimelineChartOverlay: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let sim: SimulationResult
+    let labSamples: [LabSample]
     let availableUnits: [ConcentrationUnit]
     let chartHeight: CGFloat
     let onSelectUnit: (ConcentrationUnit) -> Void
@@ -422,6 +427,7 @@ private struct TimelineChartOverlay: View {
 
             ResultChartView(
                 sim: sim,
+                labSamples: labSamples,
                 availableUnits: availableUnits,
                 preferredChartHeight: chartHeight,
                 onSelectUnit: onSelectUnit
@@ -489,6 +495,7 @@ private struct TimelineChartFullscreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let sim: SimulationResult
+    let labSamples: [LabSample]
     let availableUnits: [ConcentrationUnit]
     @Binding var isPresented: Bool
     let onSelectUnit: (ConcentrationUnit) -> Void
@@ -529,6 +536,7 @@ private struct TimelineChartFullscreen: View {
 
                     ResultChartView(
                         sim: sim,
+                        labSamples: labSamples,
                         availableUnits: availableUnits,
                         preferredChartHeight: plotHeight,
                         onSelectUnit: onSelectUnit
@@ -592,6 +600,7 @@ private struct TimelineEmptyStateView: View {
 
 private struct HealthSettingsView: View {
     let weightStatusText: String
+    @ObservedObject var timelineVM: DoseTimelineVM
     @ObservedObject var medicationVM: MedicationPlanVM
     let onWidgetSettingsChanged: () -> Void
     let onEditWeight: () -> Void
@@ -626,6 +635,17 @@ private struct HealthSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+            }
+
+            Section("Lab Results") {
+                NavigationLink {
+                    LabResultsView(vm: timelineVM)
+                } label: {
+                    DynamicSettingsRow(
+                        title: "Hormone Lab Results",
+                        subtitle: timelineVM.labResultsSettingsSummary
+                    )
+                }
             }
 
             Section("about.settings.section") {
