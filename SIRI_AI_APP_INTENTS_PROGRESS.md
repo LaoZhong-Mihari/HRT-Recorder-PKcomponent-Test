@@ -1,10 +1,10 @@
 # Siri AI / App Intents
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## Status
 
-Implemented together with the hormone-test OCR work and ready for physical-device validation. The dose flow is deliberately conservative for medication logging:
+Implemented together with the hormone-test OCR work and ready for physical-device revalidation. The dose flow is deliberately conservative for medication logging:
 
 `Siri / App Shortcut → on-device Foundation Models draft → deterministic validation → local authentication → explicit confirmation → idempotent canonical write`
 
@@ -18,6 +18,7 @@ The model can understand a natural-language dose phrase after the custom App Int
   - It receives no persistent conversation history and the stored idempotency fingerprint is a hash of resolved fields, not the spoken phrase.
   - On iOS 16–26, a device without Apple Intelligence, an unsupported locale, or an uncertain result, only explicitly supplied structured fields may proceed; free text is sent to review instead of a hidden keyword fallback.
 - Fixed the follow-up failure captured in session `019f0300-35da-7121-80dd-0af6b55d075f`: older Siri/Shortcuts flows now use App Intents `requestValue` prompts for medication, route, and dose, so a reply such as “5 mg” remains inside the active intent conversation.
+- Removed prefilled sentinel/default values from required App Intent parameters. A generic hormone-level request now leaves `hormone` unset so Siri asks for estradiol or testosterone instead of silently selecting estradiol. The planned-dose shortcut likewise asks for an active dose instead of receiving a stale placeholder.
 - Added deterministic validation for medication identity, route/compound compatibility, dose units, concentration × volume arithmetic, patch handling, sublingual values, conflicts between structured and model values, and broad finite/range checks.
 - Added local-device authentication and a confirmation prompt before every dose write and hormone-estimate read.
 - Removed the unsafe bare `Record Dose` behavior that recorded the next future planned dose.
@@ -31,7 +32,9 @@ The model can understand a natural-language dose phrase after the custom App Int
 
 - Merged the hormone-test OCR flow into the same iOS 27 availability boundary used by Siri.
 - On an eligible iOS 27 device, the universal Foundation Models schema receives the raw OCR evidence for every non-empty report. It performs semantic extraction of rows and metadata; the deterministic parser is retained as a grounding and fallback layer, not as the gate that decides whether the LLM may understand the document.
+- A real iOS 27 beta device reproduced an uncatchable `EXC_BAD_ACCESS` inside `FoundationModels.Attachment(cgImage, orientation:)`. The production import path no longer constructs a Foundation Models image attachment. It now uses `Vision OCR → universal structured Foundation Model → evidence verifier`, preserving LLM understanding while removing the crashing beta image bridge. Direct multimodal attachment can be reconsidered after Apple ships a runtime that passes physical-device regression tests.
 - Model output is accepted only when its source line, numeric value, date, institution/location, specimen, and method can be grounded in visible OCR evidence. Reference ranges and table row numbers are excluded from result-value matching.
+- Specimen output must now be grounded in the OCR text itself; the presence of a specimen label alone is insufficient. Corrupted text such as `血消` is rejected instead of allowing the model to substitute an ungrounded plausible material. Debug diagnostics show both raw and accepted values, so a safely rejected model guess is reported as a passing boundary rather than an app failure.
 - On iOS 16–26, unsupported hardware, unavailable Apple Intelligence, or an unsupported locale, the app remains on Vision OCR plus deterministic review and never instantiates a Foundation Models session.
 - Imported images are downsampled and limited to four at a time for older-device memory safety. Persisted OCR source text is scrubbed of common patient identity, identifier, contact, provider, and diagnosis lines.
 - Apple AI diagnostic UI and diagnostic runners are compiled only in Debug builds. Their user-facing strings are absent from the Release string catalog and Release app artifact.
@@ -50,7 +53,7 @@ An app-name-free request such as `What's my estrogen level?` is a Siri routing l
 
 ## Verification
 
-The merged app builds in Debug and Release with Xcode 27 beta, including App Intents metadata extraction and the iOS 27 Foundation Models image path:
+The merged app builds in Debug and Release with Xcode 27 beta, including App Intents metadata extraction and the iOS 27 Foundation Models structured-text path:
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode-27-beta.app/Contents/Developer \
@@ -61,11 +64,13 @@ xcodebuild -project HRT-Recorder.xcodeproj -scheme HRT-Recorder \
   CODE_SIGNING_ALLOWED=NO ASSETCATALOG_COMPILER_APPICON_NAME= build
 ```
 
-The same source also builds with the stable Xcode 26 SDK for a generic iOS Simulator destination. SDK-conditional flags omit the iOS 27 image-attachment API while retaining the iOS 16–26 Siri/App Shortcuts and Vision OCR fallbacks.
+The same source also builds with the stable Xcode 26 SDK. iOS 16–26 retains Siri/App Shortcuts and Vision OCR fallbacks without loading iOS 27-only model APIs.
 
-The Xcode 27-built app was also installed and launched on both iOS 26.1 and iOS 27.0 simulators. The Release binary has a 16.0 minimum OS version and weak-links `FoundationModels.framework`, so loading the app on iOS 26 does not require or instantiate that framework.
+The Xcode 27-built app was also installed and launched on both iOS 26.1 and iOS 27.0 simulators. Release builds succeeded for both the iOS Simulator and arm64 `iphoneos`. Both artifacts have a 16.0 minimum OS version, weak-link `FoundationModels.framework`, and contain no Foundation Models `Attachment` symbol, so loading the app on iOS 26 does not require or instantiate that framework.
 
-The Debug-only OCR fallback suite was enabled explicitly and run in the iOS 27 simulator. All 11 checks passed, covering Chinese upload/scan OCR, leading-flag artifacts, sparse and split tables, English and patient-portal layouts, international date/number formats, generic non-hormone rows, column-order variants, and administrative-field noise.
+The Debug-only OCR fallback suite was enabled explicitly and run on both iOS 26.1 and iOS 27 simulators. All 12 checks passed on each OS, covering Chinese upload/scan OCR, leading-flag artifacts, sparse and split tables, specimen-field grounding, English and patient-portal layouts, international date/number formats, generic non-hormone rows, column-order variants, and administrative-field noise. The synthetic image pipeline also passed with seven analytes on both OS versions. On iOS 27, a simulator model guardrail error cleanly fell back to verified OCR instead of crashing or retrying an equivalent metadata request.
+
+The generated App Intents metadata marks `hormone` and `doseOption` as required, contains no preconfigured estradiol or stale dose value for the generic shortcuts, and generated SSU/NLU assets for English, Simplified Chinese, and Traditional Chinese.
 
 The temporary AppIcon override only avoids a pre-existing Watch asset-catalog issue in simulator CI; it is not part of the Siri implementation.
 
@@ -83,14 +88,16 @@ Run these on Apple-Intelligence-capable hardware with the app unlocked at least 
 6. Confirm a dose, retry the same request, and verify only one event appears.
 7. Record on Siri while the phone UI is open, then edit an unrelated UI event; verify both records remain.
 8. Add, edit, and delete on Watch while a Siri event exists; verify Watch changes do not erase the Siri event.
-9. Check `What's my estrogen level in HRT Recorder?`; the response is an estimate from local recorded data, not a clinical measurement.
+9. Check `Check my hormone level in HRT Recorder`; Siri must ask estradiol or testosterone. Then try `Check testosterone level in HRT Recorder`; it should run without the extra question. The response is an estimate from local recorded data, not a clinical measurement.
 10. Import a hormone report on an Apple-Intelligence-capable iOS 27 device and verify semantic extraction is shown for review before saving; try mixed Chinese/English labels and a report with fewer than seven rows.
 11. Import the same report on iOS 26 or an Apple-Intelligence-ineligible device and verify Vision OCR review works without a crash or Foundation Models availability error.
 12. Verify a Release archive has no Apple AI Diagnostics entry or diagnostic report UI.
+13. On iOS 27, import the same image repeatedly after a fresh launch and after an interrupted import. Verify there is no `FoundationModels.Attachment` frame, crash, or persistent retry loop.
 
 ## References
 
 - [Foundation Models](https://developer.apple.com/documentation/foundationmodels)
+- [What’s new in the Foundation Models framework (WWDC26)](https://developer.apple.com/videos/play/wwdc2026/241/)
 - [App Intents](https://developer.apple.com/documentation/appintents)
 - [App Shortcuts](https://developer.apple.com/documentation/appintents/app-shortcuts)
 - [App Schema domains](https://developer.apple.com/documentation/appintents/app-schema-domains)

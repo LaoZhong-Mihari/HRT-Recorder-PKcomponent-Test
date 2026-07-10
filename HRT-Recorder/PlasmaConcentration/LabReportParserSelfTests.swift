@@ -108,6 +108,7 @@ enum LabReportOCRFallbackSelfTest {
         verifyStandardOCRFixtures()
         verifyLeadingFlagArtifactCorrection()
         verifySparsePanelDoesNotInferMissingRows()
+        verifySpecimenEvidenceBoundary()
         verifySplitLabelAfterValueRows()
         verifyEnglishReportRows()
         verifyPatientPortalCardLayoutRows()
@@ -202,6 +203,40 @@ enum LabReportOCRFallbackSelfTest {
             NSLog("LAB_OCR_SPARSE_PANEL_SELF_TEST FAIL failures=%@ analytes=%@",
                   failures.joined(separator: "; "),
                   LabReportSelfTestVerifier.analyteSummary(report))
+        }
+    }
+
+    private static func verifySpecimenEvidenceBoundary() {
+        let corruptedReport = HormoneLabResultParser.parseReport(
+            corruptedSpecimenFixture,
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        var failures: [String] = []
+        if !corruptedReport.specimen.isEmpty {
+            failures.append("corrupted specimen accepted as \(corruptedReport.specimen)")
+        }
+
+        let ungrounded = LabReportFieldSanitizer.groundedSpecimen(
+            "serum",
+            in: "Serum estradiol level was measured today."
+        )
+        if !ungrounded.isEmpty {
+            failures.append("non-field serum accepted")
+        }
+
+        let grounded = LabReportFieldSanitizer.groundedSpecimen(
+            "serum",
+            in: "Specimen: serum"
+        )
+        if grounded.localizedCaseInsensitiveCompare("serum") != .orderedSame {
+            failures.append("explicit specimen field rejected")
+        }
+
+        if failures.isEmpty {
+            NSLog("LAB_OCR_SPECIMEN_BOUNDARY_SELF_TEST PASS")
+        } else {
+            NSLog("LAB_OCR_SPECIMEN_BOUNDARY_SELF_TEST FAIL failures=%@", failures.joined(separator: "; "))
         }
     }
 
@@ -479,6 +514,13 @@ enum LabReportOCRFallbackSelfTest {
     2 E2 雌二醇 ↑69.01 11.3-43.2 pg/m1
     3 Testo •0.66 Tanner5期：6.5-30.6 nmol/L
     审核 检验 核对
+    """
+
+    private static let corruptedSpecimenFixture = """
+    华中科技大学同济医学院附属协和医院核医学科报告单
+    标本种类: 血消
+    项目 结果 参考范围 单位
+    Testo 睾酮 0.66 6.5-30.6 nmol/L
     """
 
     private static let splitLabelAfterValueFixture = """

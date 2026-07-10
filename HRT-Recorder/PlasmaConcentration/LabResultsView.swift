@@ -3,7 +3,6 @@
 //  HRT-Recorder
 //
 
-import CoreImage
 import Foundation
 #if canImport(FoundationModels)
 import FoundationModels
@@ -485,7 +484,7 @@ private struct LabAnalyteDraft: Identifiable {
     }
 }
 
-private enum LabReportFieldSanitizer {
+enum LabReportFieldSanitizer {
     static func reviewSpecimen(_ rawValue: String) -> String {
         let value = rawValue.trimmed
         guard !value.isEmpty else { return "" }
@@ -494,6 +493,35 @@ private enum LabReportFieldSanitizer {
         }
         return ""
     }
+
+    static func groundedSpecimen(_ rawValue: String, in sourceText: String) -> String {
+        let value = reviewSpecimen(rawValue)
+        guard !value.isEmpty else { return "" }
+
+        let compactValue = compact(value)
+        return sourceText
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .first { line in
+                let hasFieldLabel = specimenFieldLabels.contains {
+                    line.localizedCaseInsensitiveContains($0)
+                }
+                let hasValue = line.localizedCaseInsensitiveContains(value)
+                    || compact(line).localizedCaseInsensitiveContains(compactValue)
+                return hasFieldLabel && hasValue
+            }
+            .map { _ in value } ?? ""
+    }
+
+    private static func compact(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "\t", with: "")
+    }
+
+    private static let specimenFieldLabels = [
+        "标本", "樣本", "样本", "specimen", "sample type", "sample", "material"
+    ]
 
     private static let plausibleSpecimenTokens = [
         "血清", "血浆", "血漿", "全血", "血液", "尿", "唾液", "拭子",
@@ -1444,8 +1472,6 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private enum ModelAttempt: String {
-        case privateCloudVision
-        case onDeviceVision
         case privateCloudUniversal
         case onDeviceUniversal
         case privateCloudMetadata
@@ -1453,45 +1479,11 @@ fileprivate enum LabReportAIExtractor {
     }
 
     static func extract(
-        from images: [UIImage],
+        from _: [UIImage],
         sourceKind: LabReportSourceKind,
         ocrText: String,
         fallback: LabReport
     ) async -> LabReportExtractionOutcome? {
-        #if FOUNDATION_MODELS_IOS27
-        if #available(iOS 27.0, *),
-           let payload = await generatedPayloadUsingPrivateCloudVision(
-                images: images,
-                ocrText: ocrText,
-                fallback: fallback
-           ),
-           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: ocrText, fallback: fallback) {
-            return LabReportExtractionOutcome(
-                report: report,
-                statusMessage: anchoredStatus(
-                    "Private Cloud Compute read the report image; table values were verified against OCR anchors.",
-                    fallback: fallback
-                )
-            )
-        }
-
-        if #available(iOS 27.0, *),
-           let payload = await generatedPayloadUsingOnDeviceVision(
-                images: images,
-                ocrText: ocrText,
-                fallback: fallback
-           ),
-           let report = decodeReport(from: payload, sourceKind: sourceKind, sourceText: ocrText, fallback: fallback) {
-            return LabReportExtractionOutcome(
-                report: report,
-                statusMessage: anchoredStatus(
-                    "On-device Apple Intelligence read the report image; table values were verified against OCR anchors.",
-                    fallback: fallback
-                )
-            )
-        }
-        #endif
-
         guard !ocrText.trimmed.isEmpty else { return nil }
         guard let outcome = await extract(from: ocrText, sourceKind: sourceKind, fallback: fallback) else {
             return nil
@@ -1500,8 +1492,8 @@ fileprivate enum LabReportAIExtractor {
         return LabReportExtractionOutcome(
             report: outcome.report,
             statusMessage: anchoredStatus(
-                "OCR read the image; Apple Intelligence organized verified OCR metadata.",
-                fallback: fallback
+                "Vision OCR read the image; Apple Intelligence interpreted and organized verified OCR evidence.",
+                fallback: outcome.report
             )
         )
     }
@@ -1511,6 +1503,11 @@ fileprivate enum LabReportAIExtractor {
         sourceKind: LabReportSourceKind,
         fallback: LabReport
     ) async -> LabReportExtractionOutcome? {
+        clearRetiredImageAttemptState()
+        clearAttemptError(.privateCloudMetadata)
+        clearAttemptError(.onDeviceMetadata)
+        UserDefaults.standard.synchronize()
+
         // On iOS 27 the universal schema is the primary semantic pass for
         // every non-empty report. The deterministic parser remains the anchor
         // and fallback, rather than deciding whether the LLM is allowed to
@@ -1522,6 +1519,11 @@ fileprivate enum LabReportAIExtractor {
         ) {
             return outcome
         }
+
+        // A guardrail refusal applies to the same OCR evidence regardless of
+        // schema. Retrying it immediately as a metadata-only request only adds
+        // latency, so fall back to the already verified parser result.
+        guard !shouldStopTextAttemptsAfterPolicyRejection() else { return nil }
 
         guard !fallback.analytes.isEmpty else { return nil }
         guard metadataNeedsModel(fallback) else {
@@ -1583,14 +1585,7 @@ fileprivate enum LabReportAIExtractor {
     }
 
     static func detailedImageDiagnosticSummary() -> String {
-        detailedDiagnosticSummary(for: [
-            .privateCloudVision,
-            .onDeviceVision,
-            .privateCloudUniversal,
-            .onDeviceUniversal,
-            .privateCloudMetadata,
-            .onDeviceMetadata
-        ])
+        detailedTextDiagnosticSummary()
     }
 
     private static var localContentTransformModel: SystemLanguageModel {
@@ -1610,138 +1605,6 @@ fileprivate enum LabReportAIExtractor {
 
     private static var universalGenerationOptions: GenerationOptions {
         labGreedyGenerationOptions(maximumResponseTokens: 1_200)
-    }
-
-    #if FOUNDATION_MODELS_IOS27
-    @available(iOS 27.0, *)
-    private static func generatedPayloadUsingPrivateCloudVision(
-        images: [UIImage],
-        ocrText: String,
-        fallback: LabReport
-    ) async -> AIReportPayload? {
-        let attempt = ModelAttempt.privateCloudVision
-        guard shouldAttempt(attempt) else { return nil }
-        guard appHasPrivateCloudComputeEntitlement() else {
-            recordAttemptError("missing com.apple.developer.private-cloud-compute entitlement", attempt: attempt)
-            return nil
-        }
-        let model = PrivateCloudComputeLanguageModel()
-        guard model.isAvailable, model.supportsLocale(Locale.current) else {
-            recordAttemptError("availability=\(privateCloudAvailabilityDescription(model.availability))", attempt: attempt)
-            return nil
-        }
-        guard let prompt = visionPrompt(images: images, ocrText: ocrText, fallback: fallback) else {
-            recordAttemptError("image prompt could not be built", attempt: attempt)
-            return nil
-        }
-
-        markAttemptStarted(attempt)
-        defer { markAttemptFinished(attempt) }
-
-        do {
-            let session = LanguageModelSession(model: model, instructions: visionInstructionsText())
-            session.prewarm()
-            let response = try await session.respond(
-                to: prompt,
-                generating: GeneratedAIReportPayload.self,
-                includeSchemaInPrompt: true,
-                options: textGenerationOptions
-            )
-            return AIReportPayload(generated: response.content)
-        } catch {
-            logModelError(error, attempt: attempt)
-            return nil
-        }
-    }
-
-    @available(iOS 27.0, *)
-    private static func generatedPayloadUsingOnDeviceVision(
-        images: [UIImage],
-        ocrText: String,
-        fallback: LabReport
-    ) async -> AIReportPayload? {
-        let attempt = ModelAttempt.onDeviceVision
-        guard shouldAttempt(attempt) else { return nil }
-        let model = localContentTransformModel
-        guard isUsable(model) else {
-            recordAttemptError("availability=\(systemAvailabilityDescription(model.availability))", attempt: attempt)
-            return nil
-        }
-        guard let prompt = visionPrompt(images: images, ocrText: ocrText, fallback: fallback) else {
-            recordAttemptError("image prompt could not be built", attempt: attempt)
-            return nil
-        }
-
-        markAttemptStarted(attempt)
-        defer { markAttemptFinished(attempt) }
-
-        do {
-            let session = LanguageModelSession(model: model, instructions: visionInstructionsText())
-            session.prewarm()
-            let response = try await session.respond(
-                to: prompt,
-                generating: GeneratedAIReportPayload.self,
-                includeSchemaInPrompt: true,
-                options: textGenerationOptions
-            )
-            return AIReportPayload(generated: response.content)
-        } catch {
-            logModelError(error, attempt: attempt)
-            return nil
-        }
-    }
-    #endif
-
-    private static func visionInstructionsText() -> String {
-        """
-        Extract visible lab report data from the attached image.
-        Use OCR anchors when they are clearer than the image.
-        Copy measured result values only, never reference range numbers.
-        Classify known HRT-related hormone rows with their item code; preserve other clearly visible measurement rows as other with their visible label.
-        Do not include patient identity, IDs, billing fields, or medical interpretation.
-        Leave uncertain fields empty.
-        """
-    }
-
-    #if FOUNDATION_MODELS_IOS27
-    @available(iOS 27.0, *)
-    private static func visionPrompt(
-        images: [UIImage],
-        ocrText: String,
-        fallback: LabReport
-    ) -> FoundationModels.Prompt? {
-        guard let image = images.first,
-              let cgImage = cgImageForModel(from: image) else {
-            return nil
-        }
-
-        let orientation = CGImagePropertyOrientation(image.imageOrientation)
-        let attachment = FoundationModels.Attachment(cgImage, orientation: orientation)
-            .label("hormone lab report image")
-        let anchors = evidenceTextForAI(sourceText: ocrText, fallback: fallback)
-
-        return FoundationModels.Prompt {
-            """
-            Extract a lab report from the image.
-            Preserve only visible institution, location, specimen, method, collection/report times, known HRT-related hormone rows, and other clearly visible measurement rows.
-            If OCR anchors list table rows, treat those rows as the value/unit anchors.
-            For specimen, return a normalized plausible lab specimen/material term rather than raw OCR noise; leave it empty when uncertain.
-            OCR anchors:
-            \(anchors)
-            """
-            attachment
-        }
-    }
-    #endif
-
-    private static func cgImageForModel(from image: UIImage) -> CGImage? {
-        if let cgImage = image.cgImage {
-            return cgImage
-        }
-        guard let ciImage = image.ciImage else {
-            return nil
-        }
-        return CIContext().createCGImage(ciImage, from: ciImage.extent)
     }
 
     #if FOUNDATION_MODELS_IOS27
@@ -1811,9 +1674,8 @@ fileprivate enum LabReportAIExtractor {
         """
         Extract document header metadata from OCR evidence.
         Fill collection time, report time, institution, location, specimen, and method when visible.
-        For specimen, return a normalized plausible lab specimen/material term, not raw OCR characters. Use the document language when confident.
-        If a specimen value looks like OCR noise or is not a plausible biological specimen/material, return an empty string.
-        Normalize obvious OCR confusions only when the field context makes the intended medical/lab term clear.
+        For specimen, copy only a plausible material that is explicitly present in a specimen/sample field.
+        If its OCR text is corrupted, misspelled, ambiguous, or would require normalization to a different term, return an empty string.
         Ignore names, IDs, billing fields, reviewers, and diagnoses.
         Use empty strings for unknown fields.
         """
@@ -1929,10 +1791,6 @@ fileprivate enum LabReportAIExtractor {
         }
     }
 
-    private static var textGenerationOptions: GenerationOptions {
-        labGreedyGenerationOptions(maximumResponseTokens: 1_800)
-    }
-
     private static func evidenceTextForAI(sourceText: String, fallback: LabReport) -> String {
         var lines: [String] = [
             "OCR evidence prepared for structured lab-result extraction.",
@@ -2036,8 +1894,8 @@ fileprivate enum LabReportAIExtractor {
         Use exact visible dates and names when possible.
         Method must be copied or normalized only from an explicit assay-method or analyzer/platform line, such as a method label or analyzer token.
         Do not use report titles, department names, specimen types, diagnoses, interpretation phrases, or generic analysis/result text as method.
-        For specimen, prefer the narrowest plausible material visible in a specimen/sample field. If an OCR-corrupted specimen can be confidently normalized, use the normalized material; otherwise leave it empty.
-        Do not broaden a corrupted specimen to generic blood unless blood is explicitly visible.
+        For specimen, copy only the narrowest plausible material explicitly visible in a specimen/sample field.
+        Leave specimen empty when its OCR text is corrupted, ambiguous, or would need to be changed into a different term.
         Leave unknown fields empty.
 
         Evidence:
@@ -2095,6 +1953,7 @@ fileprivate enum LabReportAIExtractor {
         Copy measured values exactly from source lines. Do not use reference interval numbers as measured values.
         For other rows, include the visible test name/label; omit rows whose label is only a header, unit, patient field, or administrative field.
         Leave method empty unless a source line explicitly contains an assay method or analyzer/platform token.
+        Copy specimen only when a plausible material is explicitly present in a specimen/sample field; leave corrupted or normalized guesses empty.
         Ignore patient identity, order IDs, billing fields, reviewer names, and diagnoses.
         """
     }
@@ -2135,6 +1994,7 @@ fileprivate enum LabReportAIExtractor {
         let analytes = sourceText.trimmed.isEmpty
             ? decodedAnalytes
             : decodedAnalytes.filter { hasVisibleEvidence(for: $0, in: sourceText) }
+        guard !analytes.isEmpty else { return nil }
 
         let mergedAnalytes = merge(analytes, withAnchorsFrom: fallback)
         guard !mergedAnalytes.isEmpty else { return nil }
@@ -2332,32 +2192,8 @@ fileprivate enum LabReportAIExtractor {
             return fallbackValue
         }
 
-        if sourceTextContains(value, in: sourceText) {
-            return value
-        }
-        if isGenericBloodSpecimen(value) {
-            return fallbackValue
-        }
-        if hasSpecimenEvidenceLabel(in: sourceText) {
-            return value
-        }
-        return fallbackValue
-    }
-
-    private static func isGenericBloodSpecimen(_ value: String) -> Bool {
-        let lower = value.lowercased()
-        return lower == "血液" || lower == "blood"
-    }
-
-    private static func hasSpecimenEvidenceLabel(in sourceText: String) -> Bool {
-        sourceText
-            .split(whereSeparator: \.isNewline)
-            .map { String($0).trimmed }
-            .contains { line in
-                [
-                    "标本", "樣本", "样本", "sample", "specimen", "material"
-                ].contains { line.localizedCaseInsensitiveContains($0) }
-            }
+        let groundedValue = LabReportFieldSanitizer.groundedSpecimen(value, in: sourceText)
+        return groundedValue.isEmpty ? fallbackValue : groundedValue
     }
 
     private static func verifiedAIMethod(
@@ -2379,6 +2215,19 @@ fileprivate enum LabReportAIExtractor {
         }
         return normalizedAssayMethod(value)
     }
+
+    #if DEBUG
+    static func verifiedMetadataForDiagnostics(
+        specimen: String,
+        method: String,
+        sourceText: String
+    ) -> (specimen: String, method: String) {
+        (
+            verifiedAISpecimen(specimen, sourceText: sourceText, fallback: ""),
+            verifiedAIMethod(method, sourceText: sourceText) ?? ""
+        )
+    }
+    #endif
 
     private static func isPlausibleAssayMethod(_ value: String) -> Bool {
         let lower = value.lowercased()
@@ -2654,6 +2503,22 @@ fileprivate enum LabReportAIExtractor {
         return "Apple Intelligence did not add verified \(kind) metadata; verified OCR table parsing was used."
     }
 
+    private static func clearRetiredImageAttemptState() {
+        let retiredAttempts = ["privateCloudVision", "onDeviceVision"]
+        let defaults = UserDefaults.standard
+
+        if let activeAttempt = defaults.string(forKey: activeAttemptKey),
+           retiredAttempts.contains(activeAttempt) {
+            defaults.removeObject(forKey: activeAttemptKey)
+            defaults.removeObject(forKey: activeAttemptStartedAtKey)
+        }
+
+        for attempt in retiredAttempts {
+            defaults.removeObject(forKey: crashDisabledUntilPrefix + attempt)
+            defaults.removeObject(forKey: lastAttemptErrorPrefix + attempt)
+        }
+    }
+
     private static func shouldAttempt(_ attempt: ModelAttempt) -> Bool {
         let defaults = UserDefaults.standard
         if isAttemptCrashDisabled(attempt) {
@@ -2744,8 +2609,6 @@ fileprivate enum LabReportAIExtractor {
 
     private static func shouldStopTextAttemptsAfterPolicyRejection() -> Bool {
         [
-            lastAttemptError(.privateCloudVision),
-            lastAttemptError(.onDeviceVision),
             lastAttemptError(.privateCloudUniversal),
             lastAttemptError(.onDeviceUniversal),
             lastAttemptError(.privateCloudMetadata),
@@ -2862,7 +2725,7 @@ fileprivate enum LabReportAIExtractor {
         var institution: String
         @Guide(description: "Testing location or site. Empty when unavailable.")
         var location: String
-        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        @Guide(description: "Plausible specimen/material text copied from an explicit specimen/sample field. Empty when unavailable, corrupted, ambiguous, or normalization would change the text.")
         var specimen: String
         @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
         var method: String
@@ -2878,7 +2741,7 @@ fileprivate enum LabReportAIExtractor {
         var institution: String
         @Guide(description: "Testing location or site. Empty when unavailable.")
         var location: String
-        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        @Guide(description: "Plausible specimen/material text copied from an explicit specimen/sample field. Empty when unavailable, corrupted, ambiguous, or normalization would change the text.")
         var specimen: String
         @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
         var method: String
@@ -2922,7 +2785,7 @@ fileprivate enum LabReportAIExtractor {
         var note: String
     }
 
-    private struct AIReportPayload: Decodable {
+    private struct AIReportPayload {
         var collectedAt: String?
         var reportedAt: String?
         var institution: String?
@@ -2949,20 +2812,9 @@ fileprivate enum LabReportAIExtractor {
             self.analytes = analytes
         }
 
-        init(generated: GeneratedAIReportPayload) {
-            self.init(
-                collectedAt: generated.collectedAt.nilIfBlank,
-                reportedAt: generated.reportedAt.nilIfBlank,
-                institution: generated.institution.nilIfBlank,
-                location: generated.location.nilIfBlank,
-                specimen: generated.specimen.nilIfBlank,
-                method: generated.method.nilIfBlank,
-                analytes: generated.analytes.map(AIAnalytePayload.init(generated:))
-            )
-        }
     }
 
-    private struct AIAnalytePayload: Decodable {
+    private struct AIAnalytePayload {
         var kind: String?
         var name: String?
         var value: Double?
@@ -2971,17 +2823,6 @@ fileprivate enum LabReportAIExtractor {
         var method: String?
         var sourceLine: String?
         var note: String?
-
-        enum CodingKeys: String, CodingKey {
-            case kind
-            case name
-            case value
-            case unit
-            case referenceRange
-            case method
-            case sourceLine
-            case note
-        }
 
         init(
             kind: String?,
@@ -3003,98 +2844,6 @@ fileprivate enum LabReportAIExtractor {
             self.note = note
         }
 
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.kind = try container.decodeIfPresent(String.self, forKey: .kind)
-            self.name = try container.decodeIfPresent(String.self, forKey: .name)
-            self.value = Self.decodeFlexibleDouble(from: container, forKey: .value)
-            self.unit = try container.decodeIfPresent(String.self, forKey: .unit)
-            self.referenceRange = try container.decodeIfPresent(String.self, forKey: .referenceRange)
-            self.method = try container.decodeIfPresent(String.self, forKey: .method)
-            self.sourceLine = try container.decodeIfPresent(String.self, forKey: .sourceLine)
-            self.note = try container.decodeIfPresent(String.self, forKey: .note)
-        }
-
-        private static func decodeFlexibleDouble(
-            from container: KeyedDecodingContainer<CodingKeys>,
-            forKey key: CodingKeys
-        ) -> Double? {
-            if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
-                return value
-            }
-            if let text = try? container.decodeIfPresent(String.self, forKey: key) {
-                let normalized = text
-                    .trimmed
-                    .replacingOccurrences(of: ",", with: ".")
-                return Double(normalized)
-            }
-            return nil
-        }
-
-        init(generated: GeneratedAIAnalytePayload) {
-            self.init(
-                kind: generated.kind.nilIfBlank,
-                name: generated.name.nilIfBlank,
-                value: generated.value,
-                unit: generated.unit.nilIfBlank,
-                referenceRange: generated.referenceRange.nilIfBlank,
-                method: generated.method.nilIfBlank,
-                sourceLine: generated.sourceLine.nilIfBlank,
-                note: generated.note.nilIfBlank
-            )
-        }
-    }
-
-    @Generable(description: "Structured lab report with collection metadata, known HRT-related hormone rows, and other visible measurement rows.")
-    struct GeneratedAIReportPayload {
-        @Guide(description: "Collection or sample time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
-        var collectedAt: String
-        @Guide(description: "Report issue time, preferably YYYY-MM-DD HH:mm:ss. Empty when unavailable.")
-        var reportedAt: String
-        @Guide(description: "Testing institution, hospital, or lab name. Empty when unavailable.")
-        var institution: String
-        @Guide(description: "Testing location or site. Empty when unavailable.")
-        var location: String
-        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
-        var specimen: String
-        @Guide(description: "Overall assay method, analyzer, or platform only when explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
-        var method: String
-        @Guide(description: "All visible known HRT-related hormone rows and other explicit lab measurement rows from the report table.", .maximumCount(24))
-        var analytes: [GeneratedAIAnalytePayload]
-    }
-
-    @Generable(description: "One lab analyte row from a report table.")
-    struct GeneratedAIAnalytePayload {
-        @Guide(
-            description: "Canonical kind for known HRT-related hormone rows, or other for another visible lab measurement.",
-            .anyOf([
-                "estradiol",
-                "testosterone",
-                "luteinizingHormone",
-                "follicleStimulatingHormone",
-                "prolactin",
-                "progesterone",
-                "sexHormoneBindingGlobulin",
-                "freeTestosterone",
-                "dehydroepiandrosteroneSulfate",
-                "other"
-            ])
-        )
-        var kind: String
-        @Guide(description: "Visible test name only for kind other; leave empty for known hormone kinds.")
-        var name: String
-        @Guide(description: "Measured result value from the result column, not a reference range number.")
-        var value: Double?
-        @Guide(description: "Unit for the measured value, for example pmol/L, nmol/L, mIU/L, IU/L, or µmol/L.")
-        var unit: String
-        @Guide(description: "Leave empty; sex-assigned reference intervals are not stored for HRT review.")
-        var referenceRange: String
-        @Guide(description: "Row-level assay method, analyzer, or platform only when explicitly visible on the source row or method column. Empty otherwise.")
-        var method: String
-        @Guide(description: "Visible source row text from the table. Empty when unavailable.")
-        var sourceLine: String
-        @Guide(description: "Only include uncertainty or abnormal flag information. Empty otherwise.")
-        var note: String
     }
 }
 #endif
@@ -3144,7 +2893,7 @@ enum HormoneLabResultParser {
             reportedAt: reportedAt,
             institution: extractInstitution(from: displayLines),
             location: extractField(from: displayLines, labels: ["地点", "地址", "location", "address"]),
-            specimen: extractSpecimen(from: displayLines),
+            specimen: LabReportFieldSanitizer.reviewSpecimen(extractSpecimen(from: displayLines)),
             method: extractReportMethod(from: lines, analytes: analytes),
             sourceKind: sourceKind,
             sourceText: stripInternalParserHints(text),
@@ -4744,8 +4493,8 @@ enum LabReportAIDiagnostics {
                 Extract document metadata from OCR evidence only.
                 Leave method empty unless the OCR explicitly contains an assay method or analyzer/instrument line or token.
                 Do not use report titles, department names, specimen types, diagnoses, or generic analysis/result text as method.
-                For specimen, prefer the narrowest plausible material visible in a specimen/sample field.
-                If a specimen value is OCR-corrupted, normalize it only when confident; do not broaden it to generic blood unless blood is explicitly visible.
+                Copy specimen only when a plausible material is explicitly visible and can be returned without changing the OCR text.
+                Leave a corrupted, ambiguous, or normalized specimen guess empty.
                 Do not invent fields.
                 """
             )
@@ -4761,16 +4510,22 @@ enum LabReportAIDiagnostics {
                 options: boundaryOptions
             )
             let payload = response.content
-            let method = payload.method.trimmed
-            let specimen = payload.specimen.trimmed
-            let methodOK = method.isEmpty
-            let specimenOK = specimen.isEmpty
-                || specimen == "血清"
-                || specimen.localizedCaseInsensitiveContains("serum")
+            let rawMethod = payload.method.trimmed
+            let rawSpecimen = payload.specimen.trimmed
+            let accepted = LabReportAIExtractor.verifiedMetadataForDiagnostics(
+                specimen: rawSpecimen,
+                method: rawMethod,
+                sourceText: diagnosticNoMethodOCRText
+            )
+            let methodOK = accepted.method.isEmpty
+            let specimenOK = accepted.specimen.isEmpty
             return [
                 "metadata boundary no-method: \(methodOK && specimenOK ? "PASS" : "FAIL")",
-                "method=\(method.isEmpty ? "empty" : method)",
-                "specimen=\(specimen.isEmpty ? "empty" : specimen)",
+                "rawMethod=\(rawMethod.isEmpty ? "empty" : rawMethod)",
+                "acceptedMethod=\(accepted.method.isEmpty ? "empty" : accepted.method)",
+                "rawSpecimen=\(rawSpecimen.isEmpty ? "empty" : rawSpecimen)",
+                "acceptedSpecimen=\(accepted.specimen.isEmpty ? "empty" : accepted.specimen)",
+                "specimenRejected=\(!rawSpecimen.isEmpty && accepted.specimen.isEmpty)",
                 "institution=\(payload.institution.trimmed)"
             ].joined(separator: " ")
         } catch {
@@ -4860,7 +4615,9 @@ enum LabReportAIDiagnostics {
         let notesOK = notes.isEmpty || notes
             .split(separator: "|")
             .allSatisfy { $0 == "↑" || $0 == "↓" }
-        let specimenOK = report.specimen.trimmed.isEmpty || report.specimen == "血清"
+        let rawSpecimen = report.specimen.trimmed
+        let acceptedSpecimen = LabReportFieldSanitizer.reviewSpecimen(rawSpecimen)
+        let specimenOK = acceptedSpecimen.isEmpty || acceptedSpecimen == "血清"
         let testosterone = report.analytes.first { $0.kind == .testosterone }
         let testosteroneOK = testosterone?.displayName == LabAnalyteKind.testosterone.defaultName
             && abs((testosterone?.value ?? .nan) - 0.66) < 0.001
@@ -4870,7 +4627,8 @@ enum LabReportAIDiagnostics {
             "reportMethod=\(report.method.trimmed.isEmpty ? "empty" : report.method.trimmed)",
             "rowMethods=\(rowMethods.isEmpty ? "empty" : rowMethods)",
             "notes=\(notes.isEmpty ? "empty" : notes)",
-            "specimen=\(report.specimen.trimmed.isEmpty ? "empty" : report.specimen.trimmed)",
+            "rawSpecimen=\(rawSpecimen.isEmpty ? "empty" : rawSpecimen)",
+            "acceptedSpecimen=\(acceptedSpecimen.isEmpty ? "empty" : acceptedSpecimen)",
             "testosterone=\(testosterone?.displayName ?? "missing"):\(testosterone?.value.map { String($0) } ?? "nil")"
         ].joined(separator: " ")
     }
@@ -4934,7 +4692,7 @@ enum LabReportAIDiagnostics {
         var institution: String
         @Guide(description: "Testing location or site. Empty when unavailable.")
         var location: String
-        @Guide(description: "Narrow normalized lab specimen/material type from a specimen/sample field. Empty when unavailable, implausible, or only generic blood can be guessed.")
+        @Guide(description: "Plausible specimen/material text copied from an explicit specimen/sample field. Empty when unavailable, corrupted, ambiguous, or normalization would change the text.")
         var specimen: String
         @Guide(description: "Assay method, analyzer, or platform only if explicitly visible. Empty for report titles, departments, specimen types, diagnoses, or analysis/result phrases.")
         var method: String

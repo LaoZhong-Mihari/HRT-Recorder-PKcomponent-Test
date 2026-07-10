@@ -520,14 +520,16 @@ struct RecordPlannedDoseIntent: AppIntent {
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
-    @Parameter(title: "Planned Dose")
+    @Parameter(
+        title: "Planned Dose",
+        requestValueDialog: "Please specify which active planned dose to record."
+    )
     var doseOption: DoseOptionEntity
 
     @Parameter(title: "Time")
     var recordedAt: Date?
 
     init() {
-        doseOption = DoseOptionEntity(id: "", title: String(localized: "Dose"), subtitle: "", isStale: true)
         recordedAt = nil
     }
 
@@ -586,14 +588,16 @@ struct GetHormoneConcentrationIntent: AppIntent {
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
-    @Parameter(title: "Hormone")
+    @Parameter(
+        title: "Hormone",
+        requestValueDialog: "Which hormone should I check—estradiol or testosterone?"
+    )
     var hormone: IntentHormone
 
     @Parameter(title: "Time")
     var measuredAt: Date?
 
     init() {
-        hormone = .estradiol
         measuredAt = nil
     }
 
@@ -651,7 +655,7 @@ struct HRTRecorderAppShortcuts: AppShortcutsProvider {
             phrases: [
                 "Check my hormone level in \(.applicationName)",
                 "Get my hormone concentration in \(.applicationName)",
-                "What's my estrogen level in \(.applicationName)",
+                "What's my \(\.$hormone) level in \(.applicationName)",
                 "Check \(\.$hormone) level in \(.applicationName)",
                 "用 \(.applicationName) 查看激素浓度"
             ],
