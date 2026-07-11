@@ -49,11 +49,6 @@ private struct ResultChartWindow {
     let yAxisDomain: ClosedRange<Double>
 }
 
-private struct ResultChartYAxisTarget: Equatable {
-    let metadata: SimulationDisplayMetadata
-    let upperBound: Double
-}
-
 private struct ResultChartZoomAnchor {
     let hour: Double
     let relativePosition: Double
@@ -221,13 +216,13 @@ private struct ResultChartInteractionSurface: UIViewRepresentable {
 }
 
 struct ResultChartView: View {
-    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
     let availableUnits: [ConcentrationUnit]
     let onSelectUnit: ((ConcentrationUnit) -> Void)?
     private let chartPoints: [ResultChartPoint]
     private let labPoints: [ResultChartLabPoint]
+    private let scaleLabPoints: [ResultChartScaleSample]
     private let chartMaxConcentration: Double
     private let preferredChartHeight: CGFloat?
 
@@ -238,8 +233,6 @@ struct ResultChartView: View {
     @State private var hoveredHour: Double?
     @State private var magnifyBaseline: Double?
     @State private var panBaselineScrollPosition: Double?
-    @State private var displayedYAxisUpperBound: Double?
-    @State private var displayedYAxisMetadata: SimulationDisplayMetadata?
 
     private let timer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common).autoconnect()
 
@@ -279,6 +272,9 @@ struct ResultChartView: View {
 
         self.chartPoints = points
         self.labPoints = labPoints
+        self.scaleLabPoints = labPoints.map {
+            ResultChartScaleSample(hour: $0.hour, concentration: $0.concentration)
+        }
         self.chartMaxConcentration = ResultChartScale.maximumValidConcentration(
             predicted: points.lazy.map(\.concentration),
             measured: labPoints.lazy.map(\.concentration)
@@ -418,9 +414,6 @@ struct ResultChartView: View {
             around: visibleDomain,
             within: totalDomain
         )
-        let contextLabPoints = labPoints.map {
-            ResultChartScaleSample(hour: $0.hour, concentration: $0.concentration)
-        }
         let boundaryConcentrations = [
             sim.concentration(at: contextDomain.lowerBound),
             sim.concentration(at: contextDomain.upperBound)
@@ -428,8 +421,9 @@ struct ResultChartView: View {
         .compactMap { $0 }
         let maxConcentration = ResultChartScale.maximumValidConcentration(
             predicted: chartPoints,
-            measured: contextLabPoints,
+            measured: scaleLabPoints,
             in: contextDomain,
+            measuredFullStrengthDomain: visibleDomain,
             boundaryConcentrations: boundaryConcentrations
         ) ?? 0
 
@@ -437,17 +431,6 @@ struct ResultChartView: View {
             points: visiblePoints,
             labPoints: visibleLabPoints,
             yAxisDomain: ResultChartScale.yAxisDomain(forMaximum: maxConcentration)
-        )
-    }
-
-    private var targetYAxisUpperBound: Double {
-        visibleChartWindow.yAxisDomain.upperBound
-    }
-
-    private var yAxisTarget: ResultChartYAxisTarget {
-        ResultChartYAxisTarget(
-            metadata: sim.displayMetadata,
-            upperBound: targetYAxisUpperBound
         )
     }
 
@@ -570,10 +553,7 @@ struct ResultChartView: View {
 
     private var concentrationChart: some View {
         let window = visibleChartWindow
-        let animatedYAxisUpperBound = displayedYAxisMetadata == sim.displayMetadata
-            ? displayedYAxisUpperBound
-            : nil
-        let yAxisUpperBound = animatedYAxisUpperBound ?? window.yAxisDomain.upperBound
+        let yAxisUpperBound = window.yAxisDomain.upperBound
         let resolvedYAxisUpperBound = yAxisUpperBound.isFinite && yAxisUpperBound > 0
             ? yAxisUpperBound
             : 1
@@ -831,11 +811,9 @@ struct ResultChartView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Text(chartAccessibilityLabel))
         }
-        .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18), value: displayHour)
         .onAppear {
             visibleDomainLength = defaultVisibleDomainLength
             scrollPosition = clampedLeadingHour(currentHour - visibleDomainLength / 2, visibleLength: visibleDomainLength)
-            applyYAxisTargetImmediately(yAxisTarget)
         }
         .onReceive(timer) { date in
             now = date
@@ -843,49 +821,6 @@ struct ResultChartView: View {
         .onChange(of: sim.timeH.first) { _ in
             visibleDomainLength = min(max(visibleDomainLength, minVisibleDomainLength), maxVisibleDomainLength)
             scrollPosition = clampedLeadingHour(currentHour - visibleDomainLength / 2, visibleLength: visibleDomainLength)
-        }
-        .onChange(of: yAxisTarget) { newTarget in
-            let semanticsChanged = displayedYAxisMetadata != newTarget.metadata
-            if semanticsChanged {
-                applyYAxisTargetImmediately(newTarget)
-            } else {
-                updateDisplayedYAxisUpperBound(to: newTarget.upperBound)
-            }
-        }
-        .onChange(of: accessibilityReduceMotion) { reduceMotion in
-            guard reduceMotion else { return }
-            applyYAxisTargetImmediately(yAxisTarget)
-        }
-    }
-
-    private func applyYAxisTargetImmediately(_ target: ResultChartYAxisTarget) {
-        guard target.upperBound.isFinite, target.upperBound > 0 else { return }
-
-        withTransaction(Transaction(animation: nil)) {
-            displayedYAxisMetadata = target.metadata
-            displayedYAxisUpperBound = target.upperBound
-        }
-    }
-
-    private func updateDisplayedYAxisUpperBound(to newValue: Double) {
-        guard newValue.isFinite, newValue > 0 else { return }
-        guard let displayedYAxisUpperBound else {
-            self.displayedYAxisUpperBound = newValue
-            return
-        }
-
-        let magnitude = max(abs(displayedYAxisUpperBound), abs(newValue))
-        let tolerance = max(magnitude * 0.000_1, Double.ulpOfOne)
-        guard abs(displayedYAxisUpperBound - newValue) > tolerance else { return }
-
-        if accessibilityReduceMotion {
-            withTransaction(Transaction(animation: nil)) {
-                self.displayedYAxisUpperBound = newValue
-            }
-        } else {
-            withAnimation(.linear(duration: 0.24)) {
-                self.displayedYAxisUpperBound = newValue
-            }
         }
     }
 

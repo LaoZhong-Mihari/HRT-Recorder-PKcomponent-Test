@@ -31,14 +31,23 @@ enum ResultChartScale {
         predicted: [ResultChartScaleSample],
         measured: [ResultChartScaleSample],
         in domain: ClosedRange<Double>,
+        measuredFullStrengthDomain: ClosedRange<Double>? = nil,
         boundaryConcentrations: [Double] = []
     ) -> Double? {
         let firstIndex = firstPointIndex(atOrAfter: domain.lowerBound, in: predicted)
         let endIndex = firstPointIndex(after: domain.upperBound, in: predicted)
         let predictedValues = predicted[firstIndex..<endIndex].lazy.map(\.concentration)
-        let measuredValues = measured.lazy
-            .filter { domain.contains($0.hour) }
-            .map(\.concentration)
+        let measuredValues = measured.lazy.compactMap { sample -> Double? in
+            guard domain.contains(sample.hour) else { return nil }
+            guard let measuredFullStrengthDomain else {
+                return sample.concentration
+            }
+            return sample.concentration * measuredEdgeWeight(
+                at: sample.hour,
+                contextDomain: domain,
+                fullStrengthDomain: measuredFullStrengthDomain
+            )
+        }
 
         return [
             maximumValidConcentration(in: predictedValues),
@@ -78,6 +87,30 @@ enum ResultChartScale {
         values.lazy
             .filter { $0.isFinite && $0 >= 0 }
             .max()
+    }
+
+    /// Lab values are discrete points. Fade their scale influence linearly
+    /// through the context margin so crossing the context boundary cannot make
+    /// the Y axis jump, while every point is at full strength before it becomes
+    /// visible in the plot.
+    private nonisolated static func measuredEdgeWeight(
+        at hour: Double,
+        contextDomain: ClosedRange<Double>,
+        fullStrengthDomain: ClosedRange<Double>
+    ) -> Double {
+        if fullStrengthDomain.contains(hour) {
+            return 1
+        }
+
+        if hour < fullStrengthDomain.lowerBound {
+            let width = fullStrengthDomain.lowerBound - contextDomain.lowerBound
+            guard width > 0 else { return 1 }
+            return min(max((hour - contextDomain.lowerBound) / width, 0), 1)
+        }
+
+        let width = contextDomain.upperBound - fullStrengthDomain.upperBound
+        guard width > 0 else { return 1 }
+        return min(max((contextDomain.upperBound - hour) / width, 0), 1)
     }
 
     private nonisolated static func firstPointIndex(

@@ -52,8 +52,31 @@ struct LabResultsView: View {
         vm.labReports.sorted { $0.collectedAt > $1.collectedAt }
     }
 
+    private var calibrationHormones: [SimulatedHormone] {
+        [vm.selectedHormone] + SimulatedHormone.allCases.filter { $0 != vm.selectedHormone }
+    }
+
     var body: some View {
         List {
+            Section {
+                Picker("HRT Type", selection: Binding(
+                    get: { vm.selectedHormone },
+                    set: { vm.selectHRTType($0) }
+                )) {
+                    Text("E2 HRT").tag(SimulatedHormone.estradiol)
+                    Text("T HRT").tag(SimulatedHormone.testosterone)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("lab.activeCalibration")
+            } header: {
+                Text("Calibration Target")
+            } footer: {
+                Text(String.localizedStringWithFormat(
+                    String(localized: "This report may contain both E2 and T. Only %@ is used to calibrate the current HRT curve; all results remain saved."),
+                    vm.selectedHormone.displayName
+                ))
+            }
+
             Section {
                 if sortedReports.isEmpty {
                     EmptyLabResultsRow()
@@ -75,14 +98,16 @@ struct LabResultsView: View {
             } header: {
                 Text("Saved Reports")
             } footer: {
-                Text("Saved E2 and testosterone values are used to calibrate the PK curve against measured lab levels.")
+                Text("Reports keep both E2 and T results. Your selected HRT type decides which values calibrate the active curve.")
             }
 
             Section("Calibration") {
-                ForEach(SimulatedHormone.allCases) { hormone in
+                ForEach(calibrationHormones) { hormone in
                     CalibrationSummaryRow(
                         hormone: hormone,
-                        info: vm.calibrationResult.infoByHormone[hormone]
+                        info: vm.calibrationResult.infoByHormone[hormone],
+                        isActive: hormone == vm.selectedHormone,
+                        savedSampleCount: vm.allLabSamples.lazy.filter { $0.hormone == hormone }.count
                     )
                 }
             }
@@ -741,6 +766,8 @@ private struct LabAnalyteDetailRow: View {
 private struct CalibrationSummaryRow: View {
     let hormone: SimulatedHormone
     let info: CalibrationInfo?
+    let isActive: Bool
+    let savedSampleCount: Int
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -750,18 +777,40 @@ private struct CalibrationSummaryRow: View {
                 .padding(.top, 6)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(hormone.displayName)
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Text(hormone.displayName)
+                        .font(.headline)
 
-                if let info {
+                    if isActive {
+                        Text("Active HRT")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                    }
+                }
+
+                if isActive, let info {
                     Text(summary(for: info))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Text(info.latestLabDate, format: .dateTime.year().month().day())
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                } else {
+                } else if isActive {
                     Text("No usable calibration samples yet")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if savedSampleCount > 0 {
+                    Text(String.localizedStringWithFormat(
+                        String(localized: "%d result(s) saved for reference"),
+                        savedSampleCount
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text("No saved result for this hormone")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

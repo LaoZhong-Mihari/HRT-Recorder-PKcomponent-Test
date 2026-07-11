@@ -130,6 +130,7 @@ enum DoseRecordingService {
         at date: Date = Date()
     ) throws -> HormoneConcentrationSummary {
         let events = try loadPersistedEvents()
+        let bodyWeightKG = persistedBodyWeightKG()
         let simulatedEvents = events
             .filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
             .sorted { $0.timeH < $1.timeH }
@@ -146,13 +147,23 @@ enum DoseRecordingService {
         }
 
         let timeH = date.timeIntervalSince1970 / 3600.0
+        let labSamples = persistedLabSamples()
+        let calibration = labSamples.isEmpty
+            ? CalibrationResult()
+            : PKCalibrator.fit(
+                events: events.filter(\.participatesInSimulation),
+                labs: labSamples,
+                bodyWeightKG: bodyWeightKG
+            )
         let result = SimulationEngine(
             events: simulatedEvents,
             hormone: hormone,
-            bodyWeightKG: persistedBodyWeightKG(),
+            bodyWeightKG: bodyWeightKG,
             startTimeH: timeH - 0.5,
             endTimeH: timeH + 0.5,
-            numberOfSteps: 3
+            numberOfSteps: 3,
+            vdPerKGOverride: calibration.vdPerKGOverride(for: hormone),
+            kaMultiplier: calibration.kaMultiplier(for: hormone)
         )
         .run()
         .converted(to: unit)
@@ -513,6 +524,10 @@ enum DoseRecordingService {
     }
 
     private static func persistedLabSamples() -> [LabSample] {
+        guard let selectedHormone = HRTProfilePreferences().confirmedHormone else {
+            return []
+        }
+
         let reports: [LabReport] = (try? loadValue(
             filename: labReportsFileName,
             defaultValue: []
@@ -520,6 +535,7 @@ enum DoseRecordingService {
         if !reports.isEmpty {
             return reports
                 .flatMap(\.calibrationSamples)
+                .filter { $0.hormone == selectedHormone }
                 .sorted { $0.timeH < $1.timeH }
         }
 
@@ -527,7 +543,9 @@ enum DoseRecordingService {
             filename: legacyLabSamplesFileName,
             defaultValue: []
         )) ?? []
-        return legacySamples.sorted { $0.timeH < $1.timeH }
+        return legacySamples
+            .filter { $0.hormone == selectedHormone }
+            .sorted { $0.timeH < $1.timeH }
     }
 
     private static func doseDescription(for event: DoseEvent) -> String {

@@ -53,18 +53,20 @@ final class DoseTimelineVM: ObservableObject {
     }
     @Published var result: SimulationResult? = nil
     @Published private(set) var calibrationResult = CalibrationResult()
-    var labSamples: [LabSample] {
+    var allLabSamples: [LabSample] {
         labReports
             .flatMap(\.calibrationSamples)
             .sorted { $0.timeH < $1.timeH }
+    }
+    var labSamples: [LabSample] {
+        allLabSamples.filter { $0.hormone == selectedHormone }
     }
     var dayGroups: [TimelineDayGroup] {
         let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
         return makeTimelineDayGroups(from: visibleEvents)
     }
-    @Published var selectedHormone: SimulatedHormone = .estradiol {
+    @Published private(set) var selectedHormone: SimulatedHormone = .estradiol {
         didSet {
-            UserDefaults.standard.set(selectedHormone.rawValue, forKey: selectedHormoneKey)
             let preferredUnit = preferredConcentrationUnit(for: selectedHormone)
             if selectedConcentrationUnit != preferredUnit {
                 selectedConcentrationUnit = preferredUnit
@@ -78,7 +80,7 @@ final class DoseTimelineVM: ObservableObject {
     private let eventsModifiedKey = "dose.events.modifiedAt"
     private let weightSyncDateKey = "user.weight.syncDate"
     private let weightSyncSourceKey = "user.weight.syncSource"
-    private let selectedHormoneKey = "timeline.selectedHormone"
+    private let hrtProfilePreferences: HRTProfilePreferences
 
     @Published private(set) var eventsModifiedAt: TimeInterval {
         didSet {
@@ -102,18 +104,13 @@ final class DoseTimelineVM: ObservableObject {
     private var onChange: (([DoseEvent]) -> [DoseEvent])?
     private var isApplyingCanonicalSnapshot = false
     private var onLabReportsChange: (([LabReport]) -> Void)?
-    init() {
+    init(hrtProfilePreferences: HRTProfilePreferences = HRTProfilePreferences()) {
+        self.hrtProfilePreferences = hrtProfilePreferences
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         self.bodyWeightKG = saved > 0 ? saved : 70.0
-        let initialSelectedHormone: SimulatedHormone
-        if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
-           let hormone = SimulatedHormone(rawValue: raw) {
-            initialSelectedHormone = hormone
-        } else {
-            initialSelectedHormone = .estradiol
-        }
+        let initialSelectedHormone = hrtProfilePreferences.suggestedHormone
         self.selectedHormone = initialSelectedHormone
         self.selectedConcentrationUnit = initialSelectedHormone.preferredUnit(
             from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: initialSelectedHormone))
@@ -135,8 +132,10 @@ final class DoseTimelineVM: ObservableObject {
         initialEvents: [DoseEvent],
         initialLabReports: [LabReport] = [],
         onChange: (([DoseEvent]) -> [DoseEvent])? = nil,
-        onLabReportsChange: (([LabReport]) -> Void)? = nil
+        onLabReportsChange: (([LabReport]) -> Void)? = nil,
+        hrtProfilePreferences: HRTProfilePreferences = HRTProfilePreferences()
     ) {
+        self.hrtProfilePreferences = hrtProfilePreferences
         let savedModifiedAt = UserDefaults.standard.double(forKey: eventsModifiedKey)
         self.events = initialEvents
         self.labReports = initialLabReports
@@ -145,13 +144,7 @@ final class DoseTimelineVM: ObservableObject {
         self.eventsModifiedAt = savedModifiedAt > 0 ? savedModifiedAt : 0
         let saved = UserDefaults.standard.double(forKey: weightKey)
         self.bodyWeightKG = saved > 0 ? saved : 70.0
-        let initialSelectedHormone: SimulatedHormone
-        if let raw = UserDefaults.standard.string(forKey: selectedHormoneKey),
-           let hormone = SimulatedHormone(rawValue: raw) {
-            initialSelectedHormone = hormone
-        } else {
-            initialSelectedHormone = .estradiol
-        }
+        let initialSelectedHormone = hrtProfilePreferences.suggestedHormone
         self.selectedHormone = initialSelectedHormone
         self.selectedConcentrationUnit = initialSelectedHormone.preferredUnit(
             from: UserDefaults.standard.string(forKey: Self.concentrationUnitKey(for: initialSelectedHormone))
@@ -181,6 +174,27 @@ final class DoseTimelineVM: ObservableObject {
                 self?.applySelectedConcentrationUnit(unit)
             }
             .store(in: &cancellables)
+    }
+
+    var requiresHRTProfileSelection: Bool {
+        hrtProfilePreferences.requiresSelectionPrompt
+    }
+
+    func selectHRTType(_ hormone: SimulatedHormone) {
+        hrtProfilePreferences.confirm(hormone)
+        guard selectedHormone != hormone else {
+            runSimulation()
+            return
+        }
+
+        // The picker and lab filtering change immediately. Invalidate the old
+        // async generation and remove its curve so the UI cannot briefly pair
+        // the new HRT label with the previous hormone's simulation.
+        simulationGeneration &+= 1
+        result = nil
+        calibrationResult = CalibrationResult()
+        isSimulating = false
+        selectedHormone = hormone
     }
 
     private func resolvedModifiedAt(_ modifiedAt: TimeInterval?) -> TimeInterval {

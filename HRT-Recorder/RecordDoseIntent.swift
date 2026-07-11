@@ -590,12 +590,13 @@ struct GetHormoneConcentrationIntent: AppIntent {
         title: "Hormone",
         requestValueDialog: "Which hormone should I check—estradiol or testosterone?"
     )
-    var hormone: IntentHormone
+    var hormone: IntentHormone?
 
     @Parameter(title: "Time")
     var measuredAt: Date?
 
     init() {
+        hormone = nil
         measuredAt = nil
     }
 
@@ -605,11 +606,15 @@ struct GetHormoneConcentrationIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        guard let resolvedHormone = hormone?.hormone ?? HRTProfilePreferences().confirmedHormone else {
+            let message = String(localized: "Choose your HRT type in HRT Recorder before asking for a hormone level.")
+            return .result(value: message, dialog: "\(message)")
+        }
+
         do {
-            let hormone = hormone.hormone
             let measuredAt = measuredAt ?? Date()
             let dialog = try await MainActor.run {
-                try DoseRecordingService.hormoneConcentration(for: hormone, at: measuredAt).dialogText
+                try DoseRecordingService.hormoneConcentration(for: resolvedHormone, at: measuredAt).dialogText
             }
             return .result(value: dialog, dialog: "\(dialog)")
         } catch {

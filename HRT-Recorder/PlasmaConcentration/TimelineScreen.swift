@@ -18,6 +18,7 @@ private enum TimelineSheet: Identifiable {
     case scheduledDose(DoseEntrySeed)
     case weight
     case settings
+    case hrtProfile
 
     var id: UUID {
         switch self {
@@ -26,6 +27,7 @@ private enum TimelineSheet: Identifiable {
         case .scheduledDose(let seed): return seed.id
         case .weight: return UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         case .settings: return UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        case .hrtProfile: return UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
         }
     }
 }
@@ -102,11 +104,15 @@ struct TimelineScreen: View {
 
     private var hormoneSwitcherSection: some View {
         Section {
-            Picker("Hormone", selection: $vm.selectedHormone) {
+            Picker("HRT Type", selection: Binding(
+                get: { vm.selectedHormone },
+                set: { vm.selectHRTType($0) }
+            )) {
                 Text("Estradiol").tag(SimulatedHormone.estradiol)
                 Text("Testosterone").tag(SimulatedHormone.testosterone)
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("timeline.hrtType")
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             .listRowBackground(Color.clear)
         }
@@ -219,6 +225,7 @@ struct TimelineScreen: View {
                             medicationVM.consumePendingDoseSeed()
                         }
                     )
+                    .interactiveDismissDisabled()
 
                 case .weight:
                     // Present a dedicated WeightEditorView which keeps a temporary value until saved.
@@ -262,6 +269,12 @@ struct TimelineScreen: View {
                         )
                     }
 
+                case .hrtProfile:
+                    NavigationStack {
+                        HRTProfileSelectionView(timelineVM: vm)
+                    }
+                    .interactiveDismissDisabled()
+
                 case .edit(let event):
                     InputEventView(eventToEdit: event, preferredCategory: event.category) { updated in
                         vm.save(updated)
@@ -282,8 +295,18 @@ struct TimelineScreen: View {
                 activeSheet = .scheduledDose(newSeed)
             }
             .onAppear {
-                guard let pendingDoseSeed = medicationVM.pendingDoseSeed else { return }
-                activeSheet = .scheduledDose(pendingDoseSeed)
+                if let pendingDoseSeed = medicationVM.pendingDoseSeed {
+                    activeSheet = .scheduledDose(pendingDoseSeed)
+                } else {
+                    presentHRTProfileSelectionIfNeeded()
+                }
+            }
+            .onChange(of: activeSheet?.id) { sheetID in
+                guard sheetID == nil else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    presentHRTProfileSelectionIfNeeded()
+                }
             }
             .fullScreenCover(isPresented: $isChartFullscreenPresented) {
                 Group {
@@ -310,6 +333,11 @@ struct TimelineScreen: View {
         withAnimation(accessibilityReduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.86)) {
             isChartCollapsed.toggle()
         }
+    }
+
+    private func presentHRTProfileSelectionIfNeeded() {
+        guard activeSheet == nil, vm.requiresHRTProfileSelection else { return }
+        activeSheet = .hrtProfile
     }
 
     private func waitForHealthKitPresentationTransition() async {
@@ -610,6 +638,24 @@ private struct HealthSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("HRT Type", selection: Binding(
+                    get: { timelineVM.selectedHormone },
+                    set: { timelineVM.selectHRTType($0) }
+                )) {
+                    Text("E2 HRT").tag(SimulatedHormone.estradiol)
+                    Text("T HRT").tag(SimulatedHormone.testosterone)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("settings.hrtType")
+
+                Text("This HRT type controls the default dose, PK curve, and lab calibration. Reports still keep both E2 and T results.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("HRT Profile")
+            }
+
             Section("Widget") {
                 NavigationLink {
                     WidgetThresholdSettingsView(onSettingsChanged: onWidgetSettingsChanged)
@@ -673,6 +719,112 @@ private struct HealthSettingsView: View {
             }
         }
         .navigationTitle("settings.title")
+    }
+}
+
+private struct HRTProfileSelectionView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var timelineVM: DoseTimelineVM
+    @State private var selection: SimulatedHormone
+
+    init(timelineVM: DoseTimelineVM) {
+        self.timelineVM = timelineVM
+        _selection = State(initialValue: timelineVM.selectedHormone)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+
+                    Text("Which HRT are you tracking?")
+                        .font(.title2.bold())
+
+                    Text("Choose the hormone HRT Recorder should focus on for dosing, the PK curve, and calibration. Lab reports can still keep both E2 and T results.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 8)
+                .accessibilityElement(children: .combine)
+            }
+
+            Section("HRT Type") {
+                Picker("HRT Type", selection: $selection) {
+                    Text("E2 HRT").tag(SimulatedHormone.estradiol)
+                    Text("T HRT").tag(SimulatedHormone.testosterone)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("hrtProfile.type")
+
+                HRTProfileOptionSummary(
+                    hormone: selection,
+                    isSelected: true
+                )
+            }
+
+            Section {
+                Button {
+                    timelineVM.selectHRTType(selection)
+                    dismiss()
+                } label: {
+                    Text("Continue")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("hrtProfile.confirm")
+            } footer: {
+                Text("You can change this later in Settings. Existing lab reports are not changed.")
+            }
+        }
+        .navigationTitle("HRT Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("hrtProfile.onboarding")
+    }
+}
+
+private struct HRTProfileOptionSummary: View {
+    let hormone: SimulatedHormone
+    let isSelected: Bool
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+        }
+        .accessibilityIdentifier(
+            hormone == .estradiol
+                ? "hrtProfile.option.estradiol"
+                : "hrtProfile.option.testosterone"
+        )
+    }
+
+    private var title: LocalizedStringKey {
+        switch hormone {
+        case .estradiol:
+            return "Estradiol (E2) HRT"
+        case .testosterone:
+            return "Testosterone (T) HRT"
+        }
+    }
+
+    private var subtitle: LocalizedStringKey {
+        switch hormone {
+        case .estradiol:
+            return "Use estradiol dosing and E2 lab values for the active PK curve."
+        case .testosterone:
+            return "Use testosterone dosing and T lab values for the active PK curve."
+        }
     }
 }
 
