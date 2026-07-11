@@ -1,6 +1,6 @@
 import Foundation
 
-enum WidgetHormoneKind: String, Codable, CaseIterable, Identifiable, Sendable {
+nonisolated enum WidgetHormoneKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case estradiol
     case testosterone
 
@@ -25,7 +25,25 @@ enum WidgetHormoneKind: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct WidgetThresholdRange: Codable, Equatable, Sendable {
+nonisolated struct WidgetDisplaySettings: Codable, Equatable, Sendable {
+    static let allowedSurroundingHours = 1...24
+    static let defaultValue = WidgetDisplaySettings(surroundingHours: 6)
+
+    let surroundingHours: Int
+
+    init(surroundingHours: Int) {
+        self.surroundingHours = min(
+            max(surroundingHours, Self.allowedSurroundingHours.lowerBound),
+            Self.allowedSurroundingHours.upperBound
+        )
+    }
+
+    var normalized: WidgetDisplaySettings {
+        WidgetDisplaySettings(surroundingHours: surroundingHours)
+    }
+}
+
+nonisolated struct WidgetThresholdRange: Codable, Equatable, Sendable {
     var low: Double
     var high: Double
 
@@ -43,12 +61,12 @@ struct WidgetThresholdRange: Codable, Equatable, Sendable {
     }
 }
 
-struct WidgetChartPoint: Codable, Equatable, Sendable {
+nonisolated struct WidgetChartPoint: Codable, Equatable, Sendable {
     let timeH: Double
     let concentration: Double
 }
 
-struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
+nonisolated struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
     let hormone: WidgetHormoneKind
     let displayName: String
     let unitSymbol: String
@@ -62,12 +80,41 @@ struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
         currentValue != nil && !points.isEmpty
     }
 
-    func resolved(at date: Date, visibleWindowHours: Double = 6) -> WidgetHormoneSnapshot {
+    func resolved(
+        at date: Date,
+        visibleWindowHours: Double = Double(WidgetDisplaySettings.defaultValue.surroundingHours)
+    ) -> WidgetHormoneSnapshot {
         let timeH = date.timeIntervalSince1970 / 3600.0
-        let visibleStart = timeH - visibleWindowHours
-        let visibleEnd = timeH + visibleWindowHours
-        let visiblePoints = points.filter { point in
-            point.timeH >= visibleStart && point.timeH <= visibleEnd
+        let fallbackWindow = Double(WidgetDisplaySettings.defaultValue.surroundingHours)
+        let resolvedWindow = visibleWindowHours.isFinite && visibleWindowHours > 0
+            ? visibleWindowHours
+            : fallbackWindow
+        let visibleStart = timeH - resolvedWindow
+        let visibleEnd = timeH + resolvedWindow
+        let boundaryTolerance = 0.000_001
+        var visiblePoints: [WidgetChartPoint] = []
+        visiblePoints.reserveCapacity(points.count)
+
+        if let concentration = concentration(at: visibleStart), concentration.isFinite {
+            visiblePoints.append(
+                WidgetChartPoint(timeH: visibleStart, concentration: concentration)
+            )
+        }
+
+        // Keep the requested bounds exact. The raw simulation grid is sampled at
+        // fixed intervals and is not normally aligned with a WidgetKit entry date.
+        for point in points where
+            point.timeH > visibleStart + boundaryTolerance
+                && point.timeH < visibleEnd - boundaryTolerance {
+            visiblePoints.append(point)
+        }
+
+        if visibleEnd - visibleStart > boundaryTolerance,
+           let concentration = concentration(at: visibleEnd),
+           concentration.isFinite {
+            visiblePoints.append(
+                WidgetChartPoint(timeH: visibleEnd, concentration: concentration)
+            )
         }
 
         return WidgetHormoneSnapshot(
@@ -76,7 +123,7 @@ struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
             unitSymbol: unitSymbol,
             currentValue: concentration(at: timeH),
             currentTimeH: timeH,
-            points: visiblePoints.isEmpty ? points : visiblePoints,
+            points: visiblePoints,
             threshold: threshold,
             updatedAt: updatedAt
         )
@@ -84,7 +131,7 @@ struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
 
     func isExpired(
         at date: Date,
-        visibleWindowHours: Double = 6,
+        visibleWindowHours: Double = Double(WidgetDisplaySettings.defaultValue.surroundingHours),
         maxAge: TimeInterval = 12 * 60 * 60
     ) -> Bool {
         guard hasData else { return false }
@@ -149,7 +196,7 @@ struct WidgetHormoneSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-struct WidgetDoseOption: Codable, Identifiable, Hashable, Sendable {
+nonisolated struct WidgetDoseOption: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let planID: UUID
     let doseSlotID: UUID?
@@ -185,7 +232,7 @@ struct WidgetDoseOption: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct WidgetSnapshot: Codable, Equatable, Sendable {
+nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     let schemaVersion: Int
     let generatedAt: Date
     let hormones: [WidgetHormoneSnapshot]
@@ -207,7 +254,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-struct WidgetDoseHandoff: Codable, Equatable, Sendable {
+nonisolated struct WidgetDoseHandoff: Codable, Equatable, Sendable {
     let id: UUID
     let optionID: String
     let requestedAt: Date

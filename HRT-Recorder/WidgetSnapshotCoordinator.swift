@@ -1,54 +1,211 @@
 import Foundation
 import WidgetKit
 
+nonisolated struct WidgetSnapshotWriteTicket: Sendable {
+    fileprivate let sequence: UInt64
+}
+
 enum WidgetSnapshotCoordinator {
-    private static let windowPaddingHours = 6.0
-    private static let widgetTimelineHorizonHours = 12.0
-    private static let chartPointIntervalHours = 0.125
-    private static var chartPointCount: Int {
-        Int(((windowPaddingHours * 2 + widgetTimelineHorizonHours) / chartPointIntervalHours).rounded()) + 1
+    private struct CommitWaiter {
+        let minimumSequence: UInt64
+        let continuation: CheckedContinuation<Void, Never>
     }
 
-    static func makeSnapshot(
+    private nonisolated static let widgetTimelineHorizonHours = 12.0
+    private nonisolated static let chartPointIntervalHours = 0.125
+    private nonisolated static let writeDebounceNanoseconds: UInt64 = 200_000_000
+    private static var latestWriteSequence: UInt64 = 0
+    private static var latestCommittedSequence: UInt64 = 0
+    private static var pendingTimelineReload = false
+    private static var scheduledWriteTask: Task<Void, Never>?
+    private static var commitWaiters: [UUID: CommitWaiter] = [:]
+
+    private nonisolated static func chartPointCount(visibleWindowHours: Double) -> Int {
+        Int(ceil((visibleWindowHours * 2 + widgetTimelineHorizonHours) / chartPointIntervalHours)) + 1
+    }
+
+    private nonisolated static func isCurrentTaskCancelled() -> Bool {
+        withUnsafeCurrentTask { $0?.isCancelled ?? false }
+    }
+
+    private nonisolated static func buildSnapshot(
+        events: [DoseEvent],
+        bodyWeightKG: Double,
+        labSamples: [LabSample],
+        doseOptions: [WidgetDoseOption],
+        at date: Date,
+        visibleWindowHours: Double,
+        units: [SimulatedHormone: ConcentrationUnit],
+        thresholds: [SimulatedHormone: WidgetThresholdRange],
+        cancellationCheck: @Sendable () -> Bool
+    ) -> WidgetSnapshot {
+        guard !cancellationCheck() else {
+            return WidgetSnapshot(
+                schemaVersion: 1,
+                generatedAt: date,
+                hormones: [],
+                doseOptions: doseOptions
+            )
+        }
+
+        let participatingEvents = events.filter(\.participatesInSimulation)
+        let calibration = bodyWeightKG > 0
+            && !participatingEvents.isEmpty
+            && !labSamples.isEmpty
+            ? PKCalibrator.fit(
+                events: participatingEvents,
+                labs: labSamples,
+                bodyWeightKG: bodyWeightKG,
+                cancellationCheck: cancellationCheck
+            )
+            : CalibrationResult()
+
+        guard !cancellationCheck() else {
+            return WidgetSnapshot(
+                schemaVersion: 1,
+                generatedAt: date,
+                hormones: [],
+                doseOptions: doseOptions
+            )
+        }
+
+        var hormoneSnapshots: [WidgetHormoneSnapshot] = []
+        hormoneSnapshots.reserveCapacity(2)
+        for hormone in [SimulatedHormone.estradiol, .testosterone] {
+            guard !cancellationCheck() else { break }
+            let kind: WidgetHormoneKind = hormone == .estradiol ? .estradiol : .testosterone
+            let unit = units[hormone] ?? hormone.concentrationUnit
+            let threshold = thresholds[hormone]
+                ?? WidgetThresholdRange.defaultRange(for: kind)
+            hormoneSnapshots.append(
+                makeHormoneSnapshot(
+                    hormone: hormone,
+                    kind: kind,
+                    unit: unit,
+                    threshold: threshold,
+                    events: participatingEvents,
+                    bodyWeightKG: bodyWeightKG,
+                    calibration: calibration,
+                    at: date,
+                    visibleWindowHours: visibleWindowHours,
+                    cancellationCheck: cancellationCheck
+                )
+            )
+        }
+
+        return WidgetSnapshot(
+            schemaVersion: 1,
+            generatedAt: date,
+            hormones: hormoneSnapshots,
+            doseOptions: doseOptions
+        )
+    }
+
+    @discardableResult
+    static func enqueueSnapshotWrite(
         events: [DoseEvent],
         bodyWeightKG: Double,
         labSamples: [LabSample] = [],
         plans: [MedicationPlan],
-        at date: Date = Date()
-    ) -> WidgetSnapshot {
-        WidgetSnapshot(
-            schemaVersion: 1,
-            generatedAt: date,
-            hormones: SimulatedHormone.allCases.map {
-                makeHormoneSnapshot(
-                    hormone: $0,
+        reloadTimelines: Bool = true,
+        debounce: Bool = true
+    ) -> WidgetSnapshotWriteTicket {
+        latestWriteSequence &+= 1
+        let sequence = latestWriteSequence
+        pendingTimelineReload = pendingTimelineReload || reloadTimelines
+        scheduledWriteTask?.cancel()
+
+        let date = Date()
+        let visibleWindowHours = Double(WidgetSharedStore.displaySettings().surroundingHours)
+        let units = preferredUnits()
+        let thresholds = convertedThresholds(for: units)
+        let doseOptions = makeDoseOptions(from: plans)
+        let scheduledTask = Task { @MainActor in
+            if debounce {
+                do {
+                    try await Task.sleep(nanoseconds: writeDebounceNanoseconds)
+                } catch {
+                    return
+                }
+            }
+
+            guard !Task.isCancelled, latestWriteSequence == sequence else { return }
+            let worker = Task.detached(priority: .utility) {
+                buildSnapshot(
                     events: events,
                     bodyWeightKG: bodyWeightKG,
                     labSamples: labSamples,
-                    at: date
+                    doseOptions: doseOptions,
+                    at: date,
+                    visibleWindowHours: visibleWindowHours,
+                    units: units,
+                    thresholds: thresholds,
+                    cancellationCheck: isCurrentTaskCancelled
                 )
-            },
-            doseOptions: makeDoseOptions(from: plans)
-        )
+            }
+            let snapshot = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+
+            guard !Task.isCancelled, latestWriteSequence == sequence else { return }
+            commit(snapshot, for: sequence)
+        }
+        scheduledWriteTask = scheduledTask
+        return WidgetSnapshotWriteTicket(sequence: sequence)
     }
 
-    static func writeSnapshot(
-        events: [DoseEvent],
-        bodyWeightKG: Double,
-        labSamples: [LabSample] = [],
-        plans: [MedicationPlan],
-        reloadTimelines: Bool = true
-    ) {
-        let snapshot = makeSnapshot(
-            events: events,
-            bodyWeightKG: bodyWeightKG,
-            labSamples: labSamples,
-            plans: plans
-        )
-        WidgetSharedStore.writeSnapshot(snapshot)
+    static func waitForCommit(of ticket: WidgetSnapshotWriteTicket) async {
+        guard latestCommittedSequence < ticket.sequence else { return }
 
-        if reloadTimelines {
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if latestCommittedSequence >= ticket.sequence {
+                    continuation.resume()
+                } else {
+                    commitWaiters[waiterID] = CommitWaiter(
+                        minimumSequence: ticket.sequence,
+                        continuation: continuation
+                    )
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                cancelWaiter(waiterID, for: ticket.sequence)
+            }
+        }
+    }
+
+    private static func cancelWaiter(_ waiterID: UUID, for sequence: UInt64) {
+        guard let waiter = commitWaiters.removeValue(forKey: waiterID) else { return }
+        waiter.continuation.resume()
+        if latestWriteSequence == sequence {
+            scheduledWriteTask?.cancel()
+        }
+    }
+
+    private static func commit(_ snapshot: WidgetSnapshot, for sequence: UInt64) {
+        guard latestWriteSequence == sequence else { return }
+
+        WidgetSharedStore.writeSnapshot(snapshot)
+        scheduledWriteTask = nil
+        latestCommittedSequence = max(latestCommittedSequence, sequence)
+        resumeSatisfiedWaiters()
+        let shouldReloadTimelines = pendingTimelineReload
+        pendingTimelineReload = false
+        if shouldReloadTimelines {
             WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    private static func resumeSatisfiedWaiters() {
+        let readyIDs = commitWaiters.compactMap { id, waiter in
+            waiter.minimumSequence <= latestCommittedSequence ? id : nil
+        }
+        for id in readyIDs {
+            commitWaiters.removeValue(forKey: id)?.continuation.resume()
         }
     }
 
@@ -56,19 +213,21 @@ enum WidgetSnapshotCoordinator {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    private static func makeHormoneSnapshot(
+    private nonisolated static func makeHormoneSnapshot(
         hormone: SimulatedHormone,
+        kind: WidgetHormoneKind,
+        unit: ConcentrationUnit,
+        threshold: WidgetThresholdRange,
         events: [DoseEvent],
         bodyWeightKG: Double,
-        labSamples: [LabSample],
-        at date: Date
+        calibration: CalibrationResult,
+        at date: Date,
+        visibleWindowHours: Double,
+        cancellationCheck: @Sendable () -> Bool
     ) -> WidgetHormoneSnapshot {
-        let kind = WidgetHormoneKind(rawValue: hormone.rawValue) ?? .estradiol
-        let unit = preferredUnit(for: hormone)
-        let threshold = convertedThreshold(for: hormone, to: unit)
         let nowH = date.timeIntervalSince1970 / 3600.0
         let simulatedEvents = events
-            .filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
+            .filter { $0.simulatedHormone == hormone }
             .sorted { $0.timeH < $1.timeH }
 
         guard !simulatedEvents.isEmpty, bodyWeightKG > 0 else {
@@ -79,22 +238,18 @@ enum WidgetSnapshotCoordinator {
             )
         }
 
-        let calibration = PKCalibrator.fit(
-            events: events.filter(\.participatesInSimulation),
-            labs: labSamples,
-            bodyWeightKG: bodyWeightKG
-        )
         let engine = SimulationEngine(
             events: simulatedEvents,
             hormone: hormone,
             bodyWeightKG: bodyWeightKG,
-            startTimeH: nowH - windowPaddingHours,
-            endTimeH: nowH + widgetTimelineHorizonHours + windowPaddingHours,
-            numberOfSteps: chartPointCount,
+            startTimeH: nowH - visibleWindowHours,
+            endTimeH: nowH + widgetTimelineHorizonHours + visibleWindowHours,
+            numberOfSteps: chartPointCount(visibleWindowHours: visibleWindowHours),
             vdPerKGOverride: calibration.vdPerKGOverride(for: hormone),
-            kaMultiplier: calibration.kaMultiplier(for: hormone)
+            kaMultiplier: calibration.kaMultiplier(for: hormone),
+            cancellationCheck: cancellationCheck
         )
-        let result = engine.run().converted(to: unit)
+        let result = engine.run(cancellationCheck: cancellationCheck).converted(to: unit)
         let points = zip(result.timeH, result.concentrations).map {
             WidgetChartPoint(timeH: $0.0, concentration: $0.1)
         }
@@ -149,6 +304,25 @@ enum WidgetSnapshotCoordinator {
         }
 
         return options.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    private static func preferredUnits() -> [SimulatedHormone: ConcentrationUnit] {
+        Dictionary(
+            uniqueKeysWithValues: SimulatedHormone.allCases.map { hormone in
+                (hormone, preferredUnit(for: hormone))
+            }
+        )
+    }
+
+    private static func convertedThresholds(
+        for units: [SimulatedHormone: ConcentrationUnit]
+    ) -> [SimulatedHormone: WidgetThresholdRange] {
+        Dictionary(
+            uniqueKeysWithValues: SimulatedHormone.allCases.map { hormone in
+                let unit = units[hormone] ?? hormone.concentrationUnit
+                return (hormone, convertedThreshold(for: hormone, to: unit))
+            }
+        )
     }
 
     private static func preferredUnit(for hormone: SimulatedHormone) -> ConcentrationUnit {

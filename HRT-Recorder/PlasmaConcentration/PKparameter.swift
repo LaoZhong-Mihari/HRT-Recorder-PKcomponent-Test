@@ -6,7 +6,7 @@
 import Foundation
 import SwiftUI
 
-enum MedicationCategory: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum MedicationCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     case estradiol
     case testosterone
     case antiAndrogen
@@ -30,7 +30,7 @@ enum MedicationCategory: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
     case estradiol
     case testosterone
 
@@ -84,7 +84,7 @@ enum SimulatedHormone: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-enum ConcentrationUnit: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum ConcentrationUnit: String, CaseIterable, Identifiable, Codable, Sendable {
     case pgPerML
     case pmolPerL
     case ngPerDL
@@ -161,7 +161,7 @@ enum ConcentrationUnit: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-extension SimulatedHormone {
+nonisolated extension SimulatedHormone {
     nonisolated func preferredUnit(from rawValue: String?) -> ConcentrationUnit {
         guard let rawValue,
               let unit = ConcentrationUnit(rawValue: rawValue),
@@ -172,7 +172,7 @@ extension SimulatedHormone {
     }
 }
 
-struct SimulationDisplayMetadata: Equatable, Codable, Sendable {
+nonisolated struct SimulationDisplayMetadata: Equatable, Codable, Sendable {
     let hormone: SimulatedHormone
     let concentrationUnit: ConcentrationUnit
 
@@ -180,13 +180,13 @@ struct SimulationDisplayMetadata: Equatable, Codable, Sendable {
     nonisolated var aucSymbol: String { concentrationUnit.aucSymbol }
 }
 
-extension SimulationDisplayMetadata {
+nonisolated extension SimulationDisplayMetadata {
     nonisolated func withUnit(_ concentrationUnit: ConcentrationUnit) -> SimulationDisplayMetadata {
         SimulationDisplayMetadata(hormone: hormone, concentrationUnit: concentrationUnit)
     }
 }
 
-enum Compound: String, CaseIterable, Identifiable, Codable, Sendable {
+nonisolated enum Compound: String, CaseIterable, Identifiable, Codable, Sendable {
     case E2, EB, EV, EC, EN
     case T, TC, TE, TU
 
@@ -218,7 +218,7 @@ enum Compound: String, CaseIterable, Identifiable, Codable, Sendable {
 typealias Ester = Compound
 typealias EsterInfo = CompoundInfo
 
-struct CompoundInfo: Sendable {
+nonisolated struct CompoundInfo: Sendable {
     let compound: Compound
     let fullName: String
     let hormone: SimulatedHormone
@@ -259,7 +259,7 @@ struct CompoundInfo: Sendable {
     }
 }
 
-extension Compound {
+nonisolated extension Compound {
     static func fallback(
         for category: MedicationCategory?,
         route: DoseEvent.Route,
@@ -286,7 +286,7 @@ extension Compound {
     }
 }
 
-struct HormoneCoreParams: Sendable {
+nonisolated struct HormoneCoreParams: Sendable {
     let vdPerKG: Double
     let kClear: Double
     let kClearInjection: Double
@@ -294,7 +294,7 @@ struct HormoneCoreParams: Sendable {
     let patchReleaseScale: Double
 }
 
-struct CorePK {
+nonisolated struct CorePK {
     static let byHormone: [SimulatedHormone: HormoneCoreParams] = Dictionary(
         uniqueKeysWithValues: PKSharedCatalogResource.current.hormones.map { hormone, config in
             (
@@ -321,13 +321,13 @@ struct CorePK {
     static let patchReleaseScale: Double = byHormone[.estradiol]!.patchReleaseScale
 }
 
-struct TwoPartDepotParams: Sendable {
+nonisolated struct TwoPartDepotParams: Sendable {
     let fracFast: Double
     let k1Fast: Double
     let k1Slow: Double
 }
 
-struct TwoPartDepotPK {
+nonisolated struct TwoPartDepotPK {
     static let params: [Compound: TwoPartDepotParams] = Dictionary(
         uniqueKeysWithValues: PKSharedCatalogResource.current.twoPartDepot.map { compound, config in
             (compound, TwoPartDepotParams(fracFast: config.fracFast, k1Fast: config.k1Fast, k1Slow: config.k1Slow))
@@ -339,21 +339,21 @@ struct TwoPartDepotPK {
     }
 }
 
-struct InjectionPK {
+nonisolated struct InjectionPK {
     /// Effective formation / systemic fraction used by the simplified engine.
     static let formationFraction: [Compound: Double] = PKSharedCatalogResource.current.formationFraction
 }
 
-struct CompoundHydrolysisPK {
+nonisolated struct CompoundHydrolysisPK {
     static let k2: [Compound: Double] = PKSharedCatalogResource.current.hydrolysisK2
 }
 
-enum PatchRelease {
+nonisolated enum PatchRelease {
     case firstOrder(k1: Double)
     case zeroOrder(rateMGh: Double)
 }
 
-struct PatchPK {
+nonisolated struct PatchPK {
     static let fallbackK1ByHormone: [SimulatedHormone: Double] = Dictionary(
         uniqueKeysWithValues: PKSharedCatalogResource.current.hormones.map { ($0.key, $0.value.patchFallbackK1) }
     )
@@ -363,7 +363,7 @@ struct PatchPK {
     }
 }
 
-struct TransdermalGelPK {
+nonisolated struct TransdermalGelPK {
     static func parameters(doseMG: Double, areaCM2: Double, hormone: SimulatedHormone) -> (k1: Double, F: Double) {
         guard doseMG > 0 else { return (0, 0) }
         let config = PKSharedCatalogResource.current.hormones[hormone]
@@ -371,7 +371,7 @@ struct TransdermalGelPK {
     }
 }
 
-struct OralPK {
+nonisolated struct OralPK {
     struct DualAbsorptionParams: Sendable {
         let fracFast: Double
         let kAbsFast: Double
@@ -417,19 +417,19 @@ struct OralPK {
     }
 }
 
-enum SublingualTier: String, CaseIterable, Identifiable {
+nonisolated enum SublingualTier: String, CaseIterable, Identifiable {
     case quick, casual, standard, strict
     var id: Self { self }
 }
 
-struct SublingualTheta {
+nonisolated struct SublingualTheta {
     static let recommended: [SublingualTier: Double] = PKSharedCatalogResource.current.sublingualRecommendedTheta
     static let holdMinutes: [SublingualTier: Double] = PKSharedCatalogResource.current.sublingualHoldMinutes
     static let thetaRangeLow: [SublingualTier: Double] = PKSharedCatalogResource.current.sublingualThetaRangeLow
     static let thetaRangeHigh: [SublingualTier: Double] = PKSharedCatalogResource.current.sublingualThetaRangeHigh
 }
 
-enum CompoundSupport {
+nonisolated enum CompoundSupport {
     nonisolated static func availableCompounds(for category: MedicationCategory, route: DoseEvent.Route) -> [Compound] {
         switch category {
         case .antiAndrogen:

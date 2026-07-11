@@ -3,18 +3,21 @@ import SwiftUI
 struct WidgetThresholdSettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
-    private let onThresholdsChanged: () -> Void
+    private let onSettingsChanged: () -> Void
 
+    @State private var surroundingHours: Int
     @State private var estradiolLowText: String
     @State private var estradiolHighText: String
     @State private var testosteroneLowText: String
     @State private var testosteroneHighText: String
 
-    init(onThresholdsChanged: @escaping () -> Void) {
-        self.onThresholdsChanged = onThresholdsChanged
+    init(onSettingsChanged: @escaping () -> Void) {
+        self.onSettingsChanged = onSettingsChanged
+        let displaySettings = WidgetSharedStore.displaySettings()
         let thresholds = WidgetSharedStore.readThresholds()
         let estradiol = thresholds[.estradiol] ?? WidgetThresholdRange.defaultRange(for: .estradiol)
         let testosterone = thresholds[.testosterone] ?? WidgetThresholdRange.defaultRange(for: .testosterone)
+        _surroundingHours = State(initialValue: displaySettings.surroundingHours)
         _estradiolLowText = State(initialValue: Self.format(estradiol.low))
         _estradiolHighText = State(initialValue: Self.format(estradiol.high))
         _testosteroneLowText = State(initialValue: Self.format(testosterone.low))
@@ -35,6 +38,28 @@ struct WidgetThresholdSettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Stepper(
+                    value: $surroundingHours,
+                    in: WidgetDisplaySettings.allowedSurroundingHours
+                ) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Hours before and after now")
+                        Text(verbatim: "±\(surroundingHours) h")
+                            .font(.footnote.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .accessibilityValue(
+                    Text("Hours shown on each side of now: \(surroundingHours)")
+                )
+            } header: {
+                Text("Chart Window")
+            } footer: {
+                Text("The widget curve displays this many hours before and after the current time.")
+            }
+
             Section {
                 ThresholdEditorRows(
                     lowText: $estradiolLowText,
@@ -65,7 +90,7 @@ struct WidgetThresholdSettingsView: View {
                 }
             }
         }
-        .navigationTitle("Widget & Thresholds")
+        .navigationTitle("Widget Settings")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("common.save") {
@@ -94,6 +119,7 @@ struct WidgetThresholdSettingsView: View {
     }
 
     private func restoreDefaults() {
+        surroundingHours = WidgetDisplaySettings.defaultValue.surroundingHours
         let estradiol = WidgetThresholdRange.defaultRange(for: .estradiol)
         let testosterone = WidgetThresholdRange.defaultRange(for: .testosterone)
         estradiolLowText = Self.format(estradiol.low)
@@ -104,12 +130,15 @@ struct WidgetThresholdSettingsView: View {
 
     private func save() {
         guard let estradiolRange, let testosteroneRange else { return }
+        WidgetSharedStore.saveDisplaySettings(
+            WidgetDisplaySettings(surroundingHours: surroundingHours)
+        )
         WidgetSharedStore.saveThresholds([
             .estradiol: estradiolRange,
             .testosterone: testosteroneRange
         ])
-        onThresholdsChanged()
         dismiss()
+        onSettingsChanged()
     }
 
     private static func parse(_ text: String) -> Double? {

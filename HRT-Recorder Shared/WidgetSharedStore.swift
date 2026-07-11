@@ -6,6 +6,7 @@ enum WidgetSharedStore {
     private static let snapshotFileName = "widget_snapshot.json"
     private static let doseHandoffFileName = "widget_dose_handoff.json"
     private static let thresholdsKey = "widget.thresholds.v1"
+    private static let displaySettingsKey = "widget.display.settings.v1"
 
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
@@ -51,6 +52,19 @@ enum WidgetSharedStore {
     static func threshold(for hormone: WidgetHormoneKind) -> WidgetThresholdRange {
         let stored = readThresholds()[hormone] ?? WidgetThresholdRange.defaultRange(for: hormone)
         return stored.isValid ? stored : WidgetThresholdRange.defaultRange(for: hormone)
+    }
+
+    static func displaySettings() -> WidgetDisplaySettings {
+        guard let data = sharedDefaults.data(forKey: displaySettingsKey),
+              let settings = try? decoder.decode(WidgetDisplaySettings.self, from: data) else {
+            return .defaultValue
+        }
+        return settings.normalized
+    }
+
+    static func saveDisplaySettings(_ settings: WidgetDisplaySettings) {
+        guard let data = try? encoder.encode(settings.normalized) else { return }
+        sharedDefaults.set(data, forKey: displaySettingsKey)
     }
 
     static func readThresholds() -> [WidgetHormoneKind: WidgetThresholdRange] {

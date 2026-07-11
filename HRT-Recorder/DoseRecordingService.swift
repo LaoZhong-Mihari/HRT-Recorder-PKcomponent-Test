@@ -109,6 +109,8 @@ struct HormoneConcentrationSummary {
 
 enum DoseRecordingService {
     private static let medicationPlansFileName = "medication_plans.json"
+    private static let labReportsFileName = "lab_reports.json"
+    private static let legacyLabSamplesFileName = "lab_samples.json"
     private static let bodyWeightKey = "user.weightKg"
 
     static func loadPersistedEvents() throws -> [DoseEvent] {
@@ -174,7 +176,7 @@ enum DoseRecordingService {
         at date: Date = Date(),
         mutationID: UUID = UUID(),
         fingerprint: String? = nil
-    ) throws -> RecordedDoseSummary {
+    ) async throws -> RecordedDoseSummary {
         try validateRecordedAt(date)
         guard let parsedID = WidgetDoseOption.parseID(optionID) else {
             throw DoseRecordingError.invalidDoseOption
@@ -204,7 +206,7 @@ enum DoseRecordingService {
                 fingerprint: fingerprint
             )
         )
-        refreshProjections(with: result.snapshot, plans: plans)
+        await refreshProjections(with: result.snapshot, plans: plans)
 
         return RecordedDoseSummary(
             event: result.resolvedEvent ?? event,
@@ -219,7 +221,7 @@ enum DoseRecordingService {
         _ request: CustomDoseRecordingRequest,
         mutationID: UUID = UUID(),
         fingerprint: String? = nil
-    ) throws -> RecordedDoseSummary {
+    ) async throws -> RecordedDoseSummary {
         try validateRecordedAt(request.recordedAt)
         let plans = try loadMedicationPlans()
         let event = try makeDoseEvent(from: request)
@@ -231,7 +233,7 @@ enum DoseRecordingService {
                 fingerprint: fingerprint
             )
         )
-        refreshProjections(with: result.snapshot, plans: plans)
+        await refreshProjections(with: result.snapshot, plans: plans)
 
         return RecordedDoseSummary(
             event: result.resolvedEvent ?? event,
@@ -495,13 +497,37 @@ enum DoseRecordingService {
         abs(lhs - rhs) <= max(0.01, max(abs(lhs), abs(rhs)) * 0.02)
     }
 
-    private static func refreshProjections(with snapshot: DoseStoreSnapshot, plans: [MedicationPlan]) {
-        WidgetSnapshotCoordinator.writeSnapshot(
+    private static func refreshProjections(
+        with snapshot: DoseStoreSnapshot,
+        plans: [MedicationPlan]
+    ) async {
+        let ticket = WidgetSnapshotCoordinator.enqueueSnapshotWrite(
             events: snapshot.events,
             bodyWeightKG: persistedBodyWeightKG(),
-            plans: plans
+            labSamples: persistedLabSamples(),
+            plans: plans,
+            debounce: false
         )
+        await WidgetSnapshotCoordinator.waitForCommit(of: ticket)
         AppIntentIndexingCoordinator.refreshMedicationIndex(plans: plans)
+    }
+
+    private static func persistedLabSamples() -> [LabSample] {
+        let reports: [LabReport] = (try? loadValue(
+            filename: labReportsFileName,
+            defaultValue: []
+        )) ?? []
+        if !reports.isEmpty {
+            return reports
+                .flatMap(\.calibrationSamples)
+                .sorted { $0.timeH < $1.timeH }
+        }
+
+        let legacySamples: [LabSample] = (try? loadValue(
+            filename: legacyLabSamplesFileName,
+            defaultValue: []
+        )) ?? []
+        return legacySamples.sorted { $0.timeH < $1.timeH }
     }
 
     private static func doseDescription(for event: DoseEvent) -> String {

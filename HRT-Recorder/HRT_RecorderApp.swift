@@ -6,6 +6,42 @@
 //
 
 import SwiftUI
+import UIKit
+
+@MainActor
+private final class WidgetSnapshotBackgroundLease {
+    private let operation: Task<Void, Never>
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+
+    init(ticket: WidgetSnapshotWriteTicket) {
+        self.operation = Task { @MainActor in
+            await WidgetSnapshotCoordinator.waitForCommit(of: ticket)
+        }
+    }
+
+    func start() {
+        identifier = UIApplication.shared.beginBackgroundTask(
+            withName: "Refresh HRT widget"
+        ) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.operation.cancel()
+                self.end()
+            }
+        }
+
+        Task { @MainActor in
+            await self.operation.value
+            self.end()
+        }
+    }
+
+    private func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+}
 
 @main
 struct HRTRecorderApp: App {
@@ -174,21 +210,33 @@ struct HRTRecorderApp: App {
                     refreshWidgetSnapshot()
                     AppIntentIndexingCoordinator.refreshMedicationIndex(plans: medicationVM.plans)
                 }
-            } else if newPhase == .inactive || newPhase == .background {
+            } else if newPhase == .inactive {
                 labReportStore.saveSync()
                 medicationPlanStore.saveSync()
-                refreshWidgetSnapshot(reloadTimelines: false)
+            } else if newPhase == .background {
+                labReportStore.saveSync()
+                medicationPlanStore.saveSync()
+                let ticket = refreshWidgetSnapshot(
+                    reloadTimelines: false,
+                    debounce: false
+                )
+                WidgetSnapshotBackgroundLease(ticket: ticket).start()
             }
         }
     }
 
-    private func refreshWidgetSnapshot(reloadTimelines: Bool = true) {
-        WidgetSnapshotCoordinator.writeSnapshot(
+    @discardableResult
+    private func refreshWidgetSnapshot(
+        reloadTimelines: Bool = true,
+        debounce: Bool = true
+    ) -> WidgetSnapshotWriteTicket {
+        WidgetSnapshotCoordinator.enqueueSnapshotWrite(
             events: timelineVM.events,
             bodyWeightKG: timelineVM.bodyWeightKG,
             labSamples: timelineVM.labSamples,
             plans: medicationVM.plans,
-            reloadTimelines: reloadTimelines
+            reloadTimelines: reloadTimelines,
+            debounce: debounce
         )
     }
 

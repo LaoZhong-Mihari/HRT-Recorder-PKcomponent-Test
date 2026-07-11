@@ -84,8 +84,7 @@ struct MedicationPlansView: View {
                 Button {
                     activeSheet = .add
                 } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
+                    Image(systemName: "plus")
                 }
                 .accessibilityLabel(String(localized: "Create medication plan"))
             }
@@ -256,7 +255,7 @@ struct MedicationPlansView: View {
                             .offset(x: 120, y: 90)
 
                         Circle()
-                            .fill(Color.white.opacity(0.08))
+                            .fill(Color(uiColor: .systemBackground).opacity(0.12))
                             .frame(width: 150, height: 150)
                             .blur(radius: 24)
                             .offset(x: 155, y: -30)
@@ -266,7 +265,7 @@ struct MedicationPlansView: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                .stroke(Color(uiColor: .separator).opacity(0.24), lineWidth: 0.5)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 20, x: 0, y: 12)
     }
@@ -697,14 +696,11 @@ private struct MedicationImportView: View {
             }
             .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
             .navigationTitle("Import from Health")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
+                    Button("Close") {
                         dismiss()
-                    } label: {
-                        Text("Close")
-                            .fontWeight(.medium)
-                            .foregroundStyle(.pink)
                     }
                 }
 
@@ -946,24 +942,17 @@ private struct MedicationPlanEditorView: View {
                 }
             }
             .navigationTitle(existingPlan == nil ? String(localized: "Medication Plan") : String(localized: "Edit Plan"))
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
+                    Button("Cancel") {
                         dismiss()
-                    } label: {
-                        Text("Cancel")
-                            .fontWeight(.medium)
-                            .foregroundStyle(.pink)
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
+                    Button("Save") {
                         savePlan()
-                    } label: {
-                        Text("Save")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(canSavePlan ? .pink : .secondary)
                     }
                     .disabled(!canSavePlan)
                 }
@@ -1405,22 +1394,14 @@ private struct DailyDoseSlotEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
+                    Button("Cancel") {
                         dismiss()
-                    } label: {
-                        Text("Cancel")
-                            .fontWeight(.medium)
-                            .foregroundStyle(.pink)
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
+                    Button("Done") {
                         saveSlot()
-                    } label: {
-                        Text("Done")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(template?.hasConfiguredDose == true ? .pink : .secondary)
                     }
                     .disabled(template?.hasConfiguredDose != true)
                 }
@@ -1492,7 +1473,10 @@ private struct OverviewStatCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.white.opacity(0.54), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            Color(uiColor: .tertiarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
     }
 }
 
@@ -1525,6 +1509,7 @@ private struct InlineNoticeCard: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
         }
@@ -1605,7 +1590,7 @@ private struct ActionChip: View {
                 )
             )
         }
-        return AnyShapeStyle(Color.white.opacity(0.62))
+        return AnyShapeStyle(Color(uiColor: .tertiarySystemGroupedBackground))
     }
 }
 
@@ -1657,7 +1642,7 @@ private struct PlanActionButton: View {
                 )
             )
         case .destructive:
-            return AnyShapeStyle(Color.white.opacity(0.08))
+            return AnyShapeStyle(Color(uiColor: .tertiarySystemGroupedBackground))
         }
     }
 

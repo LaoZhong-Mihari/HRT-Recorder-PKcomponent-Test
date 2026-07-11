@@ -1,6 +1,6 @@
 import Foundation
 
-struct PKSharedCatalogResource: Sendable {
+nonisolated struct PKSharedCatalogResource: Sendable {
     struct HormoneConfig: Sendable {
         let displayName: String
         let concentrationUnit: ConcentrationUnit
@@ -56,7 +56,7 @@ struct PKSharedCatalogResource: Sendable {
     static let current = load()
 }
 
-private extension PKSharedCatalogResource {
+nonisolated private extension PKSharedCatalogResource {
     struct Document: Decodable {
         struct HormoneDocument: Decodable {
             let displayName: String

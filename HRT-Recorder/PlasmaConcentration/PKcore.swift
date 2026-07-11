@@ -19,7 +19,7 @@ import Accelerate
 
 // MARK: – Public dose event -------------------------------------------------
 
-struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
+nonisolated struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     let id: UUID
 
     enum Route: String, Codable {
@@ -139,7 +139,7 @@ struct DoseEvent: Equatable, Identifiable, Codable, Sendable {
     }
 }
 
-extension DoseEvent {
+nonisolated extension DoseEvent {
     nonisolated var ester: Ester { compound }
 
     nonisolated var rawDoseMG: Double {
@@ -179,7 +179,7 @@ extension DoseEvent {
 // MARK: – Parameter bundle after resolution ---------------------------------
 
 // MODIFIED: Switched to Two-Part Depot model parameters.
-struct PKParams: Sendable {
+nonisolated struct PKParams: Sendable {
     let Frac_fast: Double
     let k1_fast: Double
     let k1_slow: Double
@@ -194,7 +194,7 @@ struct PKParams: Sendable {
     let lagSlowH: Double
 }
 
-extension PKParams {
+nonisolated extension PKParams {
     nonisolated func applying(kaMultiplier: Double) -> PKParams {
         let multiplier = kaMultiplier.isFinite ? max(kaMultiplier, 0) : 1.0
         return PKParams(
@@ -215,7 +215,7 @@ extension PKParams {
 
 // MARK: – Resolver -----------------------------------------------------------
 
-struct ParameterResolver {
+nonisolated struct ParameterResolver {
     public static func resolve(event: DoseEvent, bodyWeightKG: Double) -> PKParams {
         guard let hormone = event.simulatedHormone else {
             return PKParams(Frac_fast: 0, k1_fast: 0, k1_slow: 0, k2: 0, k3: 0, F: 0, rateMGh: 0, F_fast: 0, F_slow: 0, lagFastH: 0, lagSlowH: 0)
@@ -362,7 +362,7 @@ struct ParameterResolver {
 
 // MARK: – Pre-computed Model for Performance --------------------------------
 
-fileprivate struct PrecomputedEventModel: Sendable {
+nonisolated fileprivate struct PrecomputedEventModel: Sendable {
     private let model: @Sendable (Double) -> Double
 
     init(event: DoseEvent, allEvents: [DoseEvent], bodyWeightKG: Double, kaMultiplier: Double = 1.0) {
@@ -437,7 +437,7 @@ fileprivate struct PrecomputedEventModel: Sendable {
 
 // MARK: – Three‑compartment analytic model ----------------------------------
 
-struct ThreeCompartmentModel {
+nonisolated struct ThreeCompartmentModel {
 
     /// Dual‑path with hydrolysis on both branches: each branch follows 3‑comp chain (k1 → k2 → k3).
     static func dualAbs3CAmount(tau: Double, doseMG: Double, p: PKParams) -> Double {
@@ -603,7 +603,7 @@ struct ThreeCompartmentModel {
 
 // MARK: – Simulation Engine
 
-struct SimulationResult: Equatable, Sendable {
+nonisolated struct SimulationResult: Equatable, Sendable {
     let timeH: [Double]
     let concentrations: [Double]
     let auc: Double
@@ -613,7 +613,7 @@ struct SimulationResult: Equatable, Sendable {
     nonisolated var concentrationUnit: ConcentrationUnit { displayMetadata.concentrationUnit }
 }
 
-extension SimulationResult {
+nonisolated extension SimulationResult {
     func concentration(at hour: Double) -> Double? {
         guard !timeH.isEmpty, timeH.count == concentrations.count else { return nil }
         if hour <= timeH.first! { return concentrations.first }
@@ -692,7 +692,7 @@ func simulateTimelineResult(
     return engine.run()
 }
 
-struct SimulationEngine: Sendable {
+nonisolated struct SimulationEngine: Sendable {
     private let precomputedModels: [PrecomputedEventModel]
     private let plasmaVolumeML: Double
     private let displayMetadata: SimulationDisplayMetadata
@@ -708,23 +708,27 @@ struct SimulationEngine: Sendable {
         endTimeH: Double,
         numberOfSteps: Int,
         vdPerKGOverride: Double? = nil,
-        kaMultiplier: Double = 1.0
+        kaMultiplier: Double = 1.0,
+        cancellationCheck: @Sendable () -> Bool = { false }
     ) {
-        self.precomputedModels = events.compactMap { event -> PrecomputedEventModel? in
-            guard event.participatesInSimulation,
-                  event.simulatedHormone == hormone,
-                  event.route != .patchRemove else {
-                return nil
-            }
-            return PrecomputedEventModel(
-                event: event,
-                allEvents: events.filter {
-                    $0.participatesInSimulation && $0.simulatedHormone == hormone
-                },
-                bodyWeightKG: bodyWeightKG,
-                kaMultiplier: kaMultiplier
+        let relevantEvents = events.filter {
+            $0.participatesInSimulation && $0.simulatedHormone == hormone
+        }
+        var models: [PrecomputedEventModel] = []
+        models.reserveCapacity(relevantEvents.count)
+        for event in relevantEvents {
+            guard !cancellationCheck() else { break }
+            guard event.route != .patchRemove else { continue }
+            models.append(
+                PrecomputedEventModel(
+                    event: event,
+                    allEvents: relevantEvents,
+                    bodyWeightKG: bodyWeightKG,
+                    kaMultiplier: kaMultiplier
+                )
             )
         }
+        self.precomputedModels = models
 
         let core = CorePK.params(for: hormone)
         let effectiveVdPerKG = vdPerKGOverride ?? core.vdPerKG
@@ -735,16 +739,23 @@ struct SimulationEngine: Sendable {
         self.numberOfSteps = numberOfSteps
     }
 
-    func predictedConcentration(atTimeH timeH: Double) -> Double {
+    func predictedConcentration(
+        atTimeH timeH: Double,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> Double {
         guard plasmaVolumeML > 0 else { return 0 }
-        let totalAmountMG = precomputedModels.reduce(0.0) { total, model in
-            total + model.amount(at: timeH)
+        var totalAmountMG = 0.0
+        for (index, model) in precomputedModels.enumerated() {
+            if index.isMultiple(of: 32), cancellationCheck() { return 0 }
+            totalAmountMG += model.amount(at: timeH)
         }
         let concentrationScale = displayMetadata.concentrationUnit.concentrationScale(for: displayMetadata.hormone)
         return totalAmountMG * concentrationScale / plasmaVolumeML
     }
 
-    func run() -> SimulationResult {
+    func run(
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> SimulationResult {
         guard startTimeH < endTimeH, numberOfSteps > 1, plasmaVolumeML > 0 else {
             return SimulationResult(timeH: [], concentrations: [], auc: 0, displayMetadata: displayMetadata)
         }
@@ -758,8 +769,19 @@ struct SimulationEngine: Sendable {
         var previousConc = 0.0
 
         for i in 0..<numberOfSteps {
+            if i.isMultiple(of: 8), cancellationCheck() {
+                return SimulationResult(
+                    timeH: [],
+                    concentrations: [],
+                    auc: 0,
+                    displayMetadata: displayMetadata
+                )
+            }
             let t = startTimeH + Double(i) * stepSize
-            let currentConc = predictedConcentration(atTimeH: t)
+            let currentConc = predictedConcentration(
+                atTimeH: t,
+                cancellationCheck: cancellationCheck
+            )
             
             timeArr.append(t)
             concArr.append(currentConc)
@@ -776,7 +798,7 @@ struct SimulationEngine: Sendable {
 
 // MARK: - Lab calibration
 
-struct LabSample: Identifiable, Codable, Equatable, Sendable {
+nonisolated struct LabSample: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     let hormone: SimulatedHormone
     let timeH: Double
@@ -833,7 +855,7 @@ struct LabSample: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-struct CalibrationSettings: Equatable, Sendable {
+nonisolated struct CalibrationSettings: Equatable, Sendable {
     var vdFactorBounds: ClosedRange<Double> = 0.25...4.0
     var minPredictedConcentration: Double = 1.0
     var kaFitMinLabs: Int = 3
@@ -843,7 +865,7 @@ struct CalibrationSettings: Equatable, Sendable {
     var kaLogPriorPrecision: Double = 2.0
 }
 
-struct CalibrationInfo: Codable, Equatable, Sendable {
+nonisolated struct CalibrationInfo: Codable, Equatable, Sendable {
     let curveFactor: Double
     let vdPerKG: Double
     let vdScale: Double
@@ -856,7 +878,7 @@ struct CalibrationInfo: Codable, Equatable, Sendable {
     }
 }
 
-struct CalibrationResult: Equatable, Sendable {
+nonisolated struct CalibrationResult: Equatable, Sendable {
     let infoByHormone: [SimulatedHormone: CalibrationInfo]
 
     nonisolated init(infoByHormone: [SimulatedHormone: CalibrationInfo] = [:]) {
@@ -872,16 +894,20 @@ struct CalibrationResult: Equatable, Sendable {
     }
 }
 
-enum PKCalibrator {
+nonisolated enum PKCalibrator {
     nonisolated static func fit(
         events: [DoseEvent],
         labs: [LabSample],
         bodyWeightKG: Double,
-        settings: CalibrationSettings = CalibrationSettings()
+        settings: CalibrationSettings = CalibrationSettings(),
+        cancellationCheck: @Sendable () -> Bool = { false }
     ) -> CalibrationResult {
         var infoByHormone: [SimulatedHormone: CalibrationInfo] = [:]
 
         for hormone in SimulatedHormone.allCases {
+            if cancellationCheck() {
+                return CalibrationResult(infoByHormone: infoByHormone)
+            }
             let hormoneLabs = labs.filter { $0.hormone == hormone && $0.concentration > 0 }
             guard !hormoneLabs.isEmpty else { continue }
 
@@ -908,13 +934,21 @@ enum PKCalibrator {
                 bodyWeightKG: bodyWeightKG,
                 startTimeH: minH - 1,
                 endTimeH: maxH + 1,
-                numberOfSteps: 2
+                numberOfSteps: 2,
+                cancellationCheck: cancellationCheck
             )
 
             let usableLabs = labValues.compactMap { lab -> (timeH: Double, measured: Double)? in
-                let predicted = baseEngine.predictedConcentration(atTimeH: lab.timeH)
+                guard !cancellationCheck() else { return nil }
+                let predicted = baseEngine.predictedConcentration(
+                    atTimeH: lab.timeH,
+                    cancellationCheck: cancellationCheck
+                )
                 guard predicted >= settings.minPredictedConcentration else { return nil }
                 return lab
+            }
+            if cancellationCheck() {
+                return CalibrationResult(infoByHormone: infoByHormone)
             }
             guard !usableLabs.isEmpty,
                   let latestLabTimeH = usableLabs.map(\.timeH).max() else {
@@ -925,7 +959,12 @@ enum PKCalibrator {
             let sampleCount = usableLabs.count
             if sampleCount < settings.kaFitMinLabs {
                 let meanLogRatio = usableLabs.reduce(0.0) { total, lab in
-                    total + log(baseEngine.predictedConcentration(atTimeH: lab.timeH) / lab.measured)
+                    total + log(
+                        baseEngine.predictedConcentration(
+                            atTimeH: lab.timeH,
+                            cancellationCheck: cancellationCheck
+                        ) / lab.measured
+                    )
                 } / Double(sampleCount)
                 let vdScale = clamp(exp(meanLogRatio), to: settings.vdFactorBounds)
                 infoByHormone[hormone] = CalibrationInfo(
@@ -944,7 +983,8 @@ enum PKCalibrator {
                 hormone: hormone,
                 labs: usableLabs,
                 bodyWeightKG: bodyWeightKG,
-                settings: settings
+                settings: settings,
+                cancellationCheck: cancellationCheck
             ) {
                 infoByHormone[hormone] = CalibrationInfo(
                     curveFactor: 1.0 / gridFit.vdScale,
@@ -965,7 +1005,8 @@ enum PKCalibrator {
         hormone: SimulatedHormone,
         labs: [(timeH: Double, measured: Double)],
         bodyWeightKG: Double,
-        settings: CalibrationSettings
+        settings: CalibrationSettings,
+        cancellationCheck: @Sendable () -> Bool
     ) -> (vdScale: Double, kaMultiplier: Double)? {
         let lowerKa = max(settings.kaMultiplierBounds.lowerBound, Double.leastNonzeroMagnitude)
         let upperKa = max(settings.kaMultiplierBounds.upperBound, lowerKa)
@@ -978,6 +1019,7 @@ enum PKCalibrator {
         var bestCost = Double.infinity
 
         for index in 0..<steps {
+            if cancellationCheck() { return nil }
             let fraction = Double(index) / Double(steps - 1)
             let logKa = -halfSpan + 2.0 * halfSpan * fraction
             let kaMultiplier = exp(logKa)
@@ -988,7 +1030,8 @@ enum PKCalibrator {
                 startTimeH: (labs.map(\.timeH).min() ?? 0) - 1,
                 endTimeH: (labs.map(\.timeH).max() ?? 0) + 1,
                 numberOfSteps: 2,
-                kaMultiplier: kaMultiplier
+                kaMultiplier: kaMultiplier,
+                cancellationCheck: cancellationCheck
             )
 
             var residuals: [Double] = []
@@ -996,7 +1039,11 @@ enum PKCalibrator {
             var collapsed = false
 
             for lab in labs {
-                let predicted = engine.predictedConcentration(atTimeH: lab.timeH)
+                if cancellationCheck() { return nil }
+                let predicted = engine.predictedConcentration(
+                    atTimeH: lab.timeH,
+                    cancellationCheck: cancellationCheck
+                )
                 guard predicted > 0 else {
                     collapsed = true
                     break

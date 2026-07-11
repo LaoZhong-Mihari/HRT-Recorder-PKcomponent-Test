@@ -365,7 +365,7 @@ struct RecordDoseIntent: AppIntent {
             case .success(let command):
                 try await confirm(command)
                 do {
-                    let dialog = try await MainActor.run { try execute(command).dialogText }
+                    let dialog = try await execute(command).dialogText
                     return .result(dialog: "\(dialog)")
                 } catch {
                     return .result(dialog: "\(localizedErrorMessage(error, fallback: "I could not record the dose."))")
@@ -493,17 +493,17 @@ struct RecordDoseIntent: AppIntent {
         }
     }
 
-    private func execute(_ command: DoseRecordCommand) throws -> RecordedDoseSummary {
+    private func execute(_ command: DoseRecordCommand) async throws -> RecordedDoseSummary {
         switch command {
         case .planned(let optionID, _, _, let recordedAt, let mutationID, let fingerprint):
-            return try DoseRecordingService.recordDose(
+            return try await DoseRecordingService.recordDose(
                 optionID: optionID,
                 at: recordedAt,
                 mutationID: mutationID,
                 fingerprint: fingerprint
             )
         case .custom(let request, let mutationID, let fingerprint):
-            return try DoseRecordingService.recordDose(
+            return try await DoseRecordingService.recordDose(
                 request,
                 mutationID: mutationID,
                 fingerprint: fingerprint
@@ -565,14 +565,12 @@ struct RecordPlannedDoseIntent: AppIntent {
         }
 
         do {
-            let dialog = try await MainActor.run {
-                try DoseRecordingService.recordDose(
-                    optionID: doseOption.id,
-                    at: occurredAt,
-                    mutationID: mutationID,
-                    fingerprint: fingerprint
-                ).dialogText
-            }
+            let dialog = try await DoseRecordingService.recordDose(
+                optionID: doseOption.id,
+                at: occurredAt,
+                mutationID: mutationID,
+                fingerprint: fingerprint
+            ).dialogText
             return .result(dialog: "\(dialog)")
         } catch {
             return .result(dialog: "\(localizedErrorMessage(error, fallback: "I could not record the planned dose."))")

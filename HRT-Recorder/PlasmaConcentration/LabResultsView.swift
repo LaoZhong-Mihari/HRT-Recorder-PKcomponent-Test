@@ -129,8 +129,7 @@ struct LabResultsView: View {
                     .disabled(isRunningAIDiagnostics)
                     #endif
                 } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 19, weight: .bold))
+                    Image(systemName: "plus")
                 }
                 .accessibilityLabel(Text("Add lab result"))
             }
@@ -598,8 +597,12 @@ private struct LabReportRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.pink)
-                .frame(width: 30, height: 30)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36)
+                .background(
+                    Color.accentColor.opacity(0.12),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(reportTitle)
@@ -618,8 +621,11 @@ private struct LabReportRow: View {
             Spacer(minLength: 12)
 
             Text("\(report.analytes.count)")
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
         }
         .padding(.vertical, 4)
     }
@@ -788,6 +794,7 @@ private struct PasteLabResultTextView: View {
                 .font(.body.monospaced())
                 .padding(12)
                 .navigationTitle("Paste Lab Text")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("common.cancel") {
@@ -881,6 +888,7 @@ private struct LabReportReviewView: View {
             }
         }
         .navigationTitle("Review Report")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("common.cancel") {

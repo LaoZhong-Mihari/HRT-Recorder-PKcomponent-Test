@@ -31,6 +31,7 @@ private enum TimelineSheet: Identifiable {
 }
 
 struct TimelineScreen: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject var vm: DoseTimelineVM
     @ObservedObject var medicationVM: MedicationPlanVM
@@ -68,7 +69,7 @@ struct TimelineScreen: View {
     }
 
     private var chartDockedCardHeight: CGFloat {
-        chartDockedPlotHeight + (dynamicTypeSize.isAccessibilitySize ? 150 : 118)
+        chartDockedPlotHeight + (dynamicTypeSize.isAccessibilitySize ? 200 : 118)
     }
 
     private var chartOverlayReserveHeight: CGFloat {
@@ -106,7 +107,15 @@ struct TimelineScreen: View {
                 Text("Testosterone").tag(SimulatedHormone.testosterone)
             }
             .pickerStyle(.segmented)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowBackground(Color.clear)
         }
+    }
+
+    private var chartTransition: AnyTransition {
+        accessibilityReduceMotion
+            ? .opacity
+            : .move(edge: .bottom).combined(with: .opacity)
     }
 
     private var timelineList: some View {
@@ -159,12 +168,11 @@ struct TimelineScreen: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(chartTransition)
                 }
             }
             .navigationTitle("timeline.title")
             .toolbar {
-                // Left: settings entry page
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
                         activeSheet = .settings
@@ -172,36 +180,20 @@ struct TimelineScreen: View {
                         if isHealthActionRunning {
                             ProgressView()
                                 .controlSize(.small)
-                                .frame(width: 36, height: 36)
-                                .background(toolbarButtonBackground)
-                                .overlay(toolbarButtonOutline)
                         } else {
-                            Image(systemName: "ellipsis.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(Color(uiColor: .label))
-                                .accessibilityLabel(Text("settings.toolbar.accessibility"))
-                                .frame(width: 36, height: 36)
-                                .background(toolbarButtonBackground)
-                                .overlay(toolbarButtonOutline)
+                            Image(systemName: "ellipsis")
                         }
                     }
-                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("settings.toolbar.accessibility"))
                 }
 
-                // Right: explicit trailing item for adding events
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         activeSheet = .add(UUID())
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(.pink)
-                            .frame(width: 36, height: 36)
-                            .background(toolbarButtonBackground)
-                            .overlay(toolbarButtonOutline)
-                            .accessibilityLabel(Text("timeline.toolbar.add"))
+                        Image(systemName: "plus")
                     }
-                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("timeline.toolbar.add"))
                 }
             }
             .sheet(item: $activeSheet) { mode in
@@ -245,11 +237,16 @@ struct TimelineScreen: View {
                             timelineVM: vm,
                             medicationVM: medicationVM,
                             onWidgetSettingsChanged: {
-                                WidgetSnapshotCoordinator.writeSnapshot(
-                                    events: vm.events,
-                                    bodyWeightKG: vm.bodyWeightKG,
-                                    labSamples: vm.labSamples,
-                                    plans: medicationVM.plans
+                                let events = vm.events
+                                let bodyWeightKG = vm.bodyWeightKG
+                                let labSamples = vm.labSamples
+                                let plans = medicationVM.plans
+                                WidgetSnapshotCoordinator.enqueueSnapshotWrite(
+                                    events: events,
+                                    bodyWeightKG: bodyWeightKG,
+                                    labSamples: labSamples,
+                                    plans: plans,
+                                    debounce: false
                                 )
                             },
                             onEditWeight: { activeSheet = .weight },
@@ -310,24 +307,13 @@ struct TimelineScreen: View {
     }
 
     private func toggleChartCollapse() {
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+        withAnimation(accessibilityReduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.86)) {
             isChartCollapsed.toggle()
         }
     }
 
     private func waitForHealthKitPresentationTransition() async {
         try? await Task.sleep(for: .milliseconds(350))
-    }
-
-    private var toolbarButtonBackground: some View {
-        Circle()
-            .fill(Color(uiColor: .secondarySystemBackground))
-            .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
-    }
-
-    private var toolbarButtonOutline: some View {
-        Circle()
-            .stroke(Color.black.opacity(0.08), lineWidth: 1)
     }
 
     private func importBodyWeight() async {
@@ -410,11 +396,11 @@ private struct TimelineChartOverlay: View {
     let onExpand: () -> Void
 
     private var controlButtonSize: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 48 : 40
+        dynamicTypeSize.isAccessibilitySize ? 48 : 44
     }
 
     private var cardCornerRadius: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 30 : 26
+        dynamicTypeSize.isAccessibilitySize ? 28 : 22
     }
 
     var body: some View {
@@ -432,6 +418,7 @@ private struct TimelineChartOverlay: View {
                 preferredChartHeight: chartHeight,
                 onSelectUnit: onSelectUnit
             )
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         }
         .padding(dynamicTypeSize.isAccessibilitySize ? 14 : 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -440,7 +427,7 @@ private struct TimelineChartOverlay: View {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.12), radius: 22, x: 0, y: 14)
+        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
     }
 
     private var collapseButton: some View {
@@ -448,8 +435,9 @@ private struct TimelineChartOverlay: View {
             Image(systemName: "chevron.down")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 19 : 16, weight: .semibold))
                 .frame(width: controlButtonSize, height: controlButtonSize)
-                .foregroundStyle(.white)
-                .background(Circle().fill(Color.black.opacity(0.78)))
+                .foregroundStyle(.primary)
+                .background(Circle().fill(Color(uiColor: .secondarySystemBackground)))
+                .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("timeline.chart.collapse.accessibility"))
@@ -460,8 +448,9 @@ private struct TimelineChartOverlay: View {
             Image(systemName: "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 19 : 16, weight: .semibold))
                 .frame(width: controlButtonSize, height: controlButtonSize)
-                .foregroundStyle(.white)
-                .background(Circle().fill(Color.black.opacity(0.78)))
+                .foregroundStyle(.primary)
+                .background(Circle().fill(Color(uiColor: .secondarySystemBackground)))
+                .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("timeline.chart.expand.accessibility"))
@@ -474,7 +463,7 @@ private struct TimelineChartCollapsedButton: View {
     let onExpand: () -> Void
 
     private var controlButtonSize: CGFloat {
-        dynamicTypeSize.isAccessibilitySize ? 48 : 40
+        dynamicTypeSize.isAccessibilitySize ? 48 : 44
     }
 
     var body: some View {
@@ -482,9 +471,10 @@ private struct TimelineChartCollapsedButton: View {
             Image(systemName: "chart.xyaxis.line")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 21 : 18, weight: .semibold))
                 .frame(width: controlButtonSize, height: controlButtonSize)
-                .foregroundStyle(.white)
-                .background(Circle().fill(Color.black.opacity(0.82)))
-                .shadow(color: Color.black.opacity(0.18), radius: 14, x: 0, y: 8)
+                .foregroundStyle(.primary)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 0.5))
+                .shadow(color: Color.black.opacity(0.12), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("timeline.chart.expand.accessibility"))
@@ -520,7 +510,11 @@ private struct TimelineChartFullscreen: View {
         GeometryReader { geometry in
             let controlRowHeight = controlButtonSize
             let plotHeight = max(
-                geometry.size.height - (outerPadding * 2) - (cardPadding * 2) - controlRowHeight - 96,
+                geometry.size.height
+                    - (outerPadding * 2)
+                    - (cardPadding * 2)
+                    - controlRowHeight
+                    - (dynamicTypeSize.isAccessibilitySize ? 180 : 96),
                 320
             )
 
@@ -541,6 +535,7 @@ private struct TimelineChartFullscreen: View {
                         preferredChartHeight: plotHeight,
                         onSelectUnit: onSelectUnit
                     )
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 }
                 .padding(cardPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -562,8 +557,9 @@ private struct TimelineChartFullscreen: View {
             Image(systemName: "arrow.down.right.and.arrow.up.left")
                 .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 20 : 17, weight: .semibold))
                 .frame(width: controlButtonSize, height: controlButtonSize)
-                .foregroundStyle(.white)
-                .background(Circle().fill(Color.black.opacity(0.78)))
+                .foregroundStyle(.primary)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("timeline.chart.collapse.accessibility"))
@@ -577,7 +573,7 @@ private struct TimelineEmptyStateView: View {
         VStack(spacing: 12) {
             Image(systemName: "waveform.path.ecg")
                 .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.pink)
+                .foregroundStyle(Color.accentColor)
 
             Text("timeline.empty")
                 .font(.headline)
@@ -585,16 +581,22 @@ private struct TimelineEmptyStateView: View {
                 .multilineTextAlignment(.center)
 
             Button(action: onAdd) {
-                Label("timeline.toolbar.add", systemImage: "plus.circle.fill")
+                Label("timeline.toolbar.add", systemImage: "plus")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.pink)
         }
         .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Color.black.opacity(0.06), radius: 16, x: 0, y: 10)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color(uiColor: .separator).opacity(0.22), lineWidth: 0.5)
+        }
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -610,11 +612,11 @@ private struct HealthSettingsView: View {
         Form {
             Section("Widget") {
                 NavigationLink {
-                    WidgetThresholdSettingsView(onThresholdsChanged: onWidgetSettingsChanged)
+                    WidgetThresholdSettingsView(onSettingsChanged: onWidgetSettingsChanged)
                 } label: {
                     SettingsRow(
-                        title: "Widget & Thresholds",
-                        subtitle: "Set low, medium, and high color markers"
+                        title: "Widget Settings",
+                        subtitle: "Set chart range and color markers"
                     )
                 }
             }
@@ -911,7 +913,7 @@ struct TimelineRowView: View {
     
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 15) {
+            HStack(spacing: 12) {
                 rowIcon
                 rowTextContent
                 Spacer()
@@ -919,7 +921,7 @@ struct TimelineRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 15) {
+                HStack(alignment: .top, spacing: 12) {
                     rowIcon
                     rowTextContent
                 }
@@ -932,9 +934,9 @@ struct TimelineRowView: View {
     private var rowIcon: some View {
         Image(systemName: icon.name)
             .font(dynamicTypeSize.isAccessibilitySize ? .title3 : .title2)
-            .foregroundColor(.white)
+            .foregroundStyle(icon.color)
             .frame(width: 40, height: 40)
-            .background(icon.color)
+            .background(icon.color.opacity(0.14))
             .clipShape(Circle())
     }
 
@@ -953,10 +955,10 @@ struct TimelineRowView: View {
     private var doseBadge: some View {
         if let doseText = doseText {
             Text(doseText)
-                .font(.headline.weight(.semibold))
+                .font(.subheadline.monospacedDigit().weight(.semibold))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Color(uiColor: .systemGray6))
+                .background(Color(uiColor: .tertiarySystemFill))
                 .clipShape(Capsule())
         }
     }
@@ -964,6 +966,7 @@ struct TimelineRowView: View {
 
 // New: dedicated weight editor view used by the sheet above
 struct WeightEditorView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var tempWeight: Double
     @State private var weightText: String
     @FocusState private var fieldFocused: Bool
@@ -993,7 +996,9 @@ struct WeightEditorView: View {
             HStack(alignment: .center, spacing: 20) {
                 // Decrease
                 Button(action: {
-                    withAnimation { tempWeight = max(30.0, (tempWeight - 0.1)) }
+                    withAnimation(accessibilityReduceMotion ? nil : .default) {
+                        tempWeight = max(30.0, (tempWeight - 0.1))
+                    }
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .resizable().scaledToFit()
@@ -1041,7 +1046,9 @@ struct WeightEditorView: View {
 
                 // Increase
                 Button(action: {
-                    withAnimation { tempWeight = min(200.0, (tempWeight + 0.1)) }
+                    withAnimation(accessibilityReduceMotion ? nil : .default) {
+                        tempWeight = min(200.0, (tempWeight + 0.1))
+                    }
                 }) {
                     Image(systemName: "plus.circle.fill")
                         .resizable().scaledToFit()
@@ -1056,20 +1063,17 @@ struct WeightEditorView: View {
         }
         .padding()
         .navigationTitle("timeline.bodyWeight.title")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Cancel in navigation bar leading
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button(action: {
                     onCancel()
                 }) {
                     Text("common.cancel")
-                        .fontWeight(.medium)
-                        .foregroundStyle(.pink)
                 }
             }
 
-            // Save in navigation bar trailing
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .confirmationAction) {
                 Button(action: {
                     let clamped = min(max(roundedTemp, 30.0), 200.0)
                     onSave(clamped)
@@ -1077,8 +1081,6 @@ struct WeightEditorView: View {
                     Text("common.save")
                 }
                 .disabled(!isDirty)
-                .buttonStyle(.borderedProminent)
-                .tint(.pink)
             }
 
             // Keep keyboard Done button

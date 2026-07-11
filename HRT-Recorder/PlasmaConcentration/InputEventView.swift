@@ -390,12 +390,21 @@ struct InputEventView: View {
                     if showsDatePicker {
                         DatePicker("input.time", selection: $draft.date, displayedComponents: [.date, .hourAndMinute])
                     }
-                    Picker("input.medication_type.title", selection: $draft.medicationCategory) {
-                        Text(DraftMedicationCategory.estradiol.displayName).tag(DraftMedicationCategory.estradiol)
-                        Text(DraftMedicationCategory.testosterone.displayName).tag(DraftMedicationCategory.testosterone)
-                        Text(DraftMedicationCategory.antiAndrogen.displayName).tag(DraftMedicationCategory.antiAndrogen)
+                    ViewThatFits(in: .horizontal) {
+                        Picker("input.medication_type.title", selection: $draft.medicationCategory) {
+                            Text(DraftMedicationCategory.estradiol.displayName).tag(DraftMedicationCategory.estradiol)
+                            Text(DraftMedicationCategory.testosterone.displayName).tag(DraftMedicationCategory.testosterone)
+                            Text(DraftMedicationCategory.antiAndrogen.displayName).tag(DraftMedicationCategory.antiAndrogen)
+                        }
+                        .pickerStyle(.segmented)
+
+                        Picker("input.medication_type.title", selection: $draft.medicationCategory) {
+                            Text(DraftMedicationCategory.estradiol.displayName).tag(DraftMedicationCategory.estradiol)
+                            Text(DraftMedicationCategory.testosterone.displayName).tag(DraftMedicationCategory.testosterone)
+                            Text(DraftMedicationCategory.antiAndrogen.displayName).tag(DraftMedicationCategory.antiAndrogen)
+                        }
+                        .pickerStyle(.menu)
                     }
-                    .pickerStyle(.segmented)
                     .onChange(of: draft.medicationCategory) { _ in
                         applyMedicationCategoryChange()
                     }
@@ -553,28 +562,21 @@ struct InputEventView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(Text(navigationTitleText))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
+                    Button("common.cancel") {
                         onCancel?()
                         dismiss()
-                    } label: {
-                        Text("common.cancel")
-                            .fontWeight(.medium)
-                            .foregroundStyle(.pink)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button {
+                    Button("common.save") {
                         save()
-                    } label: {
-                        Text("common.save")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(canSaveEvent ? .pink : .secondary)
                     }
-                        .disabled(!canSaveEvent)
+                    .disabled(!canSaveEvent)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()

@@ -26,11 +26,20 @@ private struct ResultChartBadge: View {
     var body: some View {
         Text(text)
             .font(.caption2.monospacedDigit())
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
+            .lineLimit(4)
+            .frame(maxWidth: 220, alignment: .leading)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(Color.black))
+            .padding(.vertical, 6)
+            .background(
+                Color(uiColor: .secondarySystemBackground),
+                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(Color(uiColor: .separator).opacity(0.35), lineWidth: 0.5)
+            }
     }
 }
 
@@ -38,6 +47,11 @@ private struct ResultChartWindow {
     let points: ArraySlice<ResultChartPoint>
     let labPoints: [ResultChartLabPoint]
     let yAxisDomain: ClosedRange<Double>
+}
+
+private struct ResultChartYAxisTarget: Equatable {
+    let metadata: SimulationDisplayMetadata
+    let upperBound: Double
 }
 
 private struct ResultChartZoomAnchor {
@@ -207,6 +221,7 @@ private struct ResultChartInteractionSurface: UIViewRepresentable {
 }
 
 struct ResultChartView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
     let availableUnits: [ConcentrationUnit]
@@ -223,6 +238,8 @@ struct ResultChartView: View {
     @State private var hoveredHour: Double?
     @State private var magnifyBaseline: Double?
     @State private var panBaselineScrollPosition: Double?
+    @State private var displayedYAxisUpperBound: Double?
+    @State private var displayedYAxisMetadata: SimulationDisplayMetadata?
 
     private let timer = Timer.publish(every: 60, tolerance: 5, on: .main, in: .common).autoconnect()
 
@@ -379,10 +396,6 @@ struct ResultChartView: View {
         max(totalDomain.upperBound - totalDomain.lowerBound, minVisibleDomainLength)
     }
 
-    private var isInteracting: Bool {
-        panBaselineScrollPosition != nil || magnifyBaseline != nil
-    }
-
     private var visibleChartWindow: ResultChartWindow {
         guard !chartPoints.isEmpty else {
             return ResultChartWindow(
@@ -427,6 +440,17 @@ struct ResultChartView: View {
         )
     }
 
+    private var targetYAxisUpperBound: Double {
+        visibleChartWindow.yAxisDomain.upperBound
+    }
+
+    private var yAxisTarget: ResultChartYAxisTarget {
+        ResultChartYAxisTarget(
+            metadata: sim.displayMetadata,
+            upperBound: targetYAxisUpperBound
+        )
+    }
+
     private var chartInterpolationMethod: InterpolationMethod {
         .catmullRom
     }
@@ -464,18 +488,6 @@ struct ResultChartView: View {
         availableUnits.count > 1 && onSelectUnit != nil
     }
 
-    private var unitMenuForegroundColor: Color {
-        Color(uiColor: .label)
-    }
-
-    private var unitMenuBackgroundColor: Color {
-        chartAccentColor.opacity(0.12)
-    }
-
-    private var unitMenuBorderColor: Color {
-        chartAccentColor.opacity(0.28)
-    }
-
     @ViewBuilder
     private var unitMenu: some View {
         if shouldShowUnitMenu, let onSelectUnit {
@@ -501,55 +513,70 @@ struct ResultChartView: View {
                     Image(systemName: "arrow.left.arrow.right")
                 }
                 .font(dynamicTypeSize.isAccessibilitySize ? .footnote.weight(.semibold) : .subheadline.weight(.semibold))
-                .foregroundStyle(unitMenuForegroundColor)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(unitMenuBackgroundColor))
-                .overlay(
-                    Capsule()
-                        .stroke(unitMenuBorderColor, lineWidth: 1)
-                )
-                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .tint(chartAccentColor)
             .accessibilityLabel(Text("chart.unit.accessibility"))
         }
     }
 
     private var chartHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(chartTitle)
-                        .font(.headline)
-                    Text(currentConcentrationText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(Text(currentConcentrationAccessibilityText))
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedChartHeader
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    horizontalChartHeader
+                    stackedChartHeader
                 }
-                Spacer(minLength: 0)
-                unitMenu
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(chartTitle)
-                        .font(.headline)
-                    Spacer(minLength: 0)
-                    unitMenu
-                }
-
-                Text(currentConcentrationText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(Text(currentConcentrationAccessibilityText))
             }
         }
         .padding(.horizontal)
     }
 
+    private var horizontalChartHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                chartHeaderLabels
+            }
+            Spacer(minLength: 0)
+            unitMenu
+        }
+    }
+
+    private var stackedChartHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            chartHeaderLabels
+            unitMenu
+        }
+    }
+
+    private var chartHeaderLabels: some View {
+        Group {
+            Text(chartTitle)
+                .font(.headline)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(currentConcentrationText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(Text(currentConcentrationAccessibilityText))
+        }
+    }
+
     private var concentrationChart: some View {
         let window = visibleChartWindow
+        let animatedYAxisUpperBound = displayedYAxisMetadata == sim.displayMetadata
+            ? displayedYAxisUpperBound
+            : nil
+        let yAxisUpperBound = animatedYAxisUpperBound ?? window.yAxisDomain.upperBound
+        let resolvedYAxisUpperBound = yAxisUpperBound.isFinite && yAxisUpperBound > 0
+            ? yAxisUpperBound
+            : 1
 
         return Chart {
             areaMarks(points: window.points)
@@ -558,11 +585,13 @@ struct ResultChartView: View {
             focusMarks
         }
         .chartXScale(domain: visibleDomain)
-        .chartYScale(domain: window.yAxisDomain)
+        .chartYScale(domain: 0...resolvedYAxisUpperBound)
         .chartXAxis {
             AxisMarks(values: xAxisValues) { value in
                 AxisGridLine()
+                    .foregroundStyle(Color.secondary.opacity(0.16))
                 AxisTick()
+                    .foregroundStyle(Color.secondary.opacity(0.35))
                 AxisValueLabel {
                     if let hour = value.as(Double.self) {
                         if shouldHideAxisLabel(at: hour) {
@@ -574,6 +603,7 @@ struct ResultChartView: View {
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .minimumScaleFactor(0.7)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -582,12 +612,14 @@ struct ResultChartView: View {
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: dynamicTypeSize.isAccessibilitySize ? (isPad ? 5 : 4) : (isPad ? 6 : 5))) { value in
                 AxisGridLine()
+                    .foregroundStyle(Color.secondary.opacity(0.16))
                 AxisValueLabel {
                     if let concentration = value.as(Double.self) {
-                        Text(ResultChartFormatter.yAxisLabel(for: concentration, unit: sim.concentrationUnit))
+                        Text(ResultChartFormatter.yAxisLabel(for: concentration))
                             .font(dynamicTypeSize.isAccessibilitySize ? .caption2 : .caption)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                            .foregroundStyle(.secondary)
                     } else {
                         EmptyView()
                     }
@@ -697,7 +729,7 @@ struct ResultChartView: View {
                         .fill(Color.orange)
                         .frame(width: 11, height: 11)
                     Circle()
-                        .stroke(Color.white, lineWidth: 2)
+                        .stroke(Color(uiColor: .systemBackground), lineWidth: 2)
                         .frame(width: 15, height: 15)
                 }
             }
@@ -712,22 +744,56 @@ struct ResultChartView: View {
                 .lineStyle(ruleLineStyle)
                 .foregroundStyle(Color.primary.opacity(interactiveHour == nil ? 0.7 : 0.85))
 
-            PointMark(
-                x: .value(xAxisLabel, point.hour),
-                y: .value(yAxisLabel, point.concentration)
-            )
-            .symbolSize(80)
-            .symbol {
-                ZStack {
-                    Circle().fill(chartAccentColor).frame(width: 12, height: 12)
-                    Circle().fill(Color.white).frame(width: 6, height: 6)
-                }
-            }
-            .annotation(position: .top) {
-                ResultChartBadge(text: focusBadgeText(predicted: point, lab: labPoint))
-                    .fixedSize()
+            if #available(iOS 17.0, *) {
+                focusPointMark(for: point)
+                    .annotation(
+                        position: .top,
+                        spacing: 4,
+                        overflowResolution: .init(
+                            x: .fit(to: .chart),
+                            y: .fit(to: .chart)
+                        )
+                    ) {
+                        focusBadge(for: point, lab: labPoint)
+                    }
+            } else {
+                focusPointMark(for: point)
+                    .annotation(position: focusAnnotationPosition(for: point.hour), spacing: 4) {
+                        focusBadge(for: point, lab: labPoint)
+                    }
             }
         }
+    }
+
+    private func focusPointMark(for point: ResultChartPoint) -> some ChartContent {
+        PointMark(
+            x: .value(xAxisLabel, point.hour),
+            y: .value(yAxisLabel, point.concentration)
+        )
+        .symbolSize(80)
+        .symbol {
+            ZStack {
+                Circle().fill(chartAccentColor).frame(width: 12, height: 12)
+                Circle().fill(Color(uiColor: .systemBackground)).frame(width: 6, height: 6)
+            }
+        }
+    }
+
+    private func focusBadge(for point: ResultChartPoint, lab: ResultChartLabPoint?) -> some View {
+        ResultChartBadge(text: focusBadgeText(predicted: point, lab: lab))
+    }
+
+    private func focusAnnotationPosition(for hour: Double) -> AnnotationPosition {
+        guard visibleDomainLength > 0 else { return .top }
+
+        let progress = (hour - visibleDomain.lowerBound) / visibleDomainLength
+        if progress <= 0.25 {
+            return .topTrailing
+        }
+        if progress >= 0.75 {
+            return .topLeading
+        }
+        return .top
     }
 
     private var ruleLineStyle: StrokeStyle {
@@ -765,15 +831,11 @@ struct ResultChartView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Text(chartAccessibilityLabel))
         }
-        .animation(.easeInOut(duration: 0.18), value: displayHour)
-        .transaction { transaction in
-            if isInteracting {
-                transaction.animation = nil
-            }
-        }
+        .animation(accessibilityReduceMotion ? nil : .easeInOut(duration: 0.18), value: displayHour)
         .onAppear {
             visibleDomainLength = defaultVisibleDomainLength
             scrollPosition = clampedLeadingHour(currentHour - visibleDomainLength / 2, visibleLength: visibleDomainLength)
+            applyYAxisTargetImmediately(yAxisTarget)
         }
         .onReceive(timer) { date in
             now = date
@@ -781,6 +843,49 @@ struct ResultChartView: View {
         .onChange(of: sim.timeH.first) { _ in
             visibleDomainLength = min(max(visibleDomainLength, minVisibleDomainLength), maxVisibleDomainLength)
             scrollPosition = clampedLeadingHour(currentHour - visibleDomainLength / 2, visibleLength: visibleDomainLength)
+        }
+        .onChange(of: yAxisTarget) { newTarget in
+            let semanticsChanged = displayedYAxisMetadata != newTarget.metadata
+            if semanticsChanged {
+                applyYAxisTargetImmediately(newTarget)
+            } else {
+                updateDisplayedYAxisUpperBound(to: newTarget.upperBound)
+            }
+        }
+        .onChange(of: accessibilityReduceMotion) { reduceMotion in
+            guard reduceMotion else { return }
+            applyYAxisTargetImmediately(yAxisTarget)
+        }
+    }
+
+    private func applyYAxisTargetImmediately(_ target: ResultChartYAxisTarget) {
+        guard target.upperBound.isFinite, target.upperBound > 0 else { return }
+
+        withTransaction(Transaction(animation: nil)) {
+            displayedYAxisMetadata = target.metadata
+            displayedYAxisUpperBound = target.upperBound
+        }
+    }
+
+    private func updateDisplayedYAxisUpperBound(to newValue: Double) {
+        guard newValue.isFinite, newValue > 0 else { return }
+        guard let displayedYAxisUpperBound else {
+            self.displayedYAxisUpperBound = newValue
+            return
+        }
+
+        let magnitude = max(abs(displayedYAxisUpperBound), abs(newValue))
+        let tolerance = max(magnitude * 0.000_1, Double.ulpOfOne)
+        guard abs(displayedYAxisUpperBound - newValue) > tolerance else { return }
+
+        if accessibilityReduceMotion {
+            withTransaction(Transaction(animation: nil)) {
+                self.displayedYAxisUpperBound = newValue
+            }
+        } else {
+            withAnimation(.linear(duration: 0.24)) {
+                self.displayedYAxisUpperBound = newValue
+            }
         }
     }
 
@@ -930,7 +1035,7 @@ private enum ResultChartFormatter {
         String(format: "%.1f %@", locale: Locale.current, concentration, unit.symbol)
     }
 
-    static func yAxisLabel(for concentration: Double, unit: ConcentrationUnit) -> String {
+    static func yAxisLabel(for concentration: Double) -> String {
         let magnitude = abs(concentration)
         let fractionDigits: Int
         if magnitude == 0 || magnitude >= 10 {
@@ -946,11 +1051,10 @@ private enum ResultChartFormatter {
         }
 
         return String(
-            format: "%.*f %@",
+            format: "%.*f",
             locale: Locale.current,
             fractionDigits,
-            concentration,
-            unit.symbol
+            concentration
         )
     }
 

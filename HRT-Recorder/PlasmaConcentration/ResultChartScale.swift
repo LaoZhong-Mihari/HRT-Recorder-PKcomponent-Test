@@ -67,18 +67,10 @@ enum ResultChartScale {
         }
 
         let paddedMaximum = concentration * 1.12
-        guard paddedMaximum.isFinite else {
-            return 0...concentration
-        }
-        let approximateStep = paddedMaximum / 5
-        guard let step = niceStep(atLeast: approximateStep) else {
-            return 0...max(concentration, 1)
-        }
-        let topBoundary = ceil(paddedMaximum / step) * step
-        guard topBoundary.isFinite else {
-            return 0...concentration
-        }
-        return 0...max(topBoundary, concentration)
+        let upperBound = paddedMaximum.isFinite
+            ? max(paddedMaximum, concentration)
+            : concentration
+        return 0...upperBound
     }
 
     private nonisolated static func maximumValidConcentration<S: Sequence>(in values: S) -> Double?
@@ -86,28 +78,6 @@ enum ResultChartScale {
         values.lazy
             .filter { $0.isFinite && $0 >= 0 }
             .max()
-    }
-
-    private nonisolated static func niceStep(atLeast value: Double) -> Double? {
-        guard value.isFinite, value > 0 else { return nil }
-
-        let magnitude = pow(10, floor(log10(value)))
-        guard magnitude.isFinite, magnitude > 0 else { return nil }
-        let normalized = value / magnitude
-        let multiplier: Double
-        if normalized <= 1 {
-            multiplier = 1
-        } else if normalized <= 2 {
-            multiplier = 2
-        } else if normalized <= 2.5 {
-            multiplier = 2.5
-        } else if normalized <= 5 {
-            multiplier = 5
-        } else {
-            multiplier = 10
-        }
-        let step = multiplier * magnitude
-        return step.isFinite && step > 0 ? step : nil
     }
 
     private nonisolated static func firstPointIndex(

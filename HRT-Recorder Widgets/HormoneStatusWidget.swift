@@ -5,13 +5,13 @@ struct HormoneStatusEntry: TimelineEntry {
     let date: Date
     let configuration: HormoneStatusWidgetIntent
     let snapshot: WidgetHormoneSnapshot
+    let surroundingHours: Int
     let isExpired: Bool
 }
 
 struct HormoneStatusProvider: AppIntentTimelineProvider {
     private static let timelineInterval: TimeInterval = 15 * 60
     private static let timelineHorizon: TimeInterval = 12 * 60 * 60
-    private static let chartWindowPaddingHours = 6.0
 
     func placeholder(in context: Context) -> HormoneStatusEntry {
         HormoneStatusEntry(
@@ -27,6 +27,7 @@ struct HormoneStatusProvider: AppIntentTimelineProvider {
                 threshold: WidgetThresholdRange.defaultRange(for: .estradiol),
                 updatedAt: Date()
             ),
+            surroundingHours: WidgetDisplaySettings.defaultValue.surroundingHours,
             isExpired: false
         )
     }
@@ -44,10 +45,16 @@ struct HormoneStatusProvider: AppIntentTimelineProvider {
     ) async -> Timeline<HormoneStatusEntry> {
         let now = Date()
         let snapshot = WidgetSharedStore.readSnapshot()
+        let surroundingHours = WidgetSharedStore.displaySettings().surroundingHours
         let hormone = configuration.hormone?.kind ?? .estradiol
         let hormoneSnapshot = snapshot.hormoneSnapshot(for: hormone)
             ?? WidgetHormoneSnapshot.empty(hormone: hormone, updatedAt: now)
-        let firstEntry = entry(for: configuration, date: now, hormoneSnapshot: hormoneSnapshot)
+        let firstEntry = entry(
+            for: configuration,
+            date: now,
+            hormoneSnapshot: hormoneSnapshot,
+            surroundingHours: surroundingHours
+        )
 
         guard hormoneSnapshot.hasData else {
             return Timeline(
@@ -56,8 +63,17 @@ struct HormoneStatusProvider: AppIntentTimelineProvider {
             )
         }
 
-        let entries = Self.entryDates(from: now, snapshot: hormoneSnapshot).map { date in
-            entry(for: configuration, date: date, hormoneSnapshot: hormoneSnapshot)
+        let entries = Self.entryDates(
+            from: now,
+            snapshot: hormoneSnapshot,
+            surroundingHours: surroundingHours
+        ).map { date in
+            entry(
+                for: configuration,
+                date: date,
+                hormoneSnapshot: hormoneSnapshot,
+                surroundingHours: surroundingHours
+            )
         }
         let reloadDate = entries.last?.date.addingTimeInterval(Self.timelineInterval) ?? now.addingTimeInterval(Self.timelineInterval)
 
@@ -83,34 +99,46 @@ struct HormoneStatusProvider: AppIntentTimelineProvider {
         let hormone = configuration.hormone?.kind ?? .estradiol
         let hormoneSnapshot = snapshot.hormoneSnapshot(for: hormone)
             ?? WidgetHormoneSnapshot.empty(hormone: hormone, updatedAt: date)
-        return entry(for: configuration, date: date, hormoneSnapshot: hormoneSnapshot)
+        return entry(
+            for: configuration,
+            date: date,
+            hormoneSnapshot: hormoneSnapshot,
+            surroundingHours: WidgetSharedStore.displaySettings().surroundingHours
+        )
     }
 
     private func entry(
         for configuration: HormoneStatusWidgetIntent,
         date: Date,
-        hormoneSnapshot: WidgetHormoneSnapshot
+        hormoneSnapshot: WidgetHormoneSnapshot,
+        surroundingHours: Int
     ) -> HormoneStatusEntry {
+        let visibleWindowHours = Double(surroundingHours)
         let resolvedSnapshot = hormoneSnapshot.resolved(
             at: date,
-            visibleWindowHours: Self.chartWindowPaddingHours
+            visibleWindowHours: visibleWindowHours
         )
 
         return HormoneStatusEntry(
             date: date,
             configuration: configuration,
             snapshot: resolvedSnapshot,
+            surroundingHours: surroundingHours,
             isExpired: hormoneSnapshot.isExpired(
                 at: date,
-                visibleWindowHours: Self.chartWindowPaddingHours,
+                visibleWindowHours: visibleWindowHours,
                 maxAge: Self.timelineHorizon
             )
         )
     }
 
-    private static func entryDates(from startDate: Date, snapshot: WidgetHormoneSnapshot) -> [Date] {
+    private static func entryDates(
+        from startDate: Date,
+        snapshot: WidgetHormoneSnapshot,
+        surroundingHours: Int
+    ) -> [Date] {
         let lastFullWindowDate = snapshot.points.last.map {
-            Date(timeIntervalSince1970: ($0.timeH - chartWindowPaddingHours) * 3600)
+            Date(timeIntervalSince1970: ($0.timeH - Double(surroundingHours)) * 3600)
         } ?? startDate
         let requestedEndDate = startDate.addingTimeInterval(timelineHorizon)
         let endDate = min(requestedEndDate, lastFullWindowDate)
@@ -158,6 +186,7 @@ struct HormoneStatusWidget: Widget {
 
 private struct HormoneStatusWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let entry: HormoneStatusEntry
 
@@ -190,13 +219,32 @@ private struct HormoneStatusWidgetView: View {
     }
 
     private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header(compact: true)
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
+                Text(entry.snapshot.displayName)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 0.65 : 0.8)
+                Spacer(minLength: 0)
+                if dynamicTypeSize.isAccessibilitySize {
+                    Image(systemName: level.compactSymbolName)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(level.color)
+                        .accessibilityLabel(Text(level.titleKey))
+                } else {
+                    StatusPill(level: level)
+                }
+            }
+
             ConcentrationValueView(snapshot: entry.snapshot, accentColor: accentColor, compact: true)
-            StatusPill(level: level)
-            MiniConcentrationChart(snapshot: entry.snapshot, accentColor: accentColor)
-                .frame(height: 34)
+            MiniConcentrationChart(
+                snapshot: entry.snapshot,
+                accentColor: accentColor,
+                style: .compact,
+                surroundingHours: entry.surroundingHours
+            )
+            .frame(minHeight: 32, idealHeight: 40, maxHeight: .infinity)
+            .layoutPriority(1)
         }
     }
 
@@ -208,8 +256,13 @@ private struct HormoneStatusWidgetView: View {
                 ConcentrationValueView(snapshot: entry.snapshot, accentColor: accentColor, compact: false)
             }
 
-            MiniConcentrationChart(snapshot: entry.snapshot, accentColor: accentColor)
-                .frame(maxHeight: .infinity)
+            MiniConcentrationChart(
+                snapshot: entry.snapshot,
+                accentColor: accentColor,
+                style: .regular,
+                surroundingHours: entry.surroundingHours
+            )
+            .frame(maxHeight: .infinity)
 
             HStack {
                 StatusPill(level: level)
@@ -231,16 +284,23 @@ private struct HormoneStatusWidgetView: View {
 
             ConcentrationValueView(snapshot: entry.snapshot, accentColor: accentColor, compact: false)
 
-            MiniConcentrationChart(snapshot: entry.snapshot, accentColor: accentColor)
-                .frame(maxHeight: .infinity)
+            MiniConcentrationChart(
+                snapshot: entry.snapshot,
+                accentColor: accentColor,
+                style: .expanded,
+                surroundingHours: entry.surroundingHours
+            )
+            .frame(maxHeight: .infinity)
 
             HStack {
-                Text("Past 6h")
+                Text(verbatim: "−\(entry.surroundingHours)h")
+                    .accessibilityLabel(Text("Hours before now: \(entry.surroundingHours)"))
                 Spacer()
                 Text("Now")
                     .foregroundStyle(accentColor)
                 Spacer()
-                Text("Next 6h")
+                Text(verbatim: "+\(entry.surroundingHours)h")
+                    .accessibilityLabel(Text("Hours after now: \(entry.surroundingHours)"))
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -343,46 +403,469 @@ private struct ConcentrationValueView: View {
     }
 }
 
-private struct MiniConcentrationChart: View {
-    let snapshot: WidgetHormoneSnapshot
-    let accentColor: Color
+private enum MiniChartStyle {
+    case compact
+    case regular
+    case expanded
 
-    var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let path = linePath(in: size)
-            let current = currentPoint(in: size)
-
-            ZStack {
-                horizontalGuide(in: size, value: snapshot.threshold.low)
-                    .stroke(Color.secondary.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                horizontalGuide(in: size, value: snapshot.threshold.high)
-                    .stroke(Color.secondary.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-
-                path
-                    .stroke(accentColor.opacity(0.28), lineWidth: 7)
-                    .blur(radius: 4)
-
-                path
-                    .stroke(accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-
-                Path { path in
-                    path.move(to: CGPoint(x: current.x, y: 0))
-                    path.addLine(to: CGPoint(x: current.x, y: size.height))
-                }
-                .stroke(accentColor.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
-
-                Circle()
-                    .fill(accentColor)
-                    .frame(width: 8, height: 8)
-                    .position(current)
-            }
+    var maximumPointCount: Int {
+        switch self {
+        case .compact: return 64
+        case .regular: return 120
+        case .expanded: return 180
         }
     }
 
-    private func linePath(in size: CGSize) -> Path {
+    var lineWidth: CGFloat {
+        switch self {
+        case .compact: return 2.25
+        case .regular: return 2.5
+        case .expanded: return 3
+        }
+    }
+
+    var verticalInset: CGFloat {
+        switch self {
+        case .compact: return 3
+        case .regular: return 4
+        case .expanded: return 5
+        }
+    }
+
+    var areaOpacity: Double {
+        switch self {
+        case .compact: return 0.16
+        case .regular: return 0.13
+        case .expanded: return 0.11
+        }
+    }
+
+    var showsGlow: Bool {
+        self == .expanded
+    }
+}
+
+private struct MiniChartScale {
+    let xDomain: ClosedRange<Double>
+    let yDomain: ClosedRange<Double>
+    let visibleThresholds: [Double]
+
+    init(snapshot: WidgetHormoneSnapshot, surroundingHours: Int) {
+        let points = snapshot.points.filter {
+            $0.timeH.isFinite && $0.concentration.isFinite && $0.concentration >= 0
+        }
+        let fallbackTime = snapshot.currentTimeH.isFinite ? snapshot.currentTimeH : 0
+        let resolvedHours = Double(
+            WidgetDisplaySettings(surroundingHours: surroundingHours).surroundingHours
+        )
+        xDomain = (fallbackTime - resolvedHours)...(fallbackTime + resolvedHours)
+
+        var values = points.map(\.concentration)
+        if let currentValue = snapshot.currentValue,
+           currentValue.isFinite,
+           currentValue >= 0 {
+            values.append(currentValue)
+        }
+
+        let thresholds = [snapshot.threshold.low, snapshot.threshold.high]
+            .filter { $0.isFinite && $0 >= 0 }
+        let resolvedDomain = Self.yDomain(for: values, nearbyThresholds: thresholds)
+        yDomain = resolvedDomain
+        visibleThresholds = thresholds.filter(resolvedDomain.contains)
+    }
+
+    private static func yDomain(
+        for values: [Double],
+        nearbyThresholds thresholds: [Double]
+    ) -> ClosedRange<Double> {
+        guard let rawMinimum = values.min(),
+              let rawMaximum = values.max(),
+              rawMinimum.isFinite,
+              rawMaximum.isFinite else {
+            return 0...1
+        }
+
+        var minimum = rawMinimum
+        var maximum = rawMaximum
+        let initialCenter = (minimum + maximum) / 2
+        let minimumSpan = max(abs(initialCenter) * 0.15, 1)
+        if maximum - minimum < minimumSpan {
+            minimum = initialCenter - minimumSpan / 2
+            maximum = initialCenter + minimumSpan / 2
+        }
+
+        let initialSpan = max(maximum - minimum, minimumSpan)
+        let initialPadding = initialSpan * 0.12
+        let initialLowerBound = minimum - initialPadding
+        let initialUpperBound = maximum + initialPadding
+        let proximity = max((initialUpperBound - initialLowerBound) * 0.45, minimumSpan * 0.5)
+        let includedThresholds = thresholds.filter {
+            $0 >= initialLowerBound - proximity && $0 <= initialUpperBound + proximity
+        }
+
+        if let thresholdMinimum = includedThresholds.min() {
+            minimum = min(minimum, thresholdMinimum)
+        }
+        if let thresholdMaximum = includedThresholds.max() {
+            maximum = max(maximum, thresholdMaximum)
+        }
+
+        let center = (minimum + maximum) / 2
+        let resolvedMinimumSpan = max(abs(center) * 0.15, 1)
+        if maximum - minimum < resolvedMinimumSpan {
+            minimum = center - resolvedMinimumSpan / 2
+            maximum = center + resolvedMinimumSpan / 2
+        }
+
+        let span = max(maximum - minimum, resolvedMinimumSpan)
+        let padding = span * 0.12
+        let lowerBound = max(minimum - padding, 0)
+        let proposedUpperBound = maximum + padding
+        let upperBound = proposedUpperBound.isFinite
+            ? proposedUpperBound
+            : max(maximum, lowerBound + 1)
+        return lowerBound...max(upperBound, lowerBound + 0.001)
+    }
+}
+
+private enum MiniChartSampler {
+    private struct ExtremaCandidate {
+        let index: Int
+        let salience: Double
+    }
+
+    static func sample(
+        _ points: [WidgetChartPoint],
+        maximumCount: Int,
+        preserving currentPoint: WidgetChartPoint?
+    ) -> [WidgetChartPoint] {
+        let validPoints = points.filter {
+            $0.timeH.isFinite && $0.concentration.isFinite && $0.concentration >= 0
+        }
+        guard maximumCount >= 5, !validPoints.isEmpty else {
+            return Array(validPoints.prefix(max(maximumCount, 0)))
+        }
+
+        let resolvedCurrent = currentPoint.flatMap { point -> WidgetChartPoint? in
+            guard point.timeH.isFinite,
+                  point.concentration.isFinite,
+                  point.concentration >= 0,
+                  let firstTime = validPoints.first?.timeH,
+                  let lastTime = validPoints.last?.timeH,
+                  point.timeH >= firstTime,
+                  point.timeH <= lastTime else {
+                return nil
+            }
+            return point
+        }
+        let currentLocation = locateCurrentPoint(resolvedCurrent, in: validPoints)
+        let insertsCurrent = resolvedCurrent != nil && currentLocation.exactIndex == nil
+        let rawBudget = max(maximumCount - (insertsCurrent ? 1 : 0), 2)
+
+        guard validPoints.count > rawBudget else {
+            return merge(currentPoint: resolvedCurrent, into: validPoints)
+        }
+
+        var selected = [Bool](repeating: false, count: validPoints.count)
+        var selectedCount = 0
+
+        func select(_ index: Int?) {
+            guard let index,
+                  validPoints.indices.contains(index),
+                  !selected[index],
+                  selectedCount < rawBudget else {
+                return
+            }
+            selected[index] = true
+            selectedCount += 1
+        }
+
+        select(validPoints.startIndex)
+        select(validPoints.index(before: validPoints.endIndex))
+        let globalExtrema = globalExtremaIndices(in: validPoints)
+        select(globalExtrema.minimum)
+        select(globalExtrema.maximum)
+        select(currentLocation.exactIndex)
+        select(currentLocation.previousIndex)
+        select(currentLocation.nextIndex)
+
+        let extrema = extremaCandidates(in: validPoints)
+        let extremaCapacity = max(rawBudget - selectedCount, 0)
+        if extrema.count <= extremaCapacity {
+            for candidate in extrema {
+                select(candidate.index)
+            }
+        } else if extremaCapacity > 0 {
+            // Preserve the most visually significant extremum in each temporal
+            // region. This retains multiple nearby dose peaks when the point
+            // budget permits, while keeping the complete operation O(n).
+            for bucket in 0..<extremaCapacity {
+                let start = bucket * extrema.count / extremaCapacity
+                let end = (bucket + 1) * extrema.count / extremaCapacity
+                guard start < end else { continue }
+
+                var best = extrema[start]
+                for candidate in extrema[(start + 1)..<end]
+                    where candidate.salience > best.salience {
+                    best = candidate
+                }
+                select(best.index)
+            }
+        }
+
+        fillRemainingBudget(
+            points: validPoints,
+            selected: &selected,
+            selectedCount: &selectedCount,
+            budget: rawBudget
+        )
+
+        var sampled: [WidgetChartPoint] = []
+        sampled.reserveCapacity(maximumCount)
+        for index in validPoints.indices where selected[index] {
+            sampled.append(validPoints[index])
+        }
+        return merge(currentPoint: resolvedCurrent, into: sampled)
+    }
+
+    private static func globalExtremaIndices(
+        in points: [WidgetChartPoint]
+    ) -> (minimum: Int?, maximum: Int?) {
+        guard let firstIndex = points.indices.first else { return (nil, nil) }
+
+        var minimumIndex = firstIndex
+        var maximumIndex = firstIndex
+        for index in points.indices.dropFirst() {
+            if points[index].concentration < points[minimumIndex].concentration {
+                minimumIndex = index
+            }
+            if points[index].concentration > points[maximumIndex].concentration {
+                maximumIndex = index
+            }
+        }
+        return (minimumIndex, maximumIndex)
+    }
+
+    private static func extremaCandidates(
+        in points: [WidgetChartPoint]
+    ) -> [ExtremaCandidate] {
+        guard points.count >= 3 else { return [] }
+
+        var candidates: [ExtremaCandidate] = []
+        candidates.reserveCapacity(points.count / 4)
+        for index in 1..<(points.count - 1) {
+            let previous = points[index - 1].concentration
+            let current = points[index].concentration
+            let next = points[index + 1].concentration
+            let isMaximum = (current > previous && current >= next)
+                || (current >= previous && current > next)
+            let isMinimum = (current < previous && current <= next)
+                || (current <= previous && current < next)
+            guard isMaximum || isMinimum else { continue }
+
+            candidates.append(
+                ExtremaCandidate(
+                    index: index,
+                    salience: abs(current - (previous + next) / 2)
+                )
+            )
+        }
+        return candidates
+    }
+
+    private static func fillRemainingBudget(
+        points: [WidgetChartPoint],
+        selected: inout [Bool],
+        selectedCount: inout Int,
+        budget: Int
+    ) {
+        let remaining = budget - selectedCount
+        guard remaining > 0, points.count > 2 else { return }
+
+        let interiorCount = points.count - 2
+        let bucketCount = max((remaining + 1) / 2, 1)
+        for bucket in 0..<bucketCount where selectedCount < budget {
+            let start = 1 + bucket * interiorCount / bucketCount
+            let end = 1 + (bucket + 1) * interiorCount / bucketCount
+            guard start < end else { continue }
+
+            var minimumIndex = start
+            var maximumIndex = start
+            for index in (start + 1)..<min(end, points.count - 1) {
+                if points[index].concentration < points[minimumIndex].concentration {
+                    minimumIndex = index
+                }
+                if points[index].concentration > points[maximumIndex].concentration {
+                    maximumIndex = index
+                }
+            }
+
+            for index in [minimumIndex, maximumIndex]
+                where selectedCount < budget && !selected[index] {
+                selected[index] = true
+                selectedCount += 1
+            }
+        }
+
+        // Critical points may overlap bucket extrema. Use an evenly distributed
+        // final pass so that duplicate selections do not waste the point budget.
+        guard selectedCount < budget else { return }
+        let desired = budget - selectedCount
+        let stride = max((points.count - 2) / max(desired, 1), 1)
+        var index = 1
+        while index < points.count - 1 && selectedCount < budget {
+            if !selected[index] {
+                selected[index] = true
+                selectedCount += 1
+            }
+            index += stride
+        }
+    }
+
+    private static func locateCurrentPoint(
+        _ currentPoint: WidgetChartPoint?,
+        in points: [WidgetChartPoint]
+    ) -> (exactIndex: Int?, previousIndex: Int?, nextIndex: Int?) {
+        guard let currentPoint else { return (nil, nil, nil) }
+        let tolerance = 0.000_001
+        var previousIndex: Int?
+
+        for index in points.indices {
+            let delta = points[index].timeH - currentPoint.timeH
+            if abs(delta) <= tolerance {
+                return (index, index > points.startIndex ? index - 1 : nil,
+                        index < points.index(before: points.endIndex) ? index + 1 : nil)
+            }
+            if delta > 0 {
+                return (nil, previousIndex, index)
+            }
+            previousIndex = index
+        }
+        return (nil, previousIndex, nil)
+    }
+
+    private static func merge(
+        currentPoint: WidgetChartPoint?,
+        into points: [WidgetChartPoint]
+    ) -> [WidgetChartPoint] {
+        guard let currentPoint else { return points }
+        let tolerance = 0.000_001
+        var result: [WidgetChartPoint] = []
+        result.reserveCapacity(points.count + 1)
+        var inserted = false
+
+        for point in points {
+            if !inserted, abs(point.timeH - currentPoint.timeH) <= tolerance {
+                result.append(currentPoint)
+                inserted = true
+            } else {
+                if !inserted, point.timeH > currentPoint.timeH {
+                    result.append(currentPoint)
+                    inserted = true
+                }
+                result.append(point)
+            }
+        }
+
+        if !inserted {
+            result.append(currentPoint)
+        }
+        return result
+    }
+}
+
+private struct MiniConcentrationChart: View {
+    let snapshot: WidgetHormoneSnapshot
+    let accentColor: Color
+    let style: MiniChartStyle
+    let surroundingHours: Int
+
+    var body: some View {
+        GeometryReader { proxy in
+            let horizontalInset: CGFloat = 2
+            let plotRect = CGRect(
+                x: horizontalInset,
+                y: style.verticalInset,
+                width: max(proxy.size.width - horizontalInset * 2, 1),
+                height: max(proxy.size.height - style.verticalInset * 2, 1)
+            )
+            let scale = MiniChartScale(
+                snapshot: snapshot,
+                surroundingHours: surroundingHours
+            )
+            let exactCurrentPoint = snapshot.currentValue.map {
+                WidgetChartPoint(
+                    timeH: snapshot.currentTimeH,
+                    concentration: $0
+                )
+            }
+            let sampledPoints = MiniChartSampler.sample(
+                snapshot.points,
+                maximumCount: style.maximumPointCount,
+                preserving: exactCurrentPoint
+            )
+            let renderedPoints = sampledPoints.map { point(in: plotRect, scale: scale, for: $0) }
+            let curve = linePath(points: renderedPoints)
+
+            ZStack {
+                areaPath(points: renderedPoints, baseline: plotRect.maxY)
+                    .fill(
+                        LinearGradient(
+                            colors: [accentColor.opacity(style.areaOpacity), accentColor.opacity(0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                ForEach(scale.visibleThresholds, id: \.self) { threshold in
+                    horizontalGuide(in: plotRect, scale: scale, value: threshold)
+                        .stroke(
+                            Color.secondary.opacity(0.22),
+                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                        )
+                }
+
+                if style.showsGlow {
+                    curve
+                        .stroke(accentColor.opacity(0.2), lineWidth: style.lineWidth + 3)
+                        .blur(radius: 2.5)
+                }
+
+                curve
+                    .stroke(
+                        accentColor,
+                        style: StrokeStyle(
+                            lineWidth: style.lineWidth,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+
+                if let current = currentPoint(in: plotRect, scale: scale) {
+                    Path { path in
+                        path.move(to: CGPoint(x: current.x, y: plotRect.minY))
+                        path.addLine(to: CGPoint(x: current.x, y: plotRect.maxY))
+                    }
+                    .stroke(
+                        accentColor.opacity(0.32),
+                        style: StrokeStyle(lineWidth: 1, dash: [2, 3])
+                    )
+
+                    Circle()
+                        .fill(accentColor)
+                        .frame(
+                            width: style == .compact ? 7 : 8,
+                            height: style == .compact ? 7 : 8
+                        )
+                        .position(current)
+                }
+            }
+            .clipped()
+        }
+    }
+
+    private func linePath(points: [CGPoint]) -> Path {
         Path { path in
-            let points = snapshot.points.map { point(in: size, for: $0) }
             guard let first = points.first else { return }
             path.move(to: first)
             for point in points.dropFirst() {
@@ -391,46 +874,72 @@ private struct MiniConcentrationChart: View {
         }
     }
 
-    private func horizontalGuide(in size: CGSize, value: Double) -> Path {
+    private func areaPath(points: [CGPoint], baseline: CGFloat) -> Path {
         Path { path in
-            let y = yPosition(in: size, concentration: value)
-            path.move(to: CGPoint(x: 0, y: y))
-            path.addLine(to: CGPoint(x: size.width, y: y))
+            guard let first = points.first, let last = points.last else { return }
+            path.move(to: CGPoint(x: first.x, y: baseline))
+            path.addLine(to: first)
+            for point in points.dropFirst() {
+                path.addLine(to: point)
+            }
+            path.addLine(to: CGPoint(x: last.x, y: baseline))
+            path.closeSubpath()
         }
     }
 
-    private func currentPoint(in size: CGSize) -> CGPoint {
-        let concentration = snapshot.currentValue ?? 0
+    private func horizontalGuide(
+        in rect: CGRect,
+        scale: MiniChartScale,
+        value: Double
+    ) -> Path {
+        Path { path in
+            let y = yPosition(in: rect, domain: scale.yDomain, concentration: value)
+            path.move(to: CGPoint(x: rect.minX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
+        }
+    }
+
+    private func currentPoint(in rect: CGRect, scale: MiniChartScale) -> CGPoint? {
+        guard let concentration = snapshot.currentValue,
+              concentration.isFinite,
+              concentration >= 0 else {
+            return nil
+        }
         return CGPoint(
-            x: xPosition(in: size, timeH: snapshot.currentTimeH),
-            y: yPosition(in: size, concentration: concentration)
+            x: xPosition(in: rect, domain: scale.xDomain, timeH: snapshot.currentTimeH),
+            y: yPosition(in: rect, domain: scale.yDomain, concentration: concentration)
         )
     }
 
-    private func point(in size: CGSize, for chartPoint: WidgetChartPoint) -> CGPoint {
+    private func point(
+        in rect: CGRect,
+        scale: MiniChartScale,
+        for chartPoint: WidgetChartPoint
+    ) -> CGPoint {
         CGPoint(
-            x: xPosition(in: size, timeH: chartPoint.timeH),
-            y: yPosition(in: size, concentration: chartPoint.concentration)
+            x: xPosition(in: rect, domain: scale.xDomain, timeH: chartPoint.timeH),
+            y: yPosition(in: rect, domain: scale.yDomain, concentration: chartPoint.concentration)
         )
     }
 
-    private func xPosition(in size: CGSize, timeH: Double) -> CGFloat {
-        guard let first = snapshot.points.first?.timeH,
-              let last = snapshot.points.last?.timeH,
-              last > first else {
-            return size.width / 2
-        }
-        let ratio = min(max((timeH - first) / (last - first), 0), 1)
-        return size.width * CGFloat(ratio)
+    private func xPosition(
+        in rect: CGRect,
+        domain: ClosedRange<Double>,
+        timeH: Double
+    ) -> CGFloat {
+        let span = max(domain.upperBound - domain.lowerBound, 0.001)
+        let ratio = min(max((timeH - domain.lowerBound) / span, 0), 1)
+        return rect.minX + rect.width * CGFloat(ratio)
     }
 
-    private func yPosition(in size: CGSize, concentration: Double) -> CGFloat {
-        let values = snapshot.points.map(\.concentration) + [snapshot.threshold.low, snapshot.threshold.high, snapshot.currentValue ?? 0]
-        let maxValue = max(values.max() ?? 1, 1)
-        let minValue = min(values.min() ?? 0, 0)
-        let range = max(maxValue - minValue, 1)
-        let ratio = min(max((concentration - minValue) / range, 0), 1)
-        return size.height - size.height * CGFloat(ratio)
+    private func yPosition(
+        in rect: CGRect,
+        domain: ClosedRange<Double>,
+        concentration: Double
+    ) -> CGFloat {
+        let span = max(domain.upperBound - domain.lowerBound, 0.001)
+        let ratio = min(max((concentration - domain.lowerBound) / span, 0), 1)
+        return rect.maxY - rect.height * CGFloat(ratio)
     }
 }
 
@@ -440,6 +949,7 @@ private struct StatusPill: View {
     var body: some View {
         Text(level.titleKey)
             .font(.caption2.weight(.semibold))
+            .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .foregroundStyle(level.color)
@@ -491,6 +1001,19 @@ private enum ConcentrationLevel {
             return .orange
         case .unavailable:
             return .secondary
+        }
+    }
+
+    var compactSymbolName: String {
+        switch self {
+        case .low:
+            return "arrow.down.circle.fill"
+        case .medium:
+            return "checkmark.circle.fill"
+        case .high:
+            return "arrow.up.circle.fill"
+        case .unavailable:
+            return "questionmark.circle.fill"
         }
     }
 }
