@@ -54,54 +54,6 @@ private struct ResultChartZoomAnchor {
     let relativePosition: Double
 }
 
-/// Keeps the cursor badge inside the plot using its measured size without a
-/// PreferenceKey or state write during chart panning.
-private struct ResultChartClampedBadgeLayout: Layout {
-    var preferredCenter: CGPoint
-    let horizontalBounds: ClosedRange<CGFloat>
-
-    var animatableData: AnimatablePair<CGFloat, CGFloat> {
-        get { AnimatablePair(preferredCenter.x, preferredCenter.y) }
-        set {
-            preferredCenter = CGPoint(x: newValue.first, y: newValue.second)
-        }
-    }
-
-    func sizeThatFits(
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(
-        in bounds: CGRect,
-        proposal: ProposedViewSize,
-        subviews: Subviews,
-        cache: inout ()
-    ) {
-        guard let badge = subviews.first else { return }
-        let size = badge.sizeThatFits(.unspecified)
-        let allowedMinX = max(bounds.minX, horizontalBounds.lowerBound) + size.width / 2
-        let allowedMaxX = min(bounds.maxX, horizontalBounds.upperBound) - size.width / 2
-        let resolvedX = allowedMinX <= allowedMaxX
-            ? min(max(preferredCenter.x, allowedMinX), allowedMaxX)
-            : horizontalBounds.lowerBound + (horizontalBounds.upperBound - horizontalBounds.lowerBound) / 2
-        let minY = bounds.minY + size.height / 2
-        let maxY = bounds.maxY - size.height / 2
-        let resolvedY = minY <= maxY
-            ? min(max(preferredCenter.y, minY), maxY)
-            : bounds.midY
-
-        badge.place(
-            at: CGPoint(x: resolvedX, y: resolvedY),
-            anchor: .center,
-            proposal: ProposedViewSize(width: size.width, height: size.height)
-        )
-    }
-}
-
 private struct ResultChartInteractionSurface: UIViewRepresentable {
     let plotFrame: CGRect
     let isHoverEnabled: Bool
@@ -382,13 +334,6 @@ struct ResultChartView: View {
         interactiveHour ?? currentHour
     }
 
-    private var visibleInteractiveHour: Double? {
-        guard let interactiveHour, visibleDomain.contains(interactiveHour) else {
-            return nil
-        }
-        return interactiveHour
-    }
-
     private var displayPoint: ResultChartPoint? {
         guard let hour = displayHour,
               visibleDomain.contains(hour),
@@ -624,17 +569,13 @@ struct ResultChartView: View {
                     .foregroundStyle(Color.secondary.opacity(0.35))
                 AxisValueLabel {
                     if let hour = value.as(Double.self) {
-                        if shouldHideAxisLabel(at: hour) {
-                            EmptyView()
-                        } else {
-                            Text(ResultChartFormatter.axisLabel(for: hour, visibleHours: visibleDomainLength))
-                                .font(.caption)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .minimumScaleFactor(0.7)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(ResultChartFormatter.axisLabel(for: hour, visibleHours: visibleDomainLength))
+                            .font(.caption)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -659,56 +600,35 @@ struct ResultChartView: View {
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 if let plotFrame = plotFrame(for: proxy, in: geometry) {
-
-                    ZStack(alignment: .topLeading) {
-                        ResultChartInteractionSurface(
-                            plotFrame: plotFrame,
-                            isHoverEnabled: isPad,
-                            onTap: { location in
-                                selectHour(at: location, in: plotFrame)
-                            },
-                            onHover: { location in
-                                hoveredHour = location.flatMap { hour(at: $0, in: plotFrame) }
-                            },
-                            onPanBegan: { _ in
-                                beginPanInteraction()
-                            },
-                            onPanChanged: { translation in
-                                updatePanInteraction(with: translation, plotFrame: plotFrame)
-                            },
-                            onPanEnded: {
-                                endPanInteraction()
-                            },
-                            onMagnifyBegan: { location in
-                                beginMagnifyInteraction(at: location)
-                            },
-                            onMagnifyChanged: { magnification, location in
-                                updateMagnifyInteraction(magnification: magnification, anchorLocation: location, plotFrame: plotFrame)
-                            },
-                            onMagnifyEnded: {
-                                endMagnifyInteraction()
-                            }
-                        )
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-
-                        if let visibleInteractiveHour {
-                            ResultChartClampedBadgeLayout(
-                                preferredCenter: CGPoint(
-                                    x: plotFrame.minX + xPosition(for: visibleInteractiveHour, plotFrame: plotFrame),
-                                    y: plotFrame.maxY + 16
-                                ),
-                                horizontalBounds: plotFrame.minX...plotFrame.maxX
-                            ) {
-                                ResultChartBadge(text: ResultChartFormatter.cursorTimeLabel(for: visibleInteractiveHour))
-                            }
-                            .frame(
-                                width: geometry.size.width,
-                                height: geometry.size.height,
-                                alignment: .topLeading
-                            )
-                            .allowsHitTesting(false)
+                    ResultChartInteractionSurface(
+                        plotFrame: plotFrame,
+                        isHoverEnabled: isPad,
+                        onTap: { location in
+                            selectHour(at: location, in: plotFrame)
+                        },
+                        onHover: { location in
+                            hoveredHour = location.flatMap { hour(at: $0, in: plotFrame) }
+                        },
+                        onPanBegan: { _ in
+                            beginPanInteraction()
+                        },
+                        onPanChanged: { translation in
+                            updatePanInteraction(with: translation, plotFrame: plotFrame)
+                        },
+                        onPanEnded: {
+                            endPanInteraction()
+                        },
+                        onMagnifyBegan: { location in
+                            beginMagnifyInteraction(at: location)
+                        },
+                        onMagnifyChanged: { magnification, location in
+                            updateMagnifyInteraction(magnification: magnification, anchorLocation: location, plotFrame: plotFrame)
+                        },
+                        onMagnifyEnded: {
+                            endMagnifyInteraction()
                         }
-                    }
+                    )
+                    .frame(width: geometry.size.width, height: geometry.size.height)
                 }
             }
         }
@@ -790,8 +710,8 @@ struct ResultChartView: View {
                         position: .top,
                         spacing: 4,
                         overflowResolution: .init(
-                            x: .fit(to: .chart),
-                            y: .fit(to: .chart)
+                            x: .fit(to: .plot),
+                            y: .fit(to: .plot)
                         )
                     ) {
                         focusBadge(for: point, lab: labPoint)
@@ -852,15 +772,22 @@ struct ResultChartView: View {
             for: point.concentration,
             unit: sim.concentrationUnit
         )
+        var lines: [String] = []
+        if interactiveHour != nil {
+            lines.append(ResultChartFormatter.cursorTimeLabel(for: point.hour))
+        }
+        lines.append("Predicted \(predictedText)")
+
         guard let lab else {
-            return "Predicted \(predictedText)"
+            return lines.joined(separator: "\n")
         }
 
         let labText = ResultChartFormatter.concentrationLabel(
             for: lab.concentration,
             unit: sim.concentrationUnit
         )
-        return "Predicted \(predictedText)\nLab \(lab.name): \(labText)"
+        lines.append("Lab \(lab.name): \(labText)")
+        return lines.joined(separator: "\n")
     }
 
     var body: some View {
@@ -886,11 +813,6 @@ struct ResultChartView: View {
 
     private var defaultVisibleDomainLength: Double {
         isPad ? 72 : 36
-    }
-
-    private func shouldHideAxisLabel(at hour: Double) -> Bool {
-        guard let visibleInteractiveHour else { return false }
-        return abs(visibleInteractiveHour - hour) < axisStepHours * 0.45
     }
 
     private func firstPointIndex(atOrAfter hour: Double) -> Int {
@@ -946,12 +868,6 @@ struct ResultChartView: View {
                 selectedHour = hour
             }
         }
-    }
-
-    private func xPosition(for hour: Double, plotFrame: CGRect) -> CGFloat {
-        guard visibleDomainLength > 0 else { return 0 }
-        let progress = (hour - visibleDomain.lowerBound) / visibleDomainLength
-        return CGFloat(min(max(progress, 0), 1)) * plotFrame.width
     }
 
     private func zoomAnchor(at location: CGPoint?, in plotFrame: CGRect) -> ResultChartZoomAnchor {
