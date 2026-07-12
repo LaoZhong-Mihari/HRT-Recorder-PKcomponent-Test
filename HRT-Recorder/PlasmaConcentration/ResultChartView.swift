@@ -57,8 +57,15 @@ private struct ResultChartZoomAnchor {
 /// Keeps the cursor badge inside the plot using its measured size without a
 /// PreferenceKey or state write during chart panning.
 private struct ResultChartClampedBadgeLayout: Layout {
-    let preferredCenter: CGPoint
+    var preferredCenter: CGPoint
     let horizontalBounds: ClosedRange<CGFloat>
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(preferredCenter.x, preferredCenter.y) }
+        set {
+            preferredCenter = CGPoint(x: newValue.first, y: newValue.second)
+        }
+    }
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -257,6 +264,7 @@ private struct ResultChartInteractionSurface: UIViewRepresentable {
 }
 
 struct ResultChartView: View {
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sim: SimulationResult
     let availableUnits: [ConcentrationUnit]
@@ -657,7 +665,7 @@ struct ResultChartView: View {
                             plotFrame: plotFrame,
                             isHoverEnabled: isPad,
                             onTap: { location in
-                                selectedHour = hour(at: location, in: plotFrame)
+                                selectHour(at: location, in: plotFrame)
                             },
                             onHover: { location in
                                 hoveredHour = location.flatMap { hour(at: $0, in: plotFrame) }
@@ -693,6 +701,12 @@ struct ResultChartView: View {
                             ) {
                                 ResultChartBadge(text: ResultChartFormatter.cursorTimeLabel(for: visibleInteractiveHour))
                             }
+                            .frame(
+                                width: geometry.size.width,
+                                height: geometry.size.height,
+                                alignment: .topLeading
+                            )
+                            .allowsHitTesting(false)
                         }
                     }
                 }
@@ -921,6 +935,17 @@ struct ResultChartView: View {
         let progress = Double(clampedX / plotFrame.width)
         let hour = visibleDomain.lowerBound + progress * visibleDomainLength
         return min(max(hour, totalDomain.lowerBound), totalDomain.upperBound)
+    }
+
+    private func selectHour(at location: CGPoint, in plotFrame: CGRect) {
+        guard let hour = hour(at: location, in: plotFrame) else { return }
+        if accessibilityReduceMotion {
+            selectedHour = hour
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                selectedHour = hour
+            }
+        }
     }
 
     private func xPosition(for hour: Double, plotFrame: CGRect) -> CGFloat {
