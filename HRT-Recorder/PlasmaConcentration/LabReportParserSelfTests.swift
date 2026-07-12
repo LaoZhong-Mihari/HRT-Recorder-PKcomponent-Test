@@ -116,6 +116,177 @@ enum LabReportOCRFallbackSelfTest {
         verifyGenericInternationalOtherRows()
         verifyColumnOrderVariantRows()
         verifyAdministrativeHintNoiseDoesNotWin()
+        verifyFlexibleCalibrationUnits()
+    }
+
+    private static func verifyFlexibleCalibrationUnits() {
+        let cases: [(LabAnalyteKind, Double, String, Double)] = [
+            (.estradiol, 100, "pg/mL", 100),
+            (.estradiol, 100, "pg per mL", 100),
+            (.estradiol, 100, "pg／mL", 100),
+            (.estradiol, 100, "ng/L", 100),
+            (.estradiol, 0.1, "ng/mL", 100),
+            (.estradiol, 367.129, "pmol/L", 100),
+            (.estradiol, 0.367129, "nmol/L", 100),
+            (.testosterone, 24, "ng/dL", 24),
+            (.testosterone, 0.24, "ng/mL", 24),
+            (.testosterone, 0.24, "µg/L", 24),
+            (.testosterone, 0.24, "mcg/L", 24),
+            (.testosterone, 0.83212, "nmol/L", 24),
+            (.testosterone, 832.12, "pmol/L", 24),
+            (.testosterone, 1, "µg/dL", 1_000),
+            (.testosterone, 24, "ng/100 mL", 24),
+            (.testosterone, 24, "ng·dL⁻¹", 24),
+            (.testosterone, 24, "ng⋅dL⁻¹", 24)
+        ]
+
+        var failures: [String] = []
+        for (kind, value, unit, expected) in cases {
+            let analyte = LabAnalyteResult(
+                kind: kind,
+                value: value,
+                unitSymbol: unit,
+                reportedValueText: String(value),
+                reportedUnitText: unit
+            )
+            guard let converted = analyte.calibrationMeasurement?.concentration else {
+                failures.append("missing conversion \(kind.rawValue) \(value) \(unit)")
+                continue
+            }
+            let tolerance = max(abs(expected) * 0.002, 0.01)
+            if abs(converted - expected) > tolerance {
+                failures.append("conversion \(kind.rawValue) \(value) \(unit) -> \(converted), expected \(expected)")
+            }
+        }
+
+        let qualified = LabAnalyteResult(
+            kind: .estradiol,
+            value: 5,
+            unitSymbol: "pg/mL",
+            reportedValueText: "<5",
+            reportedUnitText: "pg/mL"
+        )
+        if qualified.calibrationMeasurement != nil {
+            failures.append("qualified value was used for calibration")
+        }
+
+        let unsupported = LabAnalyteResult(
+            kind: .testosterone,
+            value: 5,
+            unitSymbol: "IU/L",
+            reportedValueText: "5",
+            reportedUnitText: "IU/L"
+        )
+        if unsupported.calibrationMeasurement != nil {
+            failures.append("non-concentration unit was used for calibration")
+        }
+
+        let contradictory = LabAnalyteResult(
+            kind: .testosterone,
+            value: 24,
+            unitSymbol: "ng/dL",
+            concentrationUnit: .ngPerDL,
+            reportedValueText: "24",
+            reportedUnitText: "IU/L"
+        )
+        if contradictory.calibrationMeasurement != nil {
+            failures.append("stale legacy unit overrode an unsupported raw unit")
+        }
+
+        let legacyPreciseValue = 123.456789012345
+        let legacyPrecision = LabAnalyteResult(
+            kind: .estradiol,
+            value: legacyPreciseValue,
+            unitSymbol: "pg/mL",
+            concentrationUnit: .pgPerML
+        )
+        if legacyPrecision.displayedValueText.flatMap(Double.init) != legacyPreciseValue {
+            failures.append("legacy review text lost numeric precision")
+        }
+
+        let legacyJSON = """
+        {
+          "id": "ED27BD2B-B8B2-4E34-8B22-0DB5399E5C6E",
+          "kind": "estradiol",
+          "name": "Estradiol",
+          "value": 123.456789012345,
+          "unitSymbol": "pg/mL",
+          "concentrationUnit": "pgPerML"
+        }
+        """
+        if let legacyData = legacyJSON.data(using: .utf8),
+           let legacy = try? JSONDecoder().decode(LabAnalyteResult.self, from: legacyData) {
+            if legacy.reportedValueText != nil || legacy.reportedUnitText != nil {
+                failures.append("legacy JSON synthesized raw report fields")
+            }
+            if legacy.calibrationMeasurement?.concentration != 123.456789012345 {
+                failures.append("legacy JSON no longer calibrates")
+            }
+        } else {
+            failures.append("legacy JSON without raw report fields failed to decode")
+        }
+
+        if let groundedQualified = HormoneLabResultParser.groundedMeasurement(
+            in: "Estradiol <5 pg/mL 10-40 pg/mL",
+            kind: .estradiol
+        ) {
+            if groundedQualified.reportedValueText != "<5" {
+                failures.append("grounded qualifier changed to \(groundedQualified.reportedValueText)")
+            }
+        } else {
+            failures.append("failed to ground qualified result")
+        }
+
+        if let groundedEquivalent = HormoneLabResultParser.groundedMeasurement(
+            in: "Testosterone 24 ng/100 mL 8-60 ng/100 mL",
+            kind: .testosterone
+        ) {
+            if groundedEquivalent.reportedUnitText != "ng/100 mL" {
+                failures.append("grounded unit changed to \(groundedEquivalent.reportedUnitText ?? "nil")")
+            }
+        } else {
+            failures.append("failed to ground /100 mL result")
+        }
+
+        if let groundedSplit = HormoneLabResultParser.groundedMeasurement(
+            in: "Estradiol\nResult 82\nUnit pg/mL",
+            kind: .estradiol
+        ) {
+            if abs(groundedSplit.value - 82) > 0.001
+                || groundedSplit.reportedUnitText != "pg/mL" {
+                failures.append("split-row grounding produced \(groundedSplit.value) \(groundedSplit.reportedUnitText ?? "nil")")
+            }
+        } else {
+            failures.append("failed to ground split OCR row")
+        }
+
+        let fixture = """
+        Estradiol 0.1 ng/mL 0.02-0.30 ng/mL
+        Testosterone 0.24 µg/L 0.08-0.60 µg/L
+        """
+        let report = HormoneLabResultParser.parseReport(
+            fixture,
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        for expectedUnit in ["ng/mL", "µg/L"] where !report.analytes.contains(where: { $0.displayedUnitText == expectedUnit }) {
+            failures.append("fallback did not preserve \(expectedUnit)")
+        }
+
+        if let encoded = try? JSONEncoder().encode(report),
+           let decoded = try? JSONDecoder().decode(LabReport.self, from: encoded) {
+            if decoded != report {
+                failures.append("raw report JSON round trip changed data")
+            }
+        } else {
+            failures.append("raw report JSON round trip failed")
+        }
+
+        if failures.isEmpty {
+            NSLog("LAB_FLEXIBLE_UNIT_SELF_TEST PASS cases=%d", cases.count)
+        } else {
+            NSLog("LAB_FLEXIBLE_UNIT_SELF_TEST FAIL failures=%@", failures.joined(separator: "; "))
+        }
     }
 
     private static func verifyStandardOCRFixtures() {
@@ -125,7 +296,16 @@ enum LabReportOCRFallbackSelfTest {
                 sourceKind: .pastedText,
                 defaultHormone: .estradiol
             )
-            let failures = LabReportSelfTestVerifier.verifyStandardSevenHormonePanel(report)
+            var failures = LabReportSelfTestVerifier.verifyStandardSevenHormonePanel(report)
+            if name == "upload",
+               let testosterone = report.analytes.first(where: { $0.kind == .testosterone }) {
+                if testosterone.reportedUnitText != "mmol/L" {
+                    failures.append("raw testosterone unit \(testosterone.reportedUnitText ?? "nil") != mmol/L")
+                }
+                if testosterone.calibrationMeasurement != nil {
+                    failures.append("ambiguous mmol/L OCR unit was used for calibration")
+                }
+            }
             if failures.isEmpty {
                 NSLog("LAB_OCR_FALLBACK_SELF_TEST PASS fixture=%@ analytes=%d collected=%@ reported=%@",
                       name,

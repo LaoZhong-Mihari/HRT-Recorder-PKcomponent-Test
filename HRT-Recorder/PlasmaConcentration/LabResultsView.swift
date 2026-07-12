@@ -56,6 +56,14 @@ struct LabResultsView: View {
         [vm.selectedHormone] + SimulatedHormone.allCases.filter { $0 != vm.selectedHormone }
     }
 
+    private func savedResultCount(for hormone: SimulatedHormone) -> Int {
+        vm.labReports.reduce(into: 0) { count, report in
+            count += report.analytes.lazy.filter {
+                $0.simulatedHormone == hormone && $0.value != nil
+            }.count
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -107,7 +115,7 @@ struct LabResultsView: View {
                         hormone: hormone,
                         info: vm.calibrationResult.infoByHormone[hormone],
                         isActive: hormone == vm.selectedHormone,
-                        savedSampleCount: vm.allLabSamples.lazy.filter { $0.hormone == hormone }.count
+                        savedSampleCount: savedResultCount(for: hormone)
                     )
                 }
             }
@@ -444,6 +452,12 @@ private struct LabAnalyteDraft: Identifiable {
     var valueText: String
     var unitSymbol: String
     var concentrationUnit: ConcentrationUnit?
+    /// The unit shown when review opened and the parser's separate
+    /// interpretation of it. Keeping both prevents an unchanged review/save
+    /// from turning a deliberately rejected OCR-unit conflict into a valid
+    /// calibration value.
+    var initialDisplayedUnitText: String
+    var initialInterpretedUnitSymbol: String
     var referenceRange: String
     var method: String
     var sourceLine: String
@@ -456,6 +470,8 @@ private struct LabAnalyteDraft: Identifiable {
         self.valueText = ""
         self.concentrationUnit = kind.simulatedHormone?.concentrationUnit
         self.unitSymbol = kind.simulatedHormone?.concentrationUnit.symbol ?? ""
+        self.initialDisplayedUnitText = self.unitSymbol
+        self.initialInterpretedUnitSymbol = self.unitSymbol
         self.referenceRange = ""
         self.method = ""
         self.sourceLine = ""
@@ -466,45 +482,63 @@ private struct LabAnalyteDraft: Identifiable {
         self.id = result.id
         self.kind = result.kind
         self.name = result.kind == .other ? result.name : result.kind.defaultName
-        self.valueText = result.value.map { Self.formatValue($0) } ?? ""
-        self.unitSymbol = result.unitSymbol
+        self.valueText = result.displayedValueText ?? ""
+        self.unitSymbol = result.displayedUnitText
         self.concentrationUnit = result.concentrationUnit
-        self.referenceRange = ""
+        self.initialDisplayedUnitText = result.displayedUnitText
+        self.initialInterpretedUnitSymbol = result.unitSymbol
+        self.referenceRange = result.referenceRange ?? ""
         self.method = result.method ?? ""
         self.sourceLine = result.sourceLine ?? ""
         self.note = result.note ?? ""
     }
 
     var result: LabAnalyteResult? {
-        let normalized = valueText
-            .trimmed
-            .replacingOccurrences(of: ",", with: ".")
-        let value = Double(normalized)
+        let reportedValueText = valueText.trimmed
+        let value = Self.parseReportedValue(reportedValueText)
         let hasDetails = value != nil
             || !method.trimmed.isEmpty
             || !sourceLine.trimmed.isEmpty
             || !note.trimmed.isEmpty
         guard hasDetails else { return nil }
 
-        let resolvedUnit = concentrationUnit
-        let resolvedUnitSymbol = resolvedUnit?.symbol ?? unitSymbol.trimmed
+        let reportedUnitText = unitSymbol.trimmed
+        let unitWasEdited = reportedUnitText != initialDisplayedUnitText.trimmed
+        let interpretedUnitText = unitWasEdited
+            ? reportedUnitText
+            : initialInterpretedUnitSymbol.trimmed
+        let resolvedUnit = kind.simulatedHormone == nil
+            ? concentrationUnit
+            : HormoneLabResultParser.concentrationUnit(from: interpretedUnitText, kind: kind)
 
         return LabAnalyteResult(
             id: id,
             kind: kind,
             name: kind == .other ? name.nilIfBlank : nil,
             value: value,
-            unitSymbol: resolvedUnitSymbol,
+            unitSymbol: interpretedUnitText,
             concentrationUnit: resolvedUnit,
-            referenceRange: nil,
+            reportedValueText: reportedValueText.nilIfBlank,
+            reportedUnitText: reportedUnitText.nilIfBlank,
+            referenceRange: referenceRange.nilIfBlank,
             method: method.nilIfBlank,
             sourceLine: sourceLine.nilIfBlank,
             note: note.nilIfBlank
         )
     }
 
-    private static func formatValue(_ value: Double) -> String {
-        String(format: "%.2f", locale: Locale.current, value)
+    private static func parseReportedValue(_ rawValue: String) -> Double? {
+        let normalized = rawValue
+            .replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: "，", with: ".")
+            .replacingOccurrences(of: "↑", with: "")
+            .replacingOccurrences(of: "↓", with: "")
+            .replacingOccurrences(of: "<", with: "")
+            .replacingOccurrences(of: ">", with: "")
+            .replacingOccurrences(of: "≤", with: "")
+            .replacingOccurrences(of: "≥", with: "")
+            .trimmed
+        return Double(normalized)
     }
 }
 
@@ -741,6 +775,18 @@ private struct LabAnalyteDetailRow: View {
                     .monospacedDigit()
             }
 
+            if let calibrationText {
+                Text(calibrationText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if analyte.simulatedHormone != nil,
+                      analyte.value != nil,
+                      !analyte.displayedUnitText.isEmpty {
+                Text("Original result saved; not used for calibration because its value or unit needs review.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             if let method = analyte.method, !method.trimmed.isEmpty {
                 Text(method)
                     .font(.caption)
@@ -757,9 +803,25 @@ private struct LabAnalyteDetailRow: View {
     }
 
     private var valueText: String {
-        guard let value = analyte.value else { return "—" }
-        let unit = analyte.concentrationUnit?.symbol ?? analyte.unitSymbol
-        return String(format: "%.2f %@", locale: Locale.current, value, unit)
+        guard let reportedValue = analyte.displayedValueText else { return "—" }
+        let unit = analyte.displayedUnitText
+        return unit.isEmpty ? reportedValue : "\(reportedValue) \(unit)"
+    }
+
+    private var calibrationText: String? {
+        guard let measurement = analyte.calibrationMeasurement else { return nil }
+        let rawUnit = analyte.displayedUnitText
+        let rawValue = analyte.value ?? measurement.concentration
+        let scale = max(abs(rawValue), abs(measurement.concentration), 1)
+        let valueChanged = abs(rawValue - measurement.concentration) > scale * 1e-10
+        guard valueChanged || rawUnit.caseInsensitiveCompare(measurement.unit.symbol) != .orderedSame else {
+            return nil
+        }
+        return String.localizedStringWithFormat(
+            String(localized: "Calibration value: %@ %@"),
+            String(format: "%.6g", locale: Locale.current, measurement.concentration),
+            measurement.unit.symbol
+        )
     }
 }
 
@@ -975,8 +1037,7 @@ private struct LabAnalyteDraftRow: View {
                     draft.name = kind.defaultName
                 }
                 if let hormone = kind.simulatedHormone {
-                    let currentUnit = draft.concentrationUnit
-                    if currentUnit?.isSupported(for: hormone) != true {
+                    if draft.unitSymbol.trimmed.isEmpty {
                         draft.concentrationUnit = hormone.concentrationUnit
                         draft.unitSymbol = hormone.concentrationUnit.symbol
                     }
@@ -991,11 +1052,13 @@ private struct LabAnalyteDraftRow: View {
 
             HStack(spacing: 12) {
                 TextField("Value", text: $draft.valueText)
-                    .keyboardType(.decimalPad)
+                    .keyboardType(.numbersAndPunctuation)
                     .textFieldStyle(.roundedBorder)
 
                 unitControl
             }
+
+            calibrationUnitStatus
 
             TextField("Method", text: $draft.method)
             TextField("Notes", text: $draft.note, axis: .vertical)
@@ -1014,26 +1077,50 @@ private struct LabAnalyteDraftRow: View {
     @ViewBuilder
     private var unitControl: some View {
         if let hormone = draft.kind.simulatedHormone {
-            Picker(
-                "Unit",
-                selection: Binding(
-                    get: { draft.concentrationUnit ?? hormone.concentrationUnit },
-                    set: { unit in
-                        draft.concentrationUnit = unit
-                        draft.unitSymbol = unit.symbol
+            HStack(spacing: 6) {
+                TextField("Unit", text: $draft.unitSymbol)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 120)
+
+                Menu {
+                    ForEach(hormone.supportedConcentrationUnits) { unit in
+                        Button(unit.symbol) {
+                            draft.concentrationUnit = unit
+                            draft.unitSymbol = unit.symbol
+                        }
                     }
-                )
-            ) {
-                ForEach(hormone.supportedConcentrationUnits) { unit in
-                    Text(unit.symbol).tag(unit)
+                } label: {
+                    Image(systemName: "chevron.down.circle")
+                        .accessibilityLabel(Text("Common units"))
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
         } else {
             TextField("Unit", text: $draft.unitSymbol)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 110)
+        }
+    }
+
+    @ViewBuilder
+    private var calibrationUnitStatus: some View {
+        if draft.kind.simulatedHormone != nil,
+           !draft.valueText.trimmed.isEmpty,
+           !draft.unitSymbol.trimmed.isEmpty {
+            if let measurement = draft.result?.calibrationMeasurement {
+                Text(String.localizedStringWithFormat(
+                    String(localized: "Calibration value: %@ %@"),
+                    String(format: "%.6g", locale: Locale.current, measurement.concentration),
+                    measurement.unit.symbol
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+                Text("The original result will be saved, but this value or unit cannot be used for calibration.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }
@@ -1991,8 +2078,9 @@ fileprivate enum LabReportAIExtractor {
         Use itemCode E2, T, PRL, FSH, LH, P, SHBG, freeT, DHEAS, or other.
         Use other for non-HRT lab measurements only when the source line visibly contains a label, measured value, and unit; put the visible label in label.
         Resolve OCR confusions, visually similar characters, split rows, and common abbreviations using row context.
-        For each row, copy the measured result value from the result field, not from a reference interval.
-        Return sourceLineID and exact sourceLine text for every row.
+        For each row, copy the measured result value and its unit exactly from the result field, not from a reference interval.
+        Never convert a value or replace its visible unit with a preferred unit.
+        Return one to three evidenceLineIDs when a label, value, and unit are split across OCR lines. Also return the primary sourceLineID and exact sourceLine text.
         Omit rows when the item label, value, or source line is uncertain after context review.
         Leave method empty unless the same row or a visible method/analyzer column explicitly contains a method or analyzer token.
         Existing verified anchors:
@@ -2007,7 +2095,8 @@ fileprivate enum LabReportAIExtractor {
         """
         Extract structured rows from OCR text. Return only rows that are directly visible.
         Use item codes for known HRT-related hormone rows and other for directly visible non-HRT lab measurements. Resolve OCR confusions from context, but do not infer missing rows.
-        Copy measured values exactly from source lines. Do not use reference interval numbers as measured values.
+        Copy measured values and units exactly from source lines. Do not use reference interval numbers as measured values.
+        Never calculate a converted value or substitute a canonical unit.
         For other rows, include the visible test name/label; omit rows whose label is only a header, unit, patient field, or administrative field.
         Leave method empty unless a source line explicitly contains an assay method or analyzer/platform token.
         Copy specimen only when a plausible material is explicitly present in a specimen/sample field; leave corrupted or normalized guesses empty.
@@ -2023,7 +2112,7 @@ fileprivate enum LabReportAIExtractor {
     ) -> LabReport? {
         let decodedAnalytes = payload.analytes.compactMap { item -> LabAnalyteResult? in
             guard let kind = HormoneLabResultParser.kind(fromAIValue: item.kind ?? item.name),
-                  item.value != nil else {
+                  let modelValue = item.value else {
                 return nil
             }
             let sourceLine = cleanAITextField(item.sourceLine)?.nilIfBlank
@@ -2033,16 +2122,32 @@ fileprivate enum LabReportAIExtractor {
             guard kind != .other || otherName != nil else {
                 return nil
             }
-            let unit = HormoneLabResultParser.normalizedUnitSymbol(from: item.unit ?? "", kind: kind)
-            let concentrationUnit = HormoneLabResultParser.concentrationUnit(from: unit, kind: kind)
+            guard let sourceLine,
+                  kind == .other || hasKindEvidence(kind, in: sourceLine),
+                  let grounded = HormoneLabResultParser.groundedMeasurement(
+                    in: sourceLine,
+                    kind: kind
+                  ) else {
+                return nil
+            }
+            let valueScale = max(abs(modelValue), abs(grounded.value), 1)
+            guard abs(modelValue - grounded.value) <= valueScale * 1e-6 else {
+                return nil
+            }
+            let concentrationUnit = HormoneLabResultParser.concentrationUnit(
+                from: grounded.unitSymbol,
+                kind: kind
+            )
 
             return LabAnalyteResult(
                 kind: kind,
                 name: otherName,
-                value: item.value,
-                unitSymbol: concentrationUnit?.symbol ?? unit.trimmed,
+                value: grounded.value,
+                unitSymbol: grounded.unitSymbol,
                 concentrationUnit: concentrationUnit,
-                referenceRange: nil,
+                reportedValueText: grounded.reportedValueText,
+                reportedUnitText: grounded.reportedUnitText,
+                referenceRange: grounded.referenceRange,
                 method: verifiedAIMethod(item.method, sourceText: sourceText, sourceLine: item.sourceLine),
                 sourceLine: sourceLine,
                 note: visibleFlagNote(cleanAITextField(item.note), sourceLine: cleanAITextField(item.sourceLine))
@@ -2117,10 +2222,34 @@ fileprivate enum LabReportAIExtractor {
         for row: GeneratedUniversalAnalyteRow,
         linesByID: [Int: String]
     ) -> String {
-        if let id = row.sourceLineID,
-           let sourceLine = linesByID[id]?.trimmed,
-           !sourceLine.isEmpty {
-            return sourceLine
+        var evidenceIDs = row.evidenceLineIDs
+        if let sourceLineID = row.sourceLineID {
+            evidenceIDs.append(sourceLineID)
+        }
+        let sortedEvidenceIDs = Set(evidenceIDs).sorted()
+        if !sortedEvidenceIDs.isEmpty {
+            guard sortedEvidenceIDs.count <= 4,
+                  let firstID = sortedEvidenceIDs.first,
+                  let lastID = sortedEvidenceIDs.last,
+                  lastID - firstID <= 5 else {
+                return ""
+            }
+        }
+        let evidenceLines = sortedEvidenceIDs.compactMap { id -> String? in
+            guard let line = linesByID[id]?.trimmed,
+                  !line.isEmpty else {
+                return nil
+            }
+            return line
+        }
+        guard evidenceLines.count == sortedEvidenceIDs.count else {
+            return ""
+        }
+        if !evidenceLines.isEmpty {
+            return evidenceLines.joined(separator: "\n")
+        }
+        if !sortedEvidenceIDs.isEmpty {
+            return ""
         }
         let modelLine = row.sourceLine.trimmed
         if !modelLine.isEmpty,
@@ -2350,7 +2479,9 @@ fileprivate enum LabReportAIExtractor {
                     value: anchor.value,
                     unitSymbol: anchor.unitSymbol,
                     concentrationUnit: anchor.concentrationUnit,
-                    referenceRange: nil,
+                    reportedValueText: anchor.reportedValueText,
+                    reportedUnitText: anchor.reportedUnitText,
+                    referenceRange: anchor.referenceRange,
                     method: anchor.method,
                     sourceLine: anchor.sourceLine,
                     note: visibleFlagNote(anchor.note, sourceLine: anchor.sourceLine)
@@ -2365,7 +2496,9 @@ fileprivate enum LabReportAIExtractor {
                 value: anchor.value,
                 unitSymbol: anchor.unitSymbol.isEmpty ? ai.unitSymbol : anchor.unitSymbol,
                 concentrationUnit: anchor.concentrationUnit ?? ai.concentrationUnit,
-                referenceRange: nil,
+                reportedValueText: anchor.reportedValueText ?? ai.reportedValueText,
+                reportedUnitText: anchor.reportedUnitText ?? ai.reportedUnitText,
+                referenceRange: anchor.referenceRange ?? ai.referenceRange,
                 method: anchor.method ?? ai.method,
                 sourceLine: anchor.sourceLine ?? ai.sourceLine,
                 note: visibleFlagNote(anchor.note, sourceLine: anchor.sourceLine)
@@ -2424,7 +2557,14 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private static func sourceTextContains(_ sourceLine: String, in sourceText: String) -> Bool {
-        sourceText.localizedCaseInsensitiveContains(sourceLine)
+        let evidenceLines = sourceLine
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmed }
+            .filter { !$0.isEmpty }
+        if evidenceLines.count > 1 {
+            return evidenceLines.allSatisfy { sourceTextContains($0, in: sourceText) }
+        }
+        return sourceText.localizedCaseInsensitiveContains(sourceLine)
             || compactEvidenceText(sourceText).localizedCaseInsensitiveContains(compactEvidenceText(sourceLine))
     }
 
@@ -2441,7 +2581,7 @@ fileprivate enum LabReportAIExtractor {
     }
 
     private static var measurementUnitPattern: String {
-        #"(?i)(?<![A-Za-z])(?:(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|g|p\s*mol|n\s*mol|u\s*mol|µ\s*mol|μ\s*mol|m\s*mol|mol|m\s*IU|u\s*IU|µ\s*IU|μ\s*IU|IU|IV|U)\s*/?\s*(?:m\s*[lL1]|d\s*[lL1]|[lL1])|%|mm\s*Hg|f\s*L|p\s*g|m\s*Eq\s*/?\s*[lL1]|m\s*[lL1]\s*/\s*min(?:\s*/\s*1\.?\s*73\s*m2)?|m\s*mol\s*/\s*mol|[x×]?\s*10\s*\^?\s*\d+\s*/\s*[lL1])(?![A-Za-z])"#
+        #"(?i)(?<![A-Za-z])(?:(?:m\s*c\s*g|[fpnumcdhkµμ]?\s*g|[fpnumcdhkµμ]?\s*mol|m\s*IU|u\s*IU|µ\s*IU|μ\s*IU|IU|IV|U)(?:\s*(?:/|／|per|[·⋅∙])\s*|\s*)(?:(?:\d+(?:\.\d+)?\s*)?[fpnumcdµμ]?\s*[lL1])(?:\s*(?:\^?\s*[-−]\s*1|⁻¹))?|%|mm\s*Hg|f\s*L|p\s*g|m\s*Eq\s*/?\s*[lL1]|m\s*[lL1]\s*/\s*min(?:\s*/\s*1\.?\s*73\s*m2)?|m\s*mol\s*/\s*mol|[x×]?\s*10\s*\^?\s*\d+\s*/\s*[lL1])(?![A-Za-z])"#
     }
 
     private static func hasKindEvidence(_ kind: LabAnalyteKind, in line: String) -> Bool {
@@ -2508,6 +2648,8 @@ fileprivate enum LabReportAIExtractor {
             .replacingOccurrences(of: ",", with: ".")
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "\t", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
     }
 
     private static func aiDateString(_ date: Date) -> String {
@@ -2828,10 +2970,12 @@ fileprivate enum LabReportAIExtractor {
         var label: String
         @Guide(description: "Measured result text copied from the result field. Empty when unavailable.")
         var valueText: String
-        @Guide(description: "Unit text for the measured value. Empty when unavailable.")
+        @Guide(description: "Exact visible unit text for the measured value. Do not normalize or convert it. Empty when unavailable.")
         var unit: String
         @Guide(description: "Leave empty; sex-assigned reference intervals are not stored for HRT review.")
         var referenceRange: String
+        @Guide(description: "One to three OCR line numbers that together contain this row's label, measured value, and unit.", .maximumCount(3))
+        var evidenceLineIDs: [Int]
         @Guide(description: "OCR line number used as evidence when available.")
         var sourceLineID: Int?
         @Guide(description: "Exact OCR source line text used as evidence.")
@@ -3001,30 +3145,54 @@ enum HormoneLabResultParser {
     }
 
     static func concentrationUnit(from raw: String, kind: LabAnalyteKind) -> ConcentrationUnit? {
-        guard let hormone = kind.simulatedHormone else { return nil }
-        let token = normalizedUnitSymbol(from: raw, kind: kind)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "／", with: "/")
-            .replacingOccurrences(of: "μ", with: "u")
-            .replacingOccurrences(of: "µ", with: "u")
-
-        let unit: ConcentrationUnit?
-        switch token {
-        case "pg/ml": unit = .pgPerML
-        case "pmol/l": unit = .pmolPerL
-        case "ng/dl": unit = .ngPerDL
-        case "ng/ml": unit = .ngPerML
-        case "nmol/l": unit = .nmolPerL
-        default: unit = nil
+        guard let hormone = kind.simulatedHormone,
+              let parsedUnit = LabConcentrationUnit.parse(raw) else {
+            return nil
         }
-
-        guard let unit, unit.isSupported(for: hormone) else { return nil }
-        return unit
+        return hormone.supportedConcentrationUnits.first {
+            parsedUnit.isNumericallyEquivalent(to: $0, hormone: hormone)
+        }
     }
 
-    static func normalizedUnitSymbol(from raw: String, kind: LabAnalyteKind) -> String {
-        resolvedUnitSymbol(normalizedUnitToken(raw), kind: kind)
+    struct GroundedMeasurement {
+        var value: Double
+        var reportedValueText: String
+        var unitSymbol: String
+        var reportedUnitText: String?
+        var referenceRange: String?
+    }
+
+    static func groundedMeasurement(
+        in sourceLine: String,
+        kind: LabAnalyteKind
+    ) -> GroundedMeasurement? {
+        if kind == .other,
+           let generic = genericMeasurement(in: sourceLine) {
+            return GroundedMeasurement(
+                value: generic.value,
+                reportedValueText: generic.reportedValueText,
+                unitSymbol: generic.unitSymbol,
+                reportedUnitText: generic.reportedUnitText.nilIfBlank,
+                referenceRange: generic.referenceRange
+            )
+        }
+
+        guard let measuredValue = extractMeasuredValue(from: sourceLine, kind: kind) else {
+            return nil
+        }
+        let referenceRange = extractReferenceRange(from: sourceLine, kind: kind)
+        let unitSymbol = resolvedUnitSymbol(
+            extractUnitSymbol(from: sourceLine, fallbackReferenceRange: referenceRange),
+            referenceRange: referenceRange,
+            kind: kind
+        )
+        return GroundedMeasurement(
+            value: measuredValue.value,
+            reportedValueText: measuredValue.reportedText,
+            unitSymbol: unitSymbol,
+            reportedUnitText: extractReportedUnitText(from: sourceLine).nilIfBlank,
+            referenceRange: referenceRange
+        )
     }
 
     static func uniqued(_ analytes: [LabAnalyteResult]) -> [LabAnalyteResult] {
@@ -3080,7 +3248,7 @@ enum HormoneLabResultParser {
             }
         }
 
-        if analyte.kind.simulatedHormone != nil, analyte.concentrationUnit == nil {
+        if analyte.kind.simulatedHormone != nil, analyte.calibrationMeasurement == nil {
             score -= 6
         }
         return score
@@ -3117,7 +3285,7 @@ enum HormoneLabResultParser {
     private static func parseAnalyteLine(_ line: String) -> LabAnalyteResult? {
         guard !isLikelyUnrelatedMetadataLine(line) else { return nil }
         guard let kind = detectAnalyteKind(in: line),
-              let value = extractMeasuredValue(from: line, kind: kind) else {
+              let measuredValue = extractMeasuredValue(from: line, kind: kind) else {
             return nil
         }
 
@@ -3128,18 +3296,16 @@ enum HormoneLabResultParser {
             kind: kind
         )
         let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
-        let resolvedUnitSymbol = concentrationUnit?.symbol ?? unitSymbol
-
-        if kind.simulatedHormone != nil, concentrationUnit == nil {
-            return nil
-        }
+        let reportedUnitText = extractReportedUnitText(from: line)
 
         return LabAnalyteResult(
             kind: kind,
             name: detectedName(for: kind, in: line),
-            value: value,
-            unitSymbol: resolvedUnitSymbol,
+            value: measuredValue.value,
+            unitSymbol: unitSymbol,
             concentrationUnit: concentrationUnit,
+            reportedValueText: measuredValue.reportedText,
+            reportedUnitText: reportedUnitText.nilIfBlank,
             referenceRange: referenceRange,
             method: extractMethod(from: line),
             sourceLine: stripInternalParserHints(line)
@@ -3161,7 +3327,7 @@ enum HormoneLabResultParser {
                 // value/reference/unit row instead.
                 return nil
             }
-            guard let value = extractMeasuredValue(from: blockText, kind: kind) else {
+            guard let measuredValue = extractMeasuredValue(from: blockText, kind: kind) else {
                 return nil
             }
 
@@ -3172,16 +3338,16 @@ enum HormoneLabResultParser {
                 kind: kind
             )
             let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
-            if kind.simulatedHormone != nil, concentrationUnit == nil {
-                return nil
-            }
+            let reportedUnitText = extractReportedUnitText(from: blockText)
 
             return LabAnalyteResult(
                 kind: kind,
                 name: detectedName(for: kind, in: blockText),
-                value: value,
-                unitSymbol: concentrationUnit?.symbol ?? unitSymbol,
+                value: measuredValue.value,
+                unitSymbol: unitSymbol,
                 concentrationUnit: concentrationUnit,
+                reportedValueText: measuredValue.reportedText,
+                reportedUnitText: reportedUnitText.nilIfBlank,
                 referenceRange: referenceRange,
                 method: extractMethod(from: blockText),
                 sourceLine: stripInternalParserHints(blockText)
@@ -3267,23 +3433,27 @@ enum HormoneLabResultParser {
 
         let kind: LabAnalyteKind = defaultHormone == .estradiol ? .estradiol : .testosterone
         let analytes = lines.compactMap { line -> LabAnalyteResult? in
-            guard let value = extractMeasuredValue(from: line, kind: kind) else { return nil }
+            guard let measuredValue = extractMeasuredValue(from: line, kind: kind) else { return nil }
             let referenceRange = extractReferenceRange(from: line, kind: kind)
             let unitSymbol = resolvedUnitSymbol(
                 extractUnitSymbol(from: line, fallbackReferenceRange: referenceRange),
                 referenceRange: referenceRange,
                 kind: kind
             )
-            guard let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind) else {
+            guard LabConcentrationUnit.parse(unitSymbol) != nil else {
                 return nil
             }
+            let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
+            let reportedUnitText = extractReportedUnitText(from: line)
 
             return LabAnalyteResult(
                 kind: kind,
                 name: kind.defaultName,
-                value: value,
-                unitSymbol: concentrationUnit.symbol,
+                value: measuredValue.value,
+                unitSymbol: unitSymbol,
                 concentrationUnit: concentrationUnit,
+                reportedValueText: measuredValue.reportedText,
+                reportedUnitText: reportedUnitText.nilIfBlank,
                 referenceRange: referenceRange,
                 sourceLine: stripInternalParserHints(line)
             )
@@ -3310,6 +3480,8 @@ enum HormoneLabResultParser {
             value: measurement.value,
             unitSymbol: measurement.unitSymbol,
             concentrationUnit: nil,
+            reportedValueText: measurement.reportedValueText,
+            reportedUnitText: measurement.reportedUnitText,
             referenceRange: measurement.referenceRange,
             method: extractMethod(from: line),
             sourceLine: displayLine
@@ -3318,8 +3490,10 @@ enum HormoneLabResultParser {
 
     private struct GenericMeasurement {
         var value: Double
+        var reportedValueText: String
         var valueRange: NSRange
         var unitSymbol: String
+        var reportedUnitText: String
         var referenceRange: String?
     }
 
@@ -3337,15 +3511,18 @@ enum HormoneLabResultParser {
             where !referenceRanges.contains(where: { rangesOverlap($0, match.range(at: 1)) }) {
             guard let valueText = stringCapture(1, in: line, match: match),
                   let value = correctedMeasuredValue(from: valueText, referenceBounds: referenceBounds(from: line), kind: nil),
-                  let unit = stringCapture(2, in: line, match: match).map(normalizedUnitToken),
+                  let reportedUnitText = stringCapture(2, in: line, match: match)?.trimmed,
+                  let unit = reportedUnitText.nilIfBlank.map(normalizedUnitToken),
                   !unit.isEmpty else {
                 continue
             }
 
             return GenericMeasurement(
                 value: value,
+                reportedValueText: valueText.trimmed,
                 valueRange: match.range(at: 1),
                 unitSymbol: unit,
+                reportedUnitText: reportedUnitText,
                 referenceRange: referenceMatches.first.flatMap { match in
                     guard let range = Range(match.range, in: line) else { return nil }
                     return normalizedReferenceRange(String(line[range]).trimmed, kind: nil)
@@ -3455,16 +3632,15 @@ enum HormoneLabResultParser {
             kind: kind
         )
         let concentrationUnit = concentrationUnit(from: unitSymbol, kind: kind)
-        if kind.simulatedHormone != nil, concentrationUnit == nil {
-            return nil
-        }
 
         return LabAnalyteResult(
             kind: kind,
             name: detectedName(for: kind, in: row.evidenceText),
             value: row.value,
-            unitSymbol: concentrationUnit?.symbol ?? unitSymbol,
+            unitSymbol: unitSymbol,
             concentrationUnit: concentrationUnit,
+            reportedValueText: row.reportedValueText,
+            reportedUnitText: row.reportedUnitText.nilIfBlank,
             referenceRange: referenceRange,
             method: row.method ?? methodNearLine(row.lineIndex, in: lines),
             sourceLine: stripInternalParserHints(row.evidenceText)
@@ -3475,7 +3651,9 @@ enum HormoneLabResultParser {
         var lineIndex: Int
         var line: String
         var value: Double
+        var reportedValueText: String
         var unitSymbol: String
+        var reportedUnitText: String
         var method: String?
         var explicitKind: LabAnalyteKind?
         var referenceBounds: (lower: Double, upper: Double)?
@@ -3488,7 +3666,7 @@ enum HormoneLabResultParser {
     ) -> TableRowCandidate? {
         let (index, line) = item
         guard let referenceMatch = referenceRangeMatches(in: line).first,
-              let value = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceMatch) else {
+              let measuredValue = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceMatch) else {
             return nil
         }
         let nearbyKind = detectedKindNearLine(index, line: line, in: lines)
@@ -3497,8 +3675,10 @@ enum HormoneLabResultParser {
         return TableRowCandidate(
             lineIndex: index,
             line: line,
-            value: value,
+            value: measuredValue.value,
+            reportedValueText: measuredValue.reportedText,
             unitSymbol: extractUnitSymbol(from: line),
+            reportedUnitText: extractReportedUnitText(from: line),
             method: extractMethod(from: line),
             explicitKind: nearbyKind ?? detectAnalyteKind(in: line),
             referenceBounds: referenceBounds(from: line),
@@ -3598,10 +3778,15 @@ enum HormoneLabResultParser {
         return score
     }
 
+    private struct ParsedMeasuredValue {
+        var value: Double
+        var reportedText: String
+    }
+
     private static func extractMeasuredValueBeforeReference(
         in line: String,
         referenceRange: NSTextCheckingResult
-    ) -> Double? {
+    ) -> ParsedMeasuredValue? {
         guard let prefixRange = Range(NSRange(location: 0, length: referenceRange.range.location), in: line) else {
             return nil
         }
@@ -3612,9 +3797,16 @@ enum HormoneLabResultParser {
         let range = NSRange(prefix.startIndex..<prefix.endIndex, in: prefix)
         let bounds = referenceBounds(from: line)
 
-        return regex.matches(in: prefix, range: range).reversed().compactMap { match in
-            stringCapture(1, in: prefix, match: match)
-                .flatMap { correctedMeasuredValue(from: $0, referenceBounds: bounds, kind: nil) }
+        return regex.matches(in: prefix, range: range).reversed().compactMap { match -> ParsedMeasuredValue? in
+            guard let reportedText = stringCapture(1, in: prefix, match: match),
+                  let value = correctedMeasuredValue(
+                    from: reportedText,
+                    referenceBounds: bounds,
+                    kind: nil
+                  ) else {
+                return nil
+            }
+            return ParsedMeasuredValue(value: value, reportedText: reportedText.trimmed)
         }
         .first
     }
@@ -3655,10 +3847,13 @@ enum HormoneLabResultParser {
         return kind.defaultName
     }
 
-    private static func extractMeasuredValue(from line: String, kind: LabAnalyteKind) -> Double? {
+    private static func extractMeasuredValue(
+        from line: String,
+        kind: LabAnalyteKind
+    ) -> ParsedMeasuredValue? {
         if let referenceRange = referenceRangeMatches(in: line).first,
-           let value = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceRange) {
-            return value
+           let measuredValue = extractMeasuredValueBeforeReference(in: line, referenceRange: referenceRange) {
+            return measuredValue
         }
 
         let referenceRanges = referenceRangeMatches(in: line).map(\.range)
@@ -3676,7 +3871,7 @@ enum HormoneLabResultParser {
                 value >= 0 else {
                 continue
             }
-            return value
+            return ParsedMeasuredValue(value: value, reportedText: valueText.trimmed)
         }
 
         return nil
@@ -3803,26 +3998,13 @@ enum HormoneLabResultParser {
         return (lower, upper)
     }
 
-    private static func normalizedReferenceRange(_ referenceRange: String, kind: LabAnalyteKind?) -> String {
-        var normalized = normalizedUnitSubstrings(in: referenceRange)
+    private static func normalizedReferenceRange(_ referenceRange: String, kind _: LabAnalyteKind?) -> String {
+        normalizedUnitSubstrings(in: referenceRange)
             .replacingOccurrences(of: "umol/L", with: "µmol/L", options: [.caseInsensitive])
             .replacingOccurrences(of: "wmol/L", with: "µmol/L", options: [.caseInsensitive])
             .replacingOccurrences(of: "u mol/L", with: "µmol/L", options: [.caseInsensitive])
             .replacingOccurrences(of: "μmol/L", with: "µmol/L", options: [.caseInsensitive])
             .replacingOccurrences(of: "IV/L", with: "IU/L", options: [.caseInsensitive])
-
-        if kind == .testosterone || kind == .progesterone {
-            normalized = normalized
-                .replacingOccurrences(of: "mmo1/L", with: "nmol/L", options: [.caseInsensitive])
-                .replacingOccurrences(of: "mmol/L", with: "nmol/L", options: [.caseInsensitive])
-        }
-        if kind == .dehydroepiandrosteroneSulfate {
-            normalized = normalized
-                .replacingOccurrences(of: "mmo1/L", with: "µmol/L", options: [.caseInsensitive])
-                .replacingOccurrences(of: "mmol/L", with: "µmol/L", options: [.caseInsensitive])
-        }
-
-        return normalized
     }
 
     private static func extractUnitSymbol(from line: String) -> String {
@@ -3843,24 +4025,34 @@ enum HormoneLabResultParser {
     }
 
     private static var unitSymbolPattern: String {
-        let massUnit = #"(?:p\s*g|n\s*g|u\s*g|µ\s*g|μ\s*g|m\s*g|g)"#
-        let molarUnit = #"(?:p\s*mol|n\s*mol|u\s*mol|w\s*mol|µ\s*mol|μ\s*mol|m\s*mol|mmo[1l]|mol)"#
+        let massUnit = #"(?:m\s*c\s*g|[fpnumcdhkµμ]?\s*g)"#
+        let molarUnit = #"(?:[fpnumcdhkµμ]?\s*mol|w\s*mol|mmo[1l])"#
         let activityUnit = #"(?:u\s*IU|µ\s*IU|μ\s*IU|m\s*IU|m?[i1][uUvV]|IU|IV|1U|1V|U)"#
-        let denominator = #"(?:m\s*[lL1]|d\s*[lL1]|[lL1])"#
+        let denominator = #"(?:(?:\d+(?:\.\d+)?\s*)?[fpnumcdµμ]?\s*[lL1])"#
+        let separator = #"(?:\s*(?:/|／|per|[·⋅∙])\s*|\s*)"#
+        let inverseSuffix = #"(?:\s*(?:\^?\s*[-−]\s*1|⁻¹))?"#
         let countUnit = #"(?:[x×]?\s*10\s*\^?\s*\d+\s*/\s*[lL1]|10\s*\*\s*\d+\s*/\s*[lL1])"#
         let standaloneUnit = #"(?:%|mm\s*Hg|f\s*L|p\s*g|m\s*Eq\s*/?\s*[lL1]|m\s*[lL1]\s*/\s*min(?:\s*/\s*1\.?\s*73\s*m2)?|m\s*mol\s*/\s*mol|"# + countUnit + #")"#
-        return #"(?<![A-Za-z])((?:(?:"# + massUnit + #"|"# + molarUnit + #"|"# + activityUnit + #")\s*/?\s*"# + denominator + #")|"# + standaloneUnit + #")(?![A-Za-z])"#
+        return #"(?<![A-Za-z])((?:(?:"# + massUnit + #"|"# + molarUnit + #"|"# + activityUnit + #")"# + separator + denominator + inverseSuffix + #")|"# + standaloneUnit + #")(?![A-Za-z])"#
     }
 
     private static func firstUnitSymbol(in text: String) -> String? {
+        firstReportedUnitText(in: text).map(normalizedUnitToken)
+    }
+
+    private static func firstReportedUnitText(in text: String) -> String? {
         guard let match = firstMatch(pattern: unitSymbolPattern, in: text),
               let unit = stringCapture(1, in: text, match: match) else {
             return nil
         }
-        return normalizedUnitToken(unit)
+        return unit.trimmed
     }
 
     private static func firstUnitSymbolAfterNumber(in line: String) -> String? {
+        firstReportedUnitTextAfterNumber(in: line).map(normalizedUnitToken)
+    }
+
+    private static func firstReportedUnitTextAfterNumber(in line: String) -> String? {
         let numberPattern = #"(?<![\d.A-Za-z])([<>≤≥]?\s*\d+(?:[\.,]\d+)?)"#
         guard let numberRegex = try? NSRegularExpression(pattern: numberPattern),
               let unitRegex = try? NSRegularExpression(
@@ -3882,10 +4074,16 @@ enum HormoneLabResultParser {
                   let unit = stringCapture(1, in: suffix, match: unitMatch) else {
                 continue
             }
-            return normalizedUnitToken(unit)
+            return unit.trimmed
         }
 
         return nil
+    }
+
+    private static func extractReportedUnitText(from line: String) -> String {
+        firstReportedUnitTextAfterNumber(in: line)
+            ?? firstReportedUnitText(in: line)
+            ?? ""
     }
 
     private static func normalizedUnitSubstrings(in text: String) -> String {
@@ -3914,7 +4112,6 @@ enum HormoneLabResultParser {
             .replacingOccurrences(of: "/m1", with: "/ml", options: [.caseInsensitive])
             .replacingOccurrences(of: "/d1", with: "/dl", options: [.caseInsensitive])
         let lower = compact.lowercased()
-            .replacingOccurrences(of: "1", with: "i")
             .replacingOccurrences(of: "iv", with: "iu")
             .replacingOccurrences(of: "miv", with: "miu")
         switch lower {
@@ -3946,10 +4143,10 @@ enum HormoneLabResultParser {
         case "nmol/l": return "nmol/L"
         case "nmol/ml": return "nmol/mL"
         case "nmol/dl": return "nmol/dL"
-        case "mmol/l", "mmoi/l": return "mmol/L"
-        case "mmol/ml", "mmoi/ml": return "mmol/mL"
-        case "mmol/dl", "mmoi/dl": return "mmol/dL"
-        case "mmol/mol", "mmoi/mol": return "mmol/mol"
+        case "mmol/l", "mmo1/l": return "mmol/L"
+        case "mmol/ml", "mmo1/ml": return "mmol/mL"
+        case "mmol/dl", "mmo1/dl": return "mmol/dL"
+        case "mmol/mol", "mmo1/mol": return "mmol/mol"
         case "miu/ml": return "mIU/mL"
         case "uiu/ml": return "uIU/mL"
         case "µiu/ml": return "µIU/mL"
@@ -3988,10 +4185,14 @@ enum HormoneLabResultParser {
     }
 
     private static func resolvedUnitSymbol(_ rawUnitSymbol: String, kind: LabAnalyteKind) -> String {
+        // These are OCR fallback repairs only. reportedUnitText keeps the raw
+        // token, and calibration refuses a dimensional disagreement until the
+        // user reviews it.
         if (kind == .testosterone || kind == .progesterone), rawUnitSymbol == "mmol/L" {
             return "nmol/L"
         }
-        if kind == .dehydroepiandrosteroneSulfate, rawUnitSymbol == "mol/L" || rawUnitSymbol == "mmol/L" {
+        if kind == .dehydroepiandrosteroneSulfate,
+           rawUnitSymbol == "mol/L" || rawUnitSymbol == "mmol/L" {
             return "µmol/L"
         }
         return rawUnitSymbol
@@ -4002,40 +4203,7 @@ enum HormoneLabResultParser {
         referenceRange: String?,
         kind: LabAnalyteKind
     ) -> String {
-        let unit = resolvedUnitSymbol(rawUnitSymbol, kind: kind)
-        if let inferred = inferredUnitSymbol(from: referenceRange, kind: kind) {
-            if unit.isEmpty || unit == "mol/L" {
-                return inferred
-            }
-            if kind == .prolactin, unit == "IU/L" {
-                return inferred
-            }
-        }
-        return unit
-    }
-
-    private static func inferredUnitSymbol(from referenceRange: String?, kind: LabAnalyteKind) -> String? {
-        guard let referenceRange,
-              let bounds = referenceBounds(from: referenceRange) else {
-            return nil
-        }
-
-        switch kind {
-        case .estradiol:
-            return bounds.upper >= 100 ? "pmol/L" : nil
-        case .testosterone:
-            return bounds.upper >= 5 ? "nmol/L" : nil
-        case .progesterone:
-            return bounds.upper <= 10 ? "nmol/L" : nil
-        case .prolactin:
-            return bounds.upper >= 100 ? "mIU/L" : nil
-        case .follicleStimulatingHormone, .luteinizingHormone:
-            return "IU/L"
-        case .dehydroepiandrosteroneSulfate:
-            return "µmol/L"
-        default:
-            return nil
-        }
+        resolvedUnitSymbol(rawUnitSymbol, kind: kind)
     }
 
     private static func extractMethod(from line: String) -> String? {

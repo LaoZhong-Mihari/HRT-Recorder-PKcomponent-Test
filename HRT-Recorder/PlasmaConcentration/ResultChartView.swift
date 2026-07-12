@@ -54,6 +54,47 @@ private struct ResultChartZoomAnchor {
     let relativePosition: Double
 }
 
+/// Keeps the cursor badge inside the plot using its measured size without a
+/// PreferenceKey or state write during chart panning.
+private struct ResultChartClampedBadgeLayout: Layout {
+    let preferredCenter: CGPoint
+    let horizontalBounds: ClosedRange<CGFloat>
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        guard let badge = subviews.first else { return }
+        let size = badge.sizeThatFits(.unspecified)
+        let allowedMinX = max(bounds.minX, horizontalBounds.lowerBound) + size.width / 2
+        let allowedMaxX = min(bounds.maxX, horizontalBounds.upperBound) - size.width / 2
+        let resolvedX = allowedMinX <= allowedMaxX
+            ? min(max(preferredCenter.x, allowedMinX), allowedMaxX)
+            : horizontalBounds.lowerBound + (horizontalBounds.upperBound - horizontalBounds.lowerBound) / 2
+        let minY = bounds.minY + size.height / 2
+        let maxY = bounds.maxY - size.height / 2
+        let resolvedY = minY <= maxY
+            ? min(max(preferredCenter.y, minY), maxY)
+            : bounds.midY
+
+        badge.place(
+            at: CGPoint(x: resolvedX, y: resolvedY),
+            anchor: .center,
+            proposal: ProposedViewSize(width: size.width, height: size.height)
+        )
+    }
+}
+
 private struct ResultChartInteractionSurface: UIViewRepresentable {
     let plotFrame: CGRect
     let isHoverEnabled: Bool
@@ -342,6 +383,7 @@ struct ResultChartView: View {
 
     private var displayPoint: ResultChartPoint? {
         guard let hour = displayHour,
+              visibleDomain.contains(hour),
               let concentration = sim.concentration(at: hour) else {
             return nil
         }
@@ -642,11 +684,15 @@ struct ResultChartView: View {
                             .frame(width: geometry.size.width, height: geometry.size.height)
 
                         if let visibleInteractiveHour {
-                            ResultChartBadge(text: ResultChartFormatter.cursorTimeLabel(for: visibleInteractiveHour))
-                                .position(
+                            ResultChartClampedBadgeLayout(
+                                preferredCenter: CGPoint(
                                     x: plotFrame.minX + xPosition(for: visibleInteractiveHour, plotFrame: plotFrame),
                                     y: plotFrame.maxY + 16
-                                )
+                                ),
+                                horizontalBounds: plotFrame.minX...plotFrame.maxX
+                            ) {
+                                ResultChartBadge(text: ResultChartFormatter.cursorTimeLabel(for: visibleInteractiveHour))
+                            }
                         }
                     }
                 }
