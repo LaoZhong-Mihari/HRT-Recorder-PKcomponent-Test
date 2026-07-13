@@ -5,6 +5,12 @@ private struct ImportedDoseDetails: Sendable {
     let rawDoseMG: Double?
     let extras: [DoseEvent.ExtraKey: Double]
     let description: String?
+    let requiresConfirmation: Bool
+}
+
+private struct ImportedDoseResolution: Sendable {
+    let valueMG: Double?
+    let requiresConfirmation: Bool
 }
 
 @MainActor
@@ -50,6 +56,9 @@ struct UnsupportedMedicationImportService: MedicationImportServicing {
 final class HealthMedicationImportService: MedicationImportServicing {
     private var store: HKHealthStore?
     private let queryTimeout: Duration = .seconds(12)
+    private let doseHistoryDays = 180
+    private let doseForecastDays = 90
+    private let doseEventLimit = 2_048
 
     var isSupported: Bool { true }
 
@@ -62,15 +71,10 @@ final class HealthMedicationImportService: MedicationImportServicing {
     }
 
     func authorizationState() async -> MedicationImportAuthorizationState {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            return .ready
-        }
-
-        guard let shouldRequest = try? await HealthKitService.shared.shouldRequestMedicationAuthorization() else {
-            return .ready
-        }
-
-        return shouldRequest ? .needsAuthorization : .ready
+        // Per-object medication read access has no non-prompting status API.
+        // Query the medications already shared with this app, and let the user
+        // explicitly reopen the Health selector when they want to review access.
+        .ready
     }
 
     func requestAuthorizationIfNeeded() async throws {
@@ -86,7 +90,10 @@ final class HealthMedicationImportService: MedicationImportServicing {
         guard !medications.isEmpty else { return [] }
 
         let identifiers = Set(medications.map { $0.medication.identifier })
-        let doseEvents = (try? await fetchDoseEvents(for: identifiers)) ?? []
+        // A failed dose query is not equivalent to an empty history. Silently
+        // falling back here could turn an unreadable schedule into a guessed,
+        // enabled reminder plan.
+        let doseEvents = try await fetchDoseEvents(for: identifiers)
         let groupedDoseEvents = Dictionary(grouping: doseEvents, by: \.medicationConceptIdentifier)
 
         return medications
@@ -125,13 +132,43 @@ final class HealthMedicationImportService: MedicationImportServicing {
     @available(iOS 26.0, *)
     private func fetchDoseEvents(for identifiers: Set<HKHealthConceptIdentifier>) async throws -> [HKMedicationDoseEvent] {
         guard !identifiers.isEmpty else { return [] }
+        let historyDays = doseHistoryDays
+        let forecastDays = doseForecastDays
+        let queryLimit = doseEventLimit
 
         return try await executeQuery(timeout: queryTimeout) { finish in
             let type = HKObjectType.medicationDoseEventType()
-            let predicate = HKQuery.predicateForMedicationDoseEvent(medicationConceptIdentifiers: identifiers)
+            let now = Date()
+            let startDate = Calendar.autoupdatingCurrent.date(
+                byAdding: .day,
+                value: -historyDays,
+                to: now
+            )
+            let endDate = Calendar.autoupdatingCurrent.date(
+                byAdding: .day,
+                value: forecastDays,
+                to: now
+            )
+            let medicationPredicate = HKQuery.predicateForMedicationDoseEvent(
+                medicationConceptIdentifiers: identifiers
+            )
+            let datePredicate = HKQuery.predicateForSamples(
+                withStart: startDate,
+                end: endDate,
+                options: []
+            )
+            let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                medicationPredicate,
+                datePredicate
+            ])
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
 
-            return HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
+            return HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: queryLimit,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
                 if let error {
                     finish(.failure(error))
                     return
@@ -157,6 +194,7 @@ final class HealthMedicationImportService: MedicationImportServicing {
         )
         let scheduledDoseEvents = scheduleDoseEvents(from: doseEvents)
         let timingDates = timingDates(hasSchedule: medication.hasSchedule, doseEvents: doseEvents)
+        let hasMixedScheduledDoses = hasConflictingScheduledDoses(scheduledDoseEvents)
         let doseSeedEvent = preferredDoseSeedEvent(
             scheduleDoseEvents: scheduledDoseEvents,
             allDoseEvents: doseEvents
@@ -169,13 +207,19 @@ final class HealthMedicationImportService: MedicationImportServicing {
             route: route,
             timingDates: timingDates
         )
+        let hasReliableSchedule = medication.hasSchedule
+            && isReliableSchedule(timingDates: timingDates, recurrence: recurrence)
         let suggestedTemplate: MedicationDoseTemplate?
-        if let alignmentRule, let doseDetails {
+        if !hasMixedScheduledDoses, let alignmentRule, let doseDetails {
             suggestedTemplate = makeTemplate(from: snapshot, rule: alignmentRule, doseDetails: doseDetails)
         } else {
             suggestedTemplate = nil
         }
-        let alignmentStatus = alignmentStatus(for: alignmentRule, template: suggestedTemplate)
+        let alignmentStatus = alignmentStatus(
+            for: alignmentRule,
+            template: suggestedTemplate,
+            doseDetails: doseDetails
+        )
         let healthPlanSummary = makeHealthPlanSummary(
             hasSchedule: medication.hasSchedule,
             recurrence: recurrence,
@@ -199,6 +243,10 @@ final class HealthMedicationImportService: MedicationImportServicing {
             healthPlanSummary: healthPlanSummary,
             note: note,
             sourceMedicationName: concept.displayText,
+            sourceMedicationIdentifierArchive: archiveIdentifier(concept.identifier),
+            existingPlanID: nil,
+            shouldEnableRemindersByDefault: hasReliableSchedule && alignmentStatus == .aligned,
+            requiresScheduleConfirmation: !hasReliableSchedule,
             alignmentStatus: alignmentStatus,
             alignmentRuleName: alignmentRule?.name
         )
@@ -281,17 +329,25 @@ final class HealthMedicationImportService: MedicationImportServicing {
     @available(iOS 26.0, *)
     private func alignmentStatus(
         for rule: MedicationAlignmentRule?,
-        template: MedicationDoseTemplate?
+        template: MedicationDoseTemplate?,
+        doseDetails: ImportedDoseDetails?
     ) -> MedicationImportAlignmentStatus {
         guard rule != nil else {
             return .needsRule
         }
 
-        guard let template else {
+        guard let template, doseDetails?.requiresConfirmation != true else {
             return .needsDoseConfirmation
         }
 
         return template.hasConfiguredDose ? .aligned : .needsDoseConfirmation
+    }
+
+    private func archiveIdentifier(_ identifier: HKHealthConceptIdentifier) -> Data? {
+        try? NSKeyedArchiver.archivedData(
+            withRootObject: identifier,
+            requiringSecureCoding: true
+        )
     }
 
     @available(iOS 26.0, *)
@@ -357,6 +413,19 @@ final class HealthMedicationImportService: MedicationImportServicing {
     }
 
     @available(iOS 26.0, *)
+    private func hasConflictingScheduledDoses(
+        _ doseEvents: [HKMedicationDoseEvent]
+    ) -> Bool {
+        let signatures = Set(doseEvents.compactMap { event -> String? in
+            guard let quantity = event.scheduledDoseQuantity ?? event.doseQuantity else {
+                return nil
+            }
+            return "\(normalizedDoseUnit(event.unit.unitString)):\(quantity.bitPattern)"
+        })
+        return signatures.count > 1
+    }
+
+    @available(iOS 26.0, *)
     private func scheduleSeedEvent(from scheduleDoseEvents: [HKMedicationDoseEvent]) -> HKMedicationDoseEvent? {
         let now = Date()
         if let upcoming = scheduleDoseEvents.first(where: { eventDate(for: $0) >= now }) {
@@ -404,10 +473,13 @@ final class HealthMedicationImportService: MedicationImportServicing {
 
         let quantity = doseSeedEvent?.scheduledDoseQuantity ?? doseSeedEvent?.doseQuantity
         let normalizedUnit = doseSeedEvent.map { normalizedDoseUnit($0.unit.unitString) } ?? ""
+        var requiresConfirmation = false
 
         let resolvedRawDoseMG: Double? = {
             guard let quantity else {
-                return fallbackRawDoseMG(from: snapshot, rule: rule)
+                let fallback = fallbackRawDoseResolution(from: snapshot, rule: rule)
+                requiresConfirmation = fallback.requiresConfirmation
+                return fallback.valueMG
             }
 
             switch normalizedUnit {
@@ -427,7 +499,9 @@ final class HealthMedicationImportService: MedicationImportServicing {
                 if let perUnitStrength = parsedStrength(for: normalizedUnit, in: parsedStrengths) {
                     return quantity * perUnitStrength.massMG / max(perUnitStrength.denominatorQuantity, 1)
                 }
-                if let singleUnitStrength = fallbackRawDoseMG(from: snapshot, rule: rule) {
+                let fallback = fallbackRawDoseResolution(from: snapshot, rule: rule)
+                requiresConfirmation = fallback.requiresConfirmation
+                if let singleUnitStrength = fallback.valueMG {
                     return quantity * singleUnitStrength
                 }
                 return nil
@@ -435,9 +509,17 @@ final class HealthMedicationImportService: MedicationImportServicing {
                 if let perUnitStrength = parsedStrength(for: normalizedUnit, in: parsedStrengths) {
                     return quantity * perUnitStrength.massMG / max(perUnitStrength.denominatorQuantity, 1)
                 }
-                return fallbackRawDoseMG(from: snapshot, rule: rule)
+                let fallback = fallbackRawDoseResolution(from: snapshot, rule: rule)
+                requiresConfirmation = true
+                return fallback.valueMG
             }
         }()
+
+        if extras[.releaseRateUGPerDay] != nil {
+            requiresConfirmation = false
+        } else if resolvedRawDoseMG == nil {
+            requiresConfirmation = true
+        }
 
         return ImportedDoseDetails(
             rawDoseMG: resolvedRawDoseMG,
@@ -446,22 +528,29 @@ final class HealthMedicationImportService: MedicationImportServicing {
                 from: doseSeedEvent,
                 rawDoseMG: resolvedRawDoseMG,
                 extras: extras
-            )
+            ),
+            requiresConfirmation: requiresConfirmation
         )
     }
 
-    private func fallbackRawDoseMG(from snapshot: HealthMedicationSnapshot, rule: MedicationAlignmentRule) -> Double? {
+    private func fallbackRawDoseResolution(
+        from snapshot: HealthMedicationSnapshot,
+        rule: MedicationAlignmentRule
+    ) -> ImportedDoseResolution {
         switch rule.doseParsingMode {
         case .strengthInName:
             if let parsedFromName = MedicationStrengthParser.parseRawDoseMG(from: snapshot.displayName) {
-                return parsedFromName
+                return ImportedDoseResolution(valueMG: parsedFromName, requiresConfirmation: false)
             }
 
             if let parsedFromNickname = MedicationStrengthParser.parseRawDoseMG(from: snapshot.nickname ?? "") {
-                return parsedFromNickname
+                return ImportedDoseResolution(valueMG: parsedFromNickname, requiresConfirmation: false)
             }
 
-            return rule.defaultUnitStrengthMG
+            return ImportedDoseResolution(
+                valueMG: rule.defaultUnitStrengthMG,
+                requiresConfirmation: true
+            )
         }
     }
 
@@ -478,18 +567,42 @@ final class HealthMedicationImportService: MedicationImportServicing {
         let times = uniqueTimes(from: timingDates)
         let primaryTime = times.first ?? .defaultMorning
 
-        switch route {
-        case .oral, .gel, .sublingual:
+        let calendar = Calendar.autoupdatingCurrent
+        let uniqueDays = Array(
+            Set(timingDates.map { calendar.startOfDay(for: $0) })
+        ).sorted()
+        let intervals = dayIntervals(from: uniqueDays)
+        let medianInterval = median(of: intervals)
+
+        if uniqueDays.count == 1 || medianInterval == 1 {
             return .daily(times: times.isEmpty ? [primaryTime] : times)
-        case .injection, .patchApply, .patchRemove:
-            let interval = inferredIntervalDays(from: timingDates)
-            let roundedInterval = max(1, interval ?? 7)
+        }
+
+        if let medianInterval, medianInterval > 7 {
             return .everyNDays(
-                intervalDays: roundedInterval,
+                intervalDays: medianInterval,
                 startDate: timingDates.last ?? Date(),
                 time: primaryTime
             )
         }
+
+        let weekdayCounts = Dictionary(grouping: uniqueDays) {
+            calendar.component(.weekday, from: $0)
+        }.mapValues { $0.count }
+        if weekdayCounts.count < 7,
+           !weekdayCounts.isEmpty,
+           weekdayCounts.values.allSatisfy({ $0 >= 2 }) {
+            return .weekly(
+                weekdays: weekdayCounts.keys.sorted(),
+                time: primaryTime
+            )
+        }
+
+        return .everyNDays(
+            intervalDays: max(1, medianInterval ?? defaultIntervalDays(for: route)),
+            startDate: timingDates.last ?? Date(),
+            time: primaryTime
+        )
     }
 
     @available(iOS 26.0, *)
@@ -648,7 +761,7 @@ final class HealthMedicationImportService: MedicationImportServicing {
             .compactMap(\.scheduledDate)
             .sorted()
         if !exactScheduleDates.isEmpty {
-            return exactScheduleDates
+            return Array(exactScheduleDates.suffix(64))
         }
 
         let scheduledEventDates = doseEvents
@@ -656,10 +769,12 @@ final class HealthMedicationImportService: MedicationImportServicing {
             .map(\.startDate)
             .sorted()
         if !scheduledEventDates.isEmpty {
-            return scheduledEventDates
+            return Array(scheduledEventDates.suffix(64))
         }
 
-        return doseEvents.map(\.startDate).sorted()
+        // A medication can have a schedule and still be taken as needed. PRN
+        // logs are evidence of use, not evidence of the configured cadence.
+        return []
     }
 
     @available(iOS 26.0, *)
@@ -707,14 +822,84 @@ final class HealthMedicationImportService: MedicationImportServicing {
         }
     }
 
-    private func inferredIntervalDays(from dates: [Date]) -> Int? {
+    private func dayIntervals(from dates: [Date]) -> [Int] {
         let calendar = Calendar.autoupdatingCurrent
-        let intervals = zip(dates, dates.dropFirst()).compactMap { lhs, rhs in
+        return zip(dates, dates.dropFirst()).compactMap { lhs, rhs in
             calendar.dateComponents([.day], from: lhs, to: rhs).day
-        }
+        }.filter { $0 > 0 }
+    }
 
-        guard !intervals.isEmpty else { return nil }
-        return Int((Double(intervals.reduce(0, +)) / Double(intervals.count)).rounded())
+    private func isReliableSchedule(
+        timingDates: [Date],
+        recurrence: MedicationPlanRecurrence
+    ) -> Bool {
+        let calendar = Calendar.autoupdatingCurrent
+        let uniqueDays = Array(
+            Set(timingDates.map { calendar.startOfDay(for: $0) })
+        ).sorted()
+        guard uniqueDays.count >= 4 else { return false }
+
+        let intervals = dayIntervals(from: uniqueDays)
+        let minutesByDay = Dictionary(grouping: timingDates) {
+            calendar.startOfDay(for: $0)
+        }
+        .mapValues { Set($0.map { clockMinute(for: $0, calendar: calendar) }) }
+        let allClockMinutes = Set(timingDates.map {
+            clockMinute(for: $0, calendar: calendar)
+        })
+
+        switch recurrence.kind {
+        case .daily:
+            let expectedMinutes = Set(recurrence.times.map {
+                $0.hour * 60 + $0.minute
+            })
+            return intervals.allSatisfy { $0 == 1 }
+                && !expectedMinutes.isEmpty
+                && minutesByDay.values.allSatisfy { $0 == expectedMinutes }
+
+        case .weekly:
+            let weekdayCounts = Dictionary(grouping: uniqueDays) {
+                calendar.component(.weekday, from: $0)
+            }
+            .mapValues(\.count)
+            let inferredWeekdays = Set(weekdayCounts.keys)
+            return inferredWeekdays == Set(recurrence.weekdays)
+                && weekdayCounts.values.allSatisfy { $0 >= 2 }
+                && allClockMinutes == [
+                    recurrence.primaryTime.hour * 60 + recurrence.primaryTime.minute
+                ]
+
+        case .everyNDays:
+            return intervals.count >= 3
+                && intervals.allSatisfy { $0 == recurrence.intervalDays }
+                && allClockMinutes == [
+                    recurrence.primaryTime.hour * 60 + recurrence.primaryTime.minute
+                ]
+        }
+    }
+
+    private func clockMinute(for date: Date, calendar: Calendar) -> Int {
+        calendar.component(.hour, from: date) * 60
+            + calendar.component(.minute, from: date)
+    }
+
+    private func median(of values: [Int]) -> Int? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return Int((Double(sorted[middle - 1] + sorted[middle]) / 2).rounded())
+        }
+        return sorted[middle]
+    }
+
+    private func defaultIntervalDays(for route: DoseEvent.Route) -> Int {
+        switch route {
+        case .oral, .gel, .sublingual:
+            return 1
+        case .injection, .patchApply, .patchRemove:
+            return 7
+        }
     }
 
     private func recurrenceSummary(_ recurrence: MedicationPlanRecurrence) -> String {

@@ -10,22 +10,31 @@ import Combine
 import SwiftUI
 
 struct TimelineDayGroup: Identifiable {
-    var id: String { day }
+    let id: Date
     let day: String
     let events: [DoseEvent]
 }
 
 private func makeTimelineDayGroups(from events: [DoseEvent]) -> [TimelineDayGroup] {
     let sortedEvents = events.sorted { $0.timeH < $1.timeH }
+    let calendar = Calendar.autoupdatingCurrent
 
     let formatter = DateFormatter()
     formatter.locale = Locale.current
     formatter.setLocalizedDateFormatFromTemplate("yMMMMdEEEE")
 
-    let groupedDictionary = Dictionary(grouping: sortedEvents) { formatter.string(from: $0.date) }
+    let groupedDictionary = Dictionary(grouping: sortedEvents) {
+        calendar.startOfDay(for: $0.date)
+    }
 
-    return groupedDictionary.map { TimelineDayGroup(day: $0.key, events: $0.value) }
-        .sorted { ($0.events.first?.timeH ?? .leastNormalMagnitude) > ($1.events.first?.timeH ?? .leastNormalMagnitude) }
+    return groupedDictionary.map { dayStart, events in
+        TimelineDayGroup(
+            id: dayStart,
+            day: formatter.string(from: dayStart),
+            events: events
+        )
+    }
+    .sorted { $0.id > $1.id }
 }
 
 enum BodyWeightSyncSource: String {
@@ -37,11 +46,16 @@ enum BodyWeightSyncSource: String {
 final class DoseTimelineVM: ObservableObject {
     @Published var events: [DoseEvent] = [] {
         didSet {
+            exactConcentrationCache.removeAll(keepingCapacity: true)
+            refreshTimelineDayGroups()
             guard !isApplyingCanonicalSnapshot, let onChange else { return }
             let canonicalEvents = onChange(events)
             guard canonicalEvents != events else { return }
             isApplyingCanonicalSnapshot = true
             events = canonicalEvents.sorted { $0.timeH < $1.timeH }
+            // Assigning a property from inside its own observer does not invoke
+            // `didSet` again, so refresh the cache from the canonical snapshot.
+            refreshTimelineDayGroups()
             isApplyingCanonicalSnapshot = false
         }
     }
@@ -53,6 +67,7 @@ final class DoseTimelineVM: ObservableObject {
     }
     @Published var result: SimulationResult? = nil
     @Published private(set) var calibrationResult = CalibrationResult()
+    @Published private(set) var dayGroups: [TimelineDayGroup] = []
     var allLabSamples: [LabSample] {
         labReports
             .flatMap(\.calibrationSamples)
@@ -61,12 +76,10 @@ final class DoseTimelineVM: ObservableObject {
     var labSamples: [LabSample] {
         allLabSamples.filter { $0.hormone == selectedHormone }
     }
-    var dayGroups: [TimelineDayGroup] {
-        let visibleEvents = events.filter { $0.appearsInTimeline(for: selectedHormone) }
-        return makeTimelineDayGroups(from: visibleEvents)
-    }
     @Published private(set) var selectedHormone: SimulatedHormone = .estradiol {
         didSet {
+            exactConcentrationCache.removeAll(keepingCapacity: true)
+            refreshTimelineDayGroups()
             let preferredUnit = preferredConcentrationUnit(for: selectedHormone)
             if selectedConcentrationUnit != preferredUnit {
                 selectedConcentrationUnit = preferredUnit
@@ -90,6 +103,7 @@ final class DoseTimelineVM: ObservableObject {
 
     @Published var bodyWeightKG: Double {
         didSet {
+            exactConcentrationCache.removeAll(keepingCapacity: true)
             UserDefaults.standard.set(bodyWeightKG, forKey: weightKey)
         }
     }
@@ -99,6 +113,8 @@ final class DoseTimelineVM: ObservableObject {
     
     private var cancellables = Set<AnyCancellable>()
     private var simulationGeneration: UInt64 = 0
+    private var simulationTask: Task<Void, Never>?
+    private var exactConcentrationCache: [Double: Double] = [:]
     /// First event time used as zero reference (hours)
     private var baseT0: Double? = nil
     private var onChange: (([DoseEvent]) -> [DoseEvent])?
@@ -125,6 +141,7 @@ final class DoseTimelineVM: ObservableObject {
         self.onChange = nil
         self.onLabReportsChange = nil
         setupSubscriptions()
+        refreshTimelineDayGroups()
         runSimulation()
     }
 
@@ -157,6 +174,7 @@ final class DoseTimelineVM: ObservableObject {
             self.bodyWeightSyncSource = nil
         }
         setupSubscriptions()
+        refreshTimelineDayGroups()
         if !initialEvents.isEmpty {
             runSimulation()
         }
@@ -174,6 +192,13 @@ final class DoseTimelineVM: ObservableObject {
                 self?.applySelectedConcentrationUnit(unit)
             }
             .store(in: &cancellables)
+    }
+
+    private func refreshTimelineDayGroups() {
+        let visibleEvents = events.filter {
+            $0.appearsInTimeline(for: selectedHormone)
+        }
+        dayGroups = makeTimelineDayGroups(from: visibleEvents)
     }
 
     var requiresHRTProfileSelection: Bool {
@@ -347,6 +372,10 @@ final class DoseTimelineVM: ObservableObject {
     }
     
     func runSimulation() {
+        simulationTask?.cancel()
+        simulationTask = nil
+        exactConcentrationCache.removeAll(keepingCapacity: true)
+
         guard !events.isEmpty else {
             simulationGeneration &+= 1
             result = nil
@@ -375,24 +404,32 @@ final class DoseTimelineVM: ObservableObject {
         simulationGeneration &+= 1
         let generation = simulationGeneration
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        simulationTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
             let calibration = PKCalibrator.fit(
                 events: allSimulatedEvents,
                 labs: labSamples,
-                bodyWeightKG: weight
+                bodyWeightKG: weight,
+                cancellationCheck: cancellationCheck
             )
+            guard !Task.isCancelled else { return }
             let simulationResult = simulateTimelineResult(
                 events: sortedEvents,
                 hormone: selectedHormone,
                 bodyWeightKG: weight,
-                calibration: calibration
+                calibration: calibration,
+                cancellationCheck: cancellationCheck
             )
+            guard !Task.isCancelled else { return }
 
-            DispatchQueue.main.async {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 guard generation == self.simulationGeneration else { return }
+                self.exactConcentrationCache.removeAll(keepingCapacity: true)
                 self.calibrationResult = calibration
                 self.result = simulationResult.converted(to: self.selectedConcentrationUnit)
                 self.isSimulating = false
+                self.simulationTask = nil
             }
         }
     }
@@ -448,12 +485,40 @@ final class DoseTimelineVM: ObservableObject {
     }
 
     func concentration(at date: Date) -> Double? {
-        guard let result else { return nil }
+        guard result != nil else { return nil }
         let hourValue = date.timeIntervalSince1970 / 3600.0
-        return result.concentration(at: hourValue)
+        if let cached = exactConcentrationCache[hourValue] {
+            return cached
+        }
+        // Lab comparisons should use the same exact analytic model as
+        // calibration, not interpolation from the chart's bounded sample grid.
+        let simulatedEvents = events.filter {
+            $0.participatesInSimulation && $0.simulatedHormone == selectedHormone
+        }
+        guard !simulatedEvents.isEmpty else { return nil }
+        let engine = SimulationEngine(
+            events: simulatedEvents,
+            hormone: selectedHormone,
+            bodyWeightKG: bodyWeightKG,
+            startTimeH: hourValue - 0.5,
+            endTimeH: hourValue + 0.5,
+            numberOfSteps: 2,
+            vdPerKGOverride: calibrationResult.vdPerKGOverride(for: selectedHormone),
+            kaMultiplier: calibrationResult.kaMultiplier(for: selectedHormone)
+        )
+        let nativeValue = engine.predictedConcentration(atTimeH: hourValue)
+        let convertedValue = ConcentrationUnit.convert(
+            nativeValue,
+            from: selectedHormone.concentrationUnit,
+            to: selectedConcentrationUnit,
+            hormone: selectedHormone
+        )
+        exactConcentrationCache[hourValue] = convertedValue
+        return convertedValue
     }
 
     private func applySelectedConcentrationUnit(_ unit: ConcentrationUnit) {
+        exactConcentrationCache.removeAll(keepingCapacity: true)
         guard unit.isSupported(for: selectedHormone) else {
             let fallback = selectedHormone.concentrationUnit
             if selectedConcentrationUnit != fallback {

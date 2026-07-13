@@ -415,6 +415,7 @@ final class WatchDoseTimelineVM: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let weightKey = "watch.user.weightKg"
     private let selectedHormoneKey = "watch.timeline.selectedHormone"
+    private var chartReferenceTimeH: Double?
 
     init(store: WatchDoseStore) {
         self.store = store
@@ -482,12 +483,16 @@ final class WatchDoseTimelineVM: ObservableObject {
         guard !simulationEvents.isEmpty else {
             localChartPoints = []
             currentConcentration = nil
+            chartReferenceTimeH = nil
             return
         }
 
         let nowH = Date().timeIntervalSince1970 / 3600.0
-        let startH = (simulationEvents.first?.timeH ?? nowH) - 24.0
-        let endH = (simulationEvents.last?.timeH ?? nowH) + 24.0 * 14.0
+        chartReferenceTimeH = nowH
+        // Keep all historical events in the analytic sum, but do not spread the
+        // Watch's fixed chart budget across the entire history.
+        let startH = nowH - 24.0 * 7.0
+        let endH = nowH + 24.0 * 14.0
         let steps = 1000
         let stepH = (endH - startH) / Double(steps - 1)
         let sourceUnit = selectedHormone.concentrationUnit
@@ -513,6 +518,49 @@ final class WatchDoseTimelineVM: ObservableObject {
         }
 
         localChartPoints = points
+        refreshCurrentConcentration(
+            simulationEvents: simulationEvents,
+            nowH: nowH
+        )
+    }
+
+    func refreshForClockTick() {
+        let nowH = Date().timeIntervalSince1970 / 3600.0
+        if let chartReferenceTimeH,
+           abs(nowH - chartReferenceTimeH) < 1.0 {
+            refreshCurrentConcentration(nowH: nowH)
+        } else {
+            // Recenter a long-lived foreground chart at a much lower cadence
+            // than the minute-by-minute concentration label refresh.
+            runSimulation()
+        }
+    }
+
+    func refreshCurrentConcentration() {
+        refreshCurrentConcentration(
+            nowH: Date().timeIntervalSince1970 / 3600.0
+        )
+    }
+
+    private func refreshCurrentConcentration(nowH: Double) {
+        let simulationEvents = store.events
+            .filter { $0.participatesInSimulation && $0.simulatedHormone == selectedHormone }
+        guard !simulationEvents.isEmpty else {
+            currentConcentration = nil
+            return
+        }
+
+        refreshCurrentConcentration(
+            simulationEvents: simulationEvents,
+            nowH: nowH
+        )
+    }
+
+    private func refreshCurrentConcentration(
+        simulationEvents: [WatchDoseEvent],
+        nowH: Double
+    ) {
+        let sourceUnit = selectedHormone.concentrationUnit
         let nativeCurrentConcentration = WatchPKModel.concentrationAt(
             timeH: nowH,
             events: simulationEvents,
@@ -522,7 +570,7 @@ final class WatchDoseTimelineVM: ObservableObject {
         currentConcentration = WatchConcentrationUnit.convert(
             nativeCurrentConcentration,
             from: sourceUnit,
-            to: selectedUnit,
+            to: selectedConcentrationUnit,
             hormone: selectedHormone
         )
     }

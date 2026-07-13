@@ -385,6 +385,14 @@ struct MedicationPlanRecurrence: Codable, Equatable, Sendable {
     }
 }
 
+struct HealthMedicationLink: Codable, Equatable, Sendable {
+    /// Securely archived `HKHealthConceptIdentifier`. HealthKit documents this
+    /// identifier as stable across devices and over time, so it is the durable
+    /// key for reviewing later imports without creating duplicate plans.
+    let conceptIdentifierArchive: Data
+    var lastReviewedAt: Date
+}
+
 struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
     let id: UUID
     var name: String
@@ -395,6 +403,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
     var reminderTemplates: [ReminderMessageTemplate]
     var sourceMedicationName: String?
     var sourceMedicationGeneralForm: String?
+    var healthMedicationLink: HealthMedicationLink?
     var updatedAt: Date
 
     private enum CodingKeys: String, CodingKey {
@@ -407,6 +416,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         case reminderTemplates
         case sourceMedicationName
         case sourceMedicationGeneralForm
+        case healthMedicationLink
         case updatedAt
     }
 
@@ -420,6 +430,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         reminderTemplates: [ReminderMessageTemplate] = ReminderMessageTemplate.defaultTemplates,
         sourceMedicationName: String? = nil,
         sourceMedicationGeneralForm: String? = nil,
+        healthMedicationLink: HealthMedicationLink? = nil,
         updatedAt: Date = Date()
     ) {
         self.id = id
@@ -435,6 +446,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         self.reminderTemplates = reminderTemplates.isEmpty ? ReminderMessageTemplate.defaultTemplates : reminderTemplates
         self.sourceMedicationName = sourceMedicationName
         self.sourceMedicationGeneralForm = sourceMedicationGeneralForm
+        self.healthMedicationLink = healthMedicationLink
         self.updatedAt = updatedAt
     }
 
@@ -453,6 +465,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         reminderTemplates = try container.decodeIfPresent([ReminderMessageTemplate].self, forKey: .reminderTemplates) ?? ReminderMessageTemplate.defaultTemplates
         sourceMedicationName = try container.decodeIfPresent(String.self, forKey: .sourceMedicationName)
         sourceMedicationGeneralForm = try container.decodeIfPresent(String.self, forKey: .sourceMedicationGeneralForm)
+        healthMedicationLink = try container.decodeIfPresent(HealthMedicationLink.self, forKey: .healthMedicationLink)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
@@ -467,6 +480,7 @@ struct MedicationPlan: Identifiable, Codable, Equatable, Sendable {
         try container.encode(reminderTemplates, forKey: .reminderTemplates)
         try container.encodeIfPresent(sourceMedicationName, forKey: .sourceMedicationName)
         try container.encodeIfPresent(sourceMedicationGeneralForm, forKey: .sourceMedicationGeneralForm)
+        try container.encodeIfPresent(healthMedicationLink, forKey: .healthMedicationLink)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -630,6 +644,10 @@ struct MedicationImportSuggestion: Identifiable, Equatable, Sendable {
     var healthPlanSummary: String?
     var note: String?
     var sourceMedicationName: String?
+    var sourceMedicationIdentifierArchive: Data?
+    var existingPlanID: UUID?
+    var shouldEnableRemindersByDefault: Bool
+    var requiresScheduleConfirmation: Bool
     var alignmentStatus: MedicationImportAlignmentStatus
     var alignmentRuleName: String?
 }
@@ -717,9 +735,29 @@ extension MedicationPlan {
             var current = recurrence.startDate.settingTime(hour: time.hour, minute: time.minute)
             let interval = max(recurrence.intervalDays, 1)
 
-            while current < referenceDate {
-                guard let next = calendar.date(byAdding: .day, value: interval, to: current) else { break }
-                current = next
+            if current < referenceDate {
+                let startDay = calendar.startOfDay(for: current)
+                let referenceDay = calendar.startOfDay(for: referenceDate)
+                let elapsedDays = max(
+                    calendar.dateComponents([.day], from: startDay, to: referenceDay).day ?? 0,
+                    0
+                )
+                let completedIntervals = elapsedDays / interval
+                if completedIntervals > 0,
+                   let advanced = calendar.date(
+                       byAdding: .day,
+                       value: completedIntervals * interval,
+                       to: current
+                   ) {
+                    current = advanced
+                }
+
+                // The time-of-day can still leave the calculated occurrence just
+                // before the reference time. At most one additional step is needed.
+                if current < referenceDate,
+                   let next = calendar.date(byAdding: .day, value: interval, to: current) {
+                    current = next
+                }
             }
 
             while current <= horizonEnd && occurrences.count < limit {
@@ -746,7 +784,15 @@ extension MedicationPlan {
         after date: Date = Date(),
         calendar: Calendar = .autoupdatingCurrent
     ) -> PlannedDoseOccurrence? {
-        upcomingOccurrences(startingFrom: date, limit: 1, calendar: calendar).first
+        let horizonDays = recurrence.kind == .everyNDays
+            ? max(recurrence.intervalDays + 1, 60)
+            : 60
+        return upcomingOccurrences(
+            startingFrom: date,
+            limit: 1,
+            horizonDays: horizonDays,
+            calendar: calendar
+        ).first
     }
 
     private nonisolated static func compareTimes(_ lhs: ReminderClockTime, _ rhs: ReminderClockTime) -> Bool {

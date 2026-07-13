@@ -5394,19 +5394,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Allow Health Access"
+            "value" : "Choose Health Medications"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允许访问健康数据"
+            "value" : "选择可访问的健康用药"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允許存取健康資料"
+            "value" : "選擇可存取的健康用藥"
           }
         }
       }
@@ -5416,19 +5416,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Grant Apple Health access first, then the app can read medications and dose events."
+            "value" : "Choose which medications this app may read. Access also includes their dose events and can be reviewed again at any time."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先允许访问 Apple 健康，随后应用才能读取用药和给药事件。"
+            "value" : "选择允许本应用读取的用药；权限同时包含对应的给药事件，并可随时重新选择。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先允許存取 Apple 健康，隨後 App 才能讀取用藥和給藥事件。"
+            "value" : "選擇允許本 App 讀取的用藥；權限同時包含對應的給藥事件，並可隨時重新選擇。"
           }
         }
       }
@@ -5438,19 +5438,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Health access required"
+            "value" : "Choose Health medications"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要健康数据访问权限"
+            "value" : "选择健康用药"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要健康資料存取權限"
+            "value" : "選擇健康用藥"
           }
         }
       }
@@ -5548,19 +5548,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No active Apple Health medications were found."
+            "value" : "No active Apple Health medications are currently available to this app. Add one in Health or review medication access."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没有找到启用中的 Apple 健康用药。"
+            "value" : "当前没有可供本应用读取的 Apple 健康用药。请在“健康”中添加药物或检查用药访问权限。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "沒有找到啟用中的 Apple 健康用藥。"
+            "value" : "目前沒有可供本 App 讀取的 Apple 健康用藥。請在「健康」中新增藥物或檢查用藥存取權限。"
           }
         }
       }
@@ -9660,6 +9660,226 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "原始結果會被儲存，但此數值或單位不能用於校準。"
+          }
+        }
+      }
+    },
+    "Blocked by notification settings." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked by notification settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已被通知设置阻止。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已被通知設定阻止。"
+          }
+        }
+      }
+    },
+    "Linked" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关联"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已關聯"
+          }
+        }
+      }
+    },
+    "Linked to Health" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked to Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关联到健康"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已關聯到健康"
+          }
+        }
+      }
+    },
+    "Notifications are off in Settings." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications are off in Settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统设置中的通知已关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統設定中的通知已關閉。"
+          }
+        }
+      }
+    },
+    "Reminders for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders for %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的提醒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的提醒"
+          }
+        }
+      }
+    },
+    "medplan.import.review_update" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review Linked Plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查关联计划"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檢查關聯計劃"
+          }
+        }
+      }
+    },
+    "medplan.import.schedule_confirmation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health did not provide enough recent schedule events to confirm this cadence. Reminders start off; review the time before enabling them."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康没有提供足够的近期计划事件来确认此频率。提醒默认关闭；请检查时间后再启用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康沒有提供足夠的近期計劃事件來確認此頻率。提醒預設關閉；請檢查時間後再啟用。"
+          }
+        }
+      }
+    },
+    "This removes only the local reminder plan. The medication and dose history in Apple Health stay unchanged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This removes only the local reminder plan. The medication and dose history in Apple Health stay unchanged."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这只会删除本地提醒计划；Apple 健康中的药物和给药历史不会改变。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這只會刪除本機提醒計劃；Apple 健康中的藥物和給藥記錄不會改變。"
+          }
+        }
+      }
+    },
+    "timeline.history.hidden_count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld older entries hidden"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还有 %lld 条更早记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還有 %lld 筆較早記錄"
+          }
+        }
+      }
+    },
+    "timeline.history.show_earlier" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Earlier Entries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示更早记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "顯示較早記錄"
           }
         }
       }

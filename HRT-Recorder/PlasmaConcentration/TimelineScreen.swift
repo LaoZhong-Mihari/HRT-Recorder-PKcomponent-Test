@@ -49,6 +49,9 @@ struct TimelineScreen: View {
     @State private var isHealthActionRunning = false
     @State private var isChartCollapsed = false
     @State private var isChartFullscreenPresented = false
+    @State private var visibleTimelineEventLimit = 200
+
+    private let timelinePageSize = 200
 
     private var isPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -84,7 +87,7 @@ struct TimelineScreen: View {
 
     @ViewBuilder
     private var timelineSections: some View {
-        ForEach(vm.dayGroups, id: \.day) { dayGroup in
+        ForEach(displayedDayGroups) { dayGroup in
             Section(header: Text(dayGroup.day)) {
                 ForEach(dayGroup.events) { event in
                     Button(action: {
@@ -100,6 +103,54 @@ struct TimelineScreen: View {
                 }
             }
         }
+
+        if hiddenTimelineEventCount > 0 {
+            Section {
+                Button {
+                    visibleTimelineEventLimit += timelinePageSize
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label(
+                            String(localized: "timeline.history.show_earlier"),
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                        Text(
+                            String.localizedStringWithFormat(
+                                String(localized: "timeline.history.hidden_count"),
+                                Int64(hiddenTimelineEventCount)
+                            )
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var displayedDayGroups: [TimelineDayGroup] {
+        var remaining = visibleTimelineEventLimit
+        var groups: [TimelineDayGroup] = []
+
+        for group in vm.dayGroups where remaining > 0 {
+            let events: [DoseEvent]
+            if group.events.count <= remaining {
+                events = group.events
+            } else {
+                // Events inside a day are chronological; when a page boundary
+                // cuts through one day, retain its newest entries.
+                events = Array(group.events.suffix(remaining))
+            }
+            groups.append(TimelineDayGroup(id: group.id, day: group.day, events: events))
+            remaining -= events.count
+        }
+
+        return groups
+    }
+
+    private var hiddenTimelineEventCount: Int {
+        let total = vm.dayGroups.reduce(0) { $0 + $1.events.count }
+        return max(total - visibleTimelineEventLimit, 0)
     }
 
     private var hormoneSwitcherSection: some View {
@@ -294,6 +345,9 @@ struct TimelineScreen: View {
                 guard let newSeed else { return }
                 activeSheet = .scheduledDose(newSeed)
             }
+            .onChange(of: vm.selectedHormone) { _ in
+                visibleTimelineEventLimit = timelinePageSize
+            }
             .onAppear {
                 if let pendingDoseSeed = medicationVM.pendingDoseSeed {
                     activeSheet = .scheduledDose(pendingDoseSeed)
@@ -403,7 +457,7 @@ struct TimelineScreen: View {
 
     // ... (findOriginalIndices helper remains the same)
     private func findOriginalIndices(for localIndexSet: IndexSet, in dayGroup: TimelineDayGroup, from allEvents: [DoseEvent]) -> IndexSet {
-        let idsToDelete = localIndexSet.map { dayGroup.events[$0].id }
+        let idsToDelete = Set(localIndexSet.map { dayGroup.events[$0].id })
         let originalIndices = allEvents.enumerated()
             .filter { idsToDelete.contains($0.element.id) }
             .map { $0.offset }
@@ -656,6 +710,17 @@ private struct HealthSettingsView: View {
                 Text("HRT Profile")
             }
 
+            Section("settings.section.medication") {
+                NavigationLink {
+                    MedicationPlansView(vm: medicationVM)
+                } label: {
+                    DynamicSettingsRow(
+                        title: "Medication & Reminders",
+                        subtitle: medicationVM.settingsSummaryText()
+                    )
+                }
+            }
+
             Section("Widget") {
                 NavigationLink {
                     WidgetThresholdSettingsView(onSettingsChanged: onWidgetSettingsChanged)
@@ -707,16 +772,6 @@ private struct HealthSettingsView: View {
                 }
             }
 
-            Section("settings.section.medication") {
-                NavigationLink {
-                    MedicationPlansView(vm: medicationVM)
-                } label: {
-                    DynamicSettingsRow(
-                        title: "Medication & Reminders",
-                        subtitle: medicationVM.settingsSummaryText()
-                    )
-                }
-            }
         }
         .navigationTitle("settings.title")
     }

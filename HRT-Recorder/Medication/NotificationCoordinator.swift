@@ -12,9 +12,18 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     private let userInfoPlanID = "medicationPlanID"
     private let userInfoScheduledDate = "scheduledDate"
     private let userInfoDoseSlotID = "doseSlotID"
+    private let maximumManagedPendingRequests = 64
+    private var notificationSyncTask: Task<Void, Never>?
+    private var notificationSyncGeneration: UInt64 = 0
+
+    override init() {
+        super.init()
+        // Notification responses can cold-launch the app. Install the delegate
+        // when the coordinator is created, before SwiftUI's root `.task` runs.
+        center.delegate = self
+    }
 
     func configure() {
-        center.delegate = self
         Task { await refreshAuthorizationStatus() }
     }
 
@@ -46,20 +55,58 @@ final class NotificationCoordinator: NSObject, ObservableObject {
     }
 
     func syncNotifications(for plans: [MedicationPlan]) async {
+        notificationSyncGeneration &+= 1
+        let generation = notificationSyncGeneration
+        let previousTask = notificationSyncTask
+        previousTask?.cancel()
+        let task = Task { @MainActor [weak self] in
+            await previousTask?.value
+            guard let self, self.isCurrentSync(generation) else { return }
+            await self.performNotificationSync(for: plans, generation: generation)
+        }
+        notificationSyncTask = task
+        await task.value
+        if generation == notificationSyncGeneration {
+            notificationSyncTask = nil
+        }
+    }
+
+    private func performNotificationSync(
+        for plans: [MedicationPlan],
+        generation: UInt64
+    ) async {
         await refreshAuthorizationStatus()
+        guard isCurrentSync(generation) else { return }
         guard authorizationStatus == .authorized || authorizationStatus == .provisional || authorizationStatus == .ephemeral else {
             await removeAllManagedNotifications()
             return
         }
 
         await removeAllManagedNotifications()
+        guard isCurrentSync(generation) else { return }
 
-        for plan in plans where plan.isEnabled {
-            let occurrences = plan.upcomingOccurrences(limit: 12, horizonDays: 45)
-            for occurrence in occurrences {
-                await scheduleNotification(for: occurrence, plan: plan)
+        let enabledPlansByID = Dictionary(
+            uniqueKeysWithValues: plans.filter(\.isEnabled).map { ($0.id, $0) }
+        )
+        let occurrences = enabledPlansByID.values
+            .flatMap {
+                $0.upcomingOccurrences(
+                    limit: maximumManagedPendingRequests,
+                    horizonDays: 365
+                )
             }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+            .prefix(maximumManagedPendingRequests)
+
+        for occurrence in occurrences {
+            guard isCurrentSync(generation) else { return }
+            guard let plan = enabledPlansByID[occurrence.planID] else { continue }
+            await scheduleNotification(for: occurrence, plan: plan)
         }
+    }
+
+    private func isCurrentSync(_ generation: UInt64) -> Bool {
+        !Task.isCancelled && generation == notificationSyncGeneration
     }
 
     func clearPendingLaunchContext() {

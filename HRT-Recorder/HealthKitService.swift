@@ -43,8 +43,11 @@ final class HealthKitService {
 
     func requestMedicationAuthorizationIfNeeded() async throws {
         guard #available(iOS 26.0, *) else { return }
-        guard try await shouldRequestMedicationAuthorization() else { return }
-        try await MedicationAuthorizationCoordinator.requestIfNeeded(using: try healthStore())
+        // Medication access is authorized per object. There is no supported
+        // preflight equivalent to `statusForAuthorizationRequest` for this
+        // type, and the selector is intentionally shown whenever access is
+        // reviewed.
+        try await MedicationAuthorizationCoordinator.requestAccess(using: try healthStore())
     }
 
     func canAccessBodyMassWithoutPrompt() async -> Bool {
@@ -63,16 +66,6 @@ final class HealthKitService {
             toShare: bodyMassShareTypes,
             read: bodyMassReadTypes
         ) == .shouldRequest
-    }
-
-    @available(iOS 26.0, *)
-    func shouldRequestMedicationAuthorization() async throws -> Bool {
-        let medicationType = HKObjectType.userAnnotatedMedicationType()
-        let status = try await authorizationRequestStatus(
-            toShare: Set<HKSampleType>(),
-            read: Set([medicationType])
-        )
-        return status == .shouldRequest
     }
 
     private func requestAuthorization(toShare shareTypes: Set<HKSampleType>, read readTypes: Set<HKObjectType>) async throws {
@@ -268,7 +261,7 @@ final class HealthKitService {
 @MainActor
 @available(iOS 26.0, *)
 private enum MedicationAuthorizationCoordinator {
-    static func requestIfNeeded(using store: HKHealthStore) async throws {
+    static func requestAccess(using store: HKHealthStore) async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw NSError(
                 domain: "HealthKitService",

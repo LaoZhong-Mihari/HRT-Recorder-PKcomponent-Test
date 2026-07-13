@@ -15,6 +15,7 @@ private enum WatchEditorSheet: Identifiable {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store: WatchDoseStore
     @StateObject private var syncService: WatchDoseSyncService
     @StateObject private var timelineVM: WatchDoseTimelineVM
@@ -68,7 +69,12 @@ struct ContentView: View {
                 }
             }
             .onReceive(timer) { _ in
-                timelineVM.runSimulation()
+                timelineVM.refreshForClockTick()
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    timelineVM.runSimulation()
+                }
             }
         }
     }
@@ -83,7 +89,7 @@ struct ContentView: View {
     }
 
     private var chartPointsForDisplay: [WatchChartPoint] {
-        timelineVM.localChartPoints.sorted { $0.timeH < $1.timeH }
+        timelineVM.localChartPoints
     }
 
     private var concentrationForDisplay: Double? {

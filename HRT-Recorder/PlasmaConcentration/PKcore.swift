@@ -616,8 +616,14 @@ nonisolated struct SimulationResult: Equatable, Sendable {
 nonisolated extension SimulationResult {
     func concentration(at hour: Double) -> Double? {
         guard !timeH.isEmpty, timeH.count == concentrations.count else { return nil }
-        if hour <= timeH.first! { return concentrations.first }
-        if hour >= timeH.last! { return concentrations.last }
+        guard let firstHour = timeH.first,
+              let lastHour = timeH.last,
+              hour >= firstHour,
+              hour <= lastHour else {
+            return nil
+        }
+        if hour == firstHour { return concentrations.first }
+        if hour == lastHour { return concentrations.last }
 
         var low = 0
         var high = timeH.count - 1
@@ -665,18 +671,39 @@ nonisolated extension SimulationResult {
     }
 }
 
-func simulateTimelineResult(
+nonisolated func simulateTimelineResult(
     events: [DoseEvent],
     hormone: SimulatedHormone,
     bodyWeightKG: Double,
     historyPaddingHours: Double = 24.0,
+    recentHistoryHours: Double = 24.0 * 30.0,
     forecastHours: Double = 24.0 * 14.0,
     numberOfSteps: Int = 1000,
-    calibration: CalibrationResult? = nil
+    calibration: CalibrationResult? = nil,
+    referenceTimeH: Double = Date().timeIntervalSince1970 / 3600.0,
+    cancellationCheck: @Sendable () -> Bool = { false }
 ) -> SimulationResult {
-    let simulatedEvents = events.filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
-    let startTime = (simulatedEvents.first?.timeH ?? 0) - historyPaddingHours
-    let endTime = (simulatedEvents.last?.timeH ?? startTime) + forecastHours
+    let simulatedEvents = events
+        .filter { $0.participatesInSimulation && $0.simulatedHormone == hormone }
+        .sorted { $0.timeH < $1.timeH }
+    let earliestEventTime = simulatedEvents.first?.timeH ?? referenceTimeH
+    // Keep every historical event in the analytic model, but sample a bounded
+    // recent output window. This preserves long-tail PK contributions without
+    // spreading a fixed 1000 chart points across years of history.
+    let startTime = min(
+        max(earliestEventTime - historyPaddingHours, referenceTimeH - recentHistoryHours),
+        referenceTimeH
+    )
+    // Recorded events outside the forecast horizon still remain in the model,
+    // but they must not stretch a fixed chart budget across an accidental
+    // far-future timestamp.
+    let endTime = referenceTimeH + forecastHours
+    let sampleTimes = timelineSampleTimes(
+        startTimeH: startTime,
+        currentTimeH: referenceTimeH,
+        endTimeH: endTime,
+        numberOfSteps: numberOfSteps
+    )
 
     let engine = SimulationEngine(
         events: simulatedEvents,
@@ -686,10 +713,38 @@ func simulateTimelineResult(
         endTimeH: endTime,
         numberOfSteps: numberOfSteps,
         vdPerKGOverride: calibration?.vdPerKGOverride(for: hormone),
-        kaMultiplier: calibration?.kaMultiplier(for: hormone) ?? 1.0
+        kaMultiplier: calibration?.kaMultiplier(for: hormone) ?? 1.0,
+        cancellationCheck: cancellationCheck
     )
 
-    return engine.run()
+    return engine.run(sampleTimes: sampleTimes, cancellationCheck: cancellationCheck)
+}
+
+private nonisolated func timelineSampleTimes(
+    startTimeH: Double,
+    currentTimeH: Double,
+    endTimeH: Double,
+    numberOfSteps: Int
+) -> [Double] {
+    guard startTimeH < endTimeH, numberOfSteps > 1 else { return [] }
+    let intervalCount = numberOfSteps - 1
+    guard currentTimeH > startTimeH, currentTimeH < endTimeH, intervalCount > 1 else {
+        let step = (endTimeH - startTimeH) / Double(intervalCount)
+        return (0..<numberOfSteps).map { startTimeH + Double($0) * step }
+    }
+
+    let totalSpan = endTimeH - startTimeH
+    let pastFraction = (currentTimeH - startTimeH) / totalSpan
+    let pastIntervals = min(
+        max(Int((Double(intervalCount) * pastFraction).rounded()), 1),
+        intervalCount - 1
+    )
+    let futureIntervals = intervalCount - pastIntervals
+    let pastStep = (currentTimeH - startTimeH) / Double(pastIntervals)
+    let futureStep = (endTimeH - currentTimeH) / Double(futureIntervals)
+    let past = (0...pastIntervals).map { startTimeH + Double($0) * pastStep }
+    let future = (1...futureIntervals).map { currentTimeH + Double($0) * futureStep }
+    return past + future
 }
 
 nonisolated struct SimulationEngine: Sendable {
@@ -761,14 +816,29 @@ nonisolated struct SimulationEngine: Sendable {
         }
 
         let stepSize = (endTimeH - startTimeH) / Double(numberOfSteps - 1)
+        let sampleTimes = (0..<numberOfSteps).map {
+            startTimeH + Double($0) * stepSize
+        }
+        return run(sampleTimes: sampleTimes, cancellationCheck: cancellationCheck)
+    }
+
+    func run(
+        sampleTimes: [Double],
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> SimulationResult {
+        guard sampleTimes.count > 1, plasmaVolumeML > 0 else {
+            return SimulationResult(timeH: [], concentrations: [], auc: 0, displayMetadata: displayMetadata)
+        }
+
         var timeArr = [Double]()
         var concArr = [Double]()
-        timeArr.reserveCapacity(numberOfSteps)
-        concArr.reserveCapacity(numberOfSteps)
+        timeArr.reserveCapacity(sampleTimes.count)
+        concArr.reserveCapacity(sampleTimes.count)
         var auc = 0.0
         var previousConc = 0.0
+        var previousTime = sampleTimes[0]
 
-        for i in 0..<numberOfSteps {
+        for (i, t) in sampleTimes.enumerated() {
             if i.isMultiple(of: 8), cancellationCheck() {
                 return SimulationResult(
                     timeH: [],
@@ -777,7 +847,6 @@ nonisolated struct SimulationEngine: Sendable {
                     displayMetadata: displayMetadata
                 )
             }
-            let t = startTimeH + Double(i) * stepSize
             let currentConc = predictedConcentration(
                 atTimeH: t,
                 cancellationCheck: cancellationCheck
@@ -787,9 +856,10 @@ nonisolated struct SimulationEngine: Sendable {
             concArr.append(currentConc)
             
             if i > 0 {
-                auc += 0.5 * (currentConc + previousConc) * stepSize
+                auc += 0.5 * (currentConc + previousConc) * (t - previousTime)
             }
             previousConc = currentConc
+            previousTime = t
         }
         
         return SimulationResult(timeH: timeArr, concentrations: concArr, auc: auc, displayMetadata: displayMetadata)

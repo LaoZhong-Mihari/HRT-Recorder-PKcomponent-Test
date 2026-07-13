@@ -26,50 +26,35 @@ struct MedicationPlansView: View {
                 if vm.plans.isEmpty {
                     emptyStateCard
                 } else {
-                    if !vm.activePlans.isEmpty {
-                        sectionHeader(
-                            title: String(localized: "Active Plans"),
-                            subtitle: String(localized: "Plans with reminders on.")
-                        )
-
-                        ForEach(vm.activePlans) { plan in
-                            MedicationPlanCard(
-                                plan: plan,
-                                nextOccurrence: vm.nextOccurrence(for: plan),
-                                isEnabled: Binding(
-                                    get: { vm.plan(withID: plan.id)?.isEnabled ?? plan.isEnabled },
-                                    set: { newValue in
-                                        let currentPlan = vm.plan(withID: plan.id) ?? plan
-                                        vm.setEnabled(newValue, for: currentPlan)
-                                    }
-                                ),
-                                onEdit: { activeSheet = .edit(plan) },
-                                onDelete: { planPendingDeletion = plan }
+                    // Keep every plan in one identity-stable collection. Moving a
+                    // row between two ForEach trees while its Toggle is handling
+                    // a tap can discard that first interaction.
+                    ForEach(vm.plans) { plan in
+                        if plan.id == firstActivePlanID {
+                            sectionHeader(
+                                title: String(localized: "Active Plans"),
+                                subtitle: String(localized: "Plans with reminders on.")
                             )
                         }
-                    }
 
-                    if !vm.pausedPlans.isEmpty {
-                        sectionHeader(
-                            title: String(localized: "Paused Plans"),
-                            subtitle: String(localized: "Saved plans with reminders off.")
-                        )
-
-                        ForEach(vm.pausedPlans) { plan in
-                            MedicationPlanCard(
-                                plan: plan,
-                                nextOccurrence: vm.nextOccurrence(for: plan),
-                                isEnabled: Binding(
-                                    get: { vm.plan(withID: plan.id)?.isEnabled ?? plan.isEnabled },
-                                    set: { newValue in
-                                        let currentPlan = vm.plan(withID: plan.id) ?? plan
-                                        vm.setEnabled(newValue, for: currentPlan)
-                                    }
-                                ),
-                                onEdit: { activeSheet = .edit(plan) },
-                                onDelete: { planPendingDeletion = plan }
+                        if plan.id == firstPausedPlanID {
+                            sectionHeader(
+                                title: String(localized: "Paused Plans"),
+                                subtitle: String(localized: "Saved plans with reminders off.")
                             )
                         }
+
+                        MedicationPlanCard(
+                            plan: plan,
+                            nextOccurrence: vm.nextOccurrence(for: plan),
+                            notificationsAvailable: vm.canDeliverNotifications,
+                            onEnabledChange: { newValue in
+                                let currentPlan = vm.plan(withID: plan.id) ?? plan
+                                vm.setEnabled(newValue, for: currentPlan)
+                            },
+                            onEdit: { activeSheet = .edit(plan) },
+                            onDelete: { planPendingDeletion = plan }
+                        )
                     }
                 }
             }
@@ -128,8 +113,20 @@ struct MedicationPlansView: View {
                 planPendingDeletion = nil
             }
         } message: {
-            Text("This only removes the reminder schedule. Logged doses stay.")
+            if planPendingDeletion?.healthMedicationLink != nil {
+                Text("This removes only the local reminder plan. The medication and dose history in Apple Health stay unchanged.")
+            } else {
+                Text("This only removes the reminder schedule. Logged doses stay.")
+            }
         }
+    }
+
+    private var firstActivePlanID: UUID? {
+        vm.plans.first(where: \.isEnabled)?.id
+    }
+
+    private var firstPausedPlanID: UUID? {
+        vm.plans.first(where: { !$0.isEnabled })?.id
     }
 
     private var overviewCard: some View {
@@ -170,7 +167,13 @@ struct MedicationPlansView: View {
                 )
             }
 
-            if let nextReminder = vm.nextOverallOccurrence() {
+            if !vm.canDeliverNotifications, !vm.activePlans.isEmpty {
+                LabeledStatusRow(
+                    title: String(localized: "Next reminder"),
+                    value: String(localized: "Notifications are off in Settings."),
+                    systemImage: "bell.slash"
+                )
+            } else if let nextReminder = vm.nextOverallOccurrence() {
                 LabeledStatusRow(
                     title: String(localized: "Next reminder"),
                     value: nextReminder.scheduledDate.formatted(date: .abbreviated, time: .shortened),
@@ -448,28 +451,27 @@ private struct AdaptiveStack<Content: View>: View {
 }
 
 private struct MedicationPlanCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let plan: MedicationPlan
     let nextOccurrence: PlannedDoseOccurrence?
-    @Binding var isEnabled: Bool
+    let notificationsAvailable: Bool
+    let onEnabledChange: (Bool) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    headerContent
-
-                    Spacer(minLength: 12)
-
-                    Toggle("Enabled", isOn: $isEnabled)
-                        .labelsHidden()
-                }
-
+            if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
                     headerContent
-
-                    Toggle("Enabled", isOn: $isEnabled)
+                    reminderToggle
+                }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    headerContent
+                    Spacer(minLength: 12)
+                    reminderToggle.labelsHidden()
                 }
             }
 
@@ -480,7 +482,19 @@ private struct MedicationPlanCard: View {
                     systemImage: "calendar"
                 )
 
-                if let nextOccurrence {
+                if !plan.isEnabled {
+                    LabeledStatusRow(
+                        title: String(localized: "Next reminder"),
+                        value: String(localized: "This plan is paused."),
+                        systemImage: "pause.circle"
+                    )
+                } else if !notificationsAvailable {
+                    LabeledStatusRow(
+                        title: String(localized: "Next reminder"),
+                        value: String(localized: "Blocked by notification settings."),
+                        systemImage: "bell.slash"
+                    )
+                } else if let nextOccurrence {
                     LabeledStatusRow(
                         title: String(localized: "Next reminder"),
                         value: nextOccurrence.scheduledDate.formatted(date: .abbreviated, time: .shortened),
@@ -489,14 +503,16 @@ private struct MedicationPlanCard: View {
                 } else {
                     LabeledStatusRow(
                         title: String(localized: "Next reminder"),
-                        value: isEnabled ? String(localized: "No upcoming reminder.") : String(localized: "This plan is paused."),
-                        systemImage: isEnabled ? "clock.badge.xmark" : "pause.circle"
+                        value: String(localized: "No upcoming reminder."),
+                        systemImage: "clock.badge.xmark"
                     )
                 }
 
                 if let sourceMedicationName = plan.sourceMedicationName, !sourceMedicationName.isEmpty {
                     LabeledStatusRow(
-                        title: String(localized: "Imported from Health"),
+                        title: plan.healthMedicationLink == nil
+                            ? String(localized: "Imported from Health")
+                            : String(localized: "Linked to Health"),
                         value: sourceMedicationName,
                         systemImage: "heart.text.square"
                     )
@@ -539,13 +555,29 @@ private struct MedicationPlanCard: View {
         )
     }
 
+    private var reminderToggle: some View {
+        Toggle(
+            "Enabled",
+            isOn: Binding(
+                get: { plan.isEnabled },
+                set: onEnabledChange
+            )
+        )
+        .accessibilityLabel(
+            String.localizedStringWithFormat(
+                String(localized: "Reminders for %@"),
+                plan.displayName
+            )
+        )
+    }
+
     private var headerContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             AdaptiveStack(spacing: 8) {
                 StatusBadge(
-                    title: isEnabled ? String(localized: "Active") : String(localized: "Paused"),
-                    systemImage: isEnabled ? "bell.fill" : "pause.fill",
-                    tint: isEnabled ? .green : .orange
+                    title: deliveryStatusTitle,
+                    systemImage: deliveryStatusIcon,
+                    tint: deliveryStatusTint
                 )
 
                 if let sourceMedicationName = plan.sourceMedicationName, !sourceMedicationName.isEmpty {
@@ -566,6 +598,27 @@ private struct MedicationPlanCard: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var deliveryStatusTitle: String {
+        if plan.isEnabled, !notificationsAvailable {
+            return String(localized: "Blocked")
+        }
+        return plan.isEnabled ? String(localized: "Active") : String(localized: "Paused")
+    }
+
+    private var deliveryStatusIcon: String {
+        if plan.isEnabled, !notificationsAvailable {
+            return "bell.slash.fill"
+        }
+        return plan.isEnabled ? "bell.fill" : "pause.fill"
+    }
+
+    private var deliveryStatusTint: Color {
+        if plan.isEnabled, !notificationsAvailable {
+            return .red
+        }
+        return plan.isEnabled ? .green : .orange
     }
 
     private var templateSummary: String {
@@ -652,18 +705,6 @@ private struct MedicationImportView: View {
                             tint: .pink,
                             showsProgress: true
                         )
-                    } else if vm.importAuthorizationState == .needsAuthorization {
-                        StateCard(
-                            title: String(localized: "medplan.import.authorization.title"),
-                            message: String(localized: "medplan.import.authorization.message"),
-                            systemImage: "heart.text.square.fill",
-                            tint: .pink
-                        ) {
-                            Button(String(localized: "medplan.import.authorization.button")) {
-                                Task { await vm.requestImportAuthorizationAndLoadSuggestions() }
-                            }
-                            .buttonStyle(.borderedProminent)
-                        }
                     } else if let error = vm.importErrorMessage {
                         StateCard(
                             title: String(localized: "Import unavailable"),
@@ -673,6 +714,18 @@ private struct MedicationImportView: View {
                         ) {
                             Button("Try Again") {
                                 Task { await vm.prepareImportSuggestions() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    } else if vm.importAuthorizationState == .needsAuthorization {
+                        StateCard(
+                            title: String(localized: "medplan.import.authorization.title"),
+                            message: String(localized: "medplan.import.authorization.message"),
+                            systemImage: "heart.text.square.fill",
+                            tint: .pink
+                        ) {
+                            Button(String(localized: "medplan.import.authorization.button")) {
+                                Task { await vm.requestImportAuthorizationAndLoadSuggestions() }
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -706,13 +759,7 @@ private struct MedicationImportView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Reload") {
-                        Task {
-                            if vm.importAuthorizationState == .needsAuthorization {
-                                await vm.requestImportAuthorizationAndLoadSuggestions()
-                            } else {
-                                await vm.prepareImportSuggestions()
-                            }
-                        }
+                        Task { await vm.prepareImportSuggestions() }
                     }
                     .disabled(vm.isImporting)
                 }
@@ -725,7 +772,10 @@ private struct MedicationImportView: View {
             await vm.prepareImportSuggestions()
         }
         .sheet(item: $editingSuggestion) { suggestion in
-            MedicationPlanEditorView(existingPlan: nil, importSuggestion: suggestion) { plan in
+            MedicationPlanEditorView(
+                existingPlan: suggestion.existingPlanID.flatMap { vm.plan(withID: $0) },
+                importSuggestion: suggestion
+            ) { plan in
                 Task { await vm.savePlanRequestingNotificationsIfNeeded(plan) }
             }
         }
@@ -744,6 +794,14 @@ private struct MedicationImportView: View {
                 Text("medplan.import.header.message")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if vm.importAuthorizationState == .ready {
+                    Button(String(localized: "medplan.import.authorization.button")) {
+                        Task { await vm.requestImportAuthorizationAndLoadSuggestions() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(vm.isImporting)
+                }
             }
         }
         .padding(18)
@@ -788,17 +846,27 @@ private struct MedicationPlanEditorView: View {
         self.onSave = onSave
 
         let initialPlan = existingPlan
-        let initialRecurrence = initialPlan?.recurrence ?? importSuggestion?.suggestedRecurrence ?? .daily()
-        let initialTemplate = initialPlan?.primaryTemplate ?? importSuggestion?.suggestedTemplate
+        let initialRecurrence = importSuggestion?.suggestedRecurrence ?? initialPlan?.recurrence ?? .daily()
+        let initialTemplate = importSuggestion?.suggestedTemplate ?? initialPlan?.primaryTemplate
         let initialName = initialPlan?.name ?? importSuggestion?.sourceName ?? ""
-        let initialDailyDoseSlots = Self.makeInitialDailyDoseSlots(
-            existingPlan: initialPlan,
-            recurrence: initialRecurrence,
-            fallbackTemplate: initialTemplate
-        )
+        let initialDailyDoseSlots = importSuggestion == nil
+            ? Self.makeInitialDailyDoseSlots(
+                existingPlan: initialPlan,
+                recurrence: initialRecurrence,
+                fallbackTemplate: initialTemplate
+            )
+            : Self.makeImportedDailyDoseSlots(
+                existingPlan: initialPlan,
+                recurrence: initialRecurrence,
+                importedTemplate: initialTemplate
+            )
 
         _name = State(initialValue: initialName)
-        _isEnabled = State(initialValue: initialPlan?.isEnabled ?? true)
+        _isEnabled = State(
+            initialValue: initialPlan?.isEnabled
+                ?? importSuggestion?.shouldEnableRemindersByDefault
+                ?? true
+        )
         _sharedTemplate = State(initialValue: initialTemplate ?? initialDailyDoseSlots.first?.template)
         _recurrenceKind = State(initialValue: initialRecurrence.kind)
         _previousRecurrenceKind = State(initialValue: initialRecurrence.kind)
@@ -940,6 +1008,17 @@ private struct MedicationPlanEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                if importSuggestion?.requiresScheduleConfirmation == true {
+                    Section {
+                        Label(
+                            String(localized: "medplan.import.schedule_confirmation"),
+                            systemImage: "calendar.badge.exclamationmark"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
             .navigationTitle(existingPlan == nil ? String(localized: "Medication Plan") : String(localized: "Edit Plan"))
             .navigationBarTitleDisplayMode(.inline)
@@ -961,7 +1040,8 @@ private struct MedicationPlanEditorView: View {
         .sheet(item: $activeDailySlotEditor) { slot in
             DailyDoseSlotEditorView(
                 slot: slot,
-                canDelete: dailyDoseSlots.count > 1,
+                canDelete: dailyDoseSlots.contains(where: { $0.id == slot.id })
+                    && dailyDoseSlots.count > 1,
                 onSave: { updatedSlot in
                     upsertDailyDoseSlot(updatedSlot)
                 },
@@ -1067,6 +1147,12 @@ private struct MedicationPlanEditorView: View {
             isEnabled: isEnabled,
             sourceMedicationName: importSuggestion?.sourceMedicationName ?? existingPlan?.sourceMedicationName,
             sourceMedicationGeneralForm: importSuggestion?.generalFormText ?? existingPlan?.sourceMedicationGeneralForm,
+            healthMedicationLink: importSuggestion?.sourceMedicationIdentifierArchive.map {
+                HealthMedicationLink(
+                    conceptIdentifierArchive: $0,
+                    lastReviewedAt: Date()
+                )
+            } ?? existingPlan?.healthMedicationLink,
             updatedAt: Date()
         )
 
@@ -1083,8 +1169,6 @@ private struct MedicationPlanEditorView: View {
             time: suggestedDailyTimeForNewSlot(),
             template: sortedDailyDoseSlots.last?.template ?? sharedTemplate
         )
-        dailyDoseSlots.append(newSlot)
-        dailyDoseSlots.sort(by: Self.compareEditableSlots)
         activeDailySlotEditor = newSlot
     }
 
@@ -1241,6 +1325,29 @@ private struct MedicationPlanEditorView: View {
         let times = recurrence.times.isEmpty ? [.defaultMorning] : recurrence.times.sorted(by: compareTimes)
         return times.map { EditableDailyDoseSlot(time: $0, template: fallbackTemplate) }
     }
+
+    private nonisolated static func makeImportedDailyDoseSlots(
+        existingPlan: MedicationPlan?,
+        recurrence: MedicationPlanRecurrence,
+        importedTemplate: MedicationDoseTemplate?
+    ) -> [EditableDailyDoseSlot] {
+        guard recurrence.kind == .daily else { return [] }
+        let existingSlots = existingPlan?.resolvedDailyDoseSlots ?? []
+        let times = recurrence.times.isEmpty
+            ? [ReminderClockTime.defaultMorning]
+            : recurrence.times.sorted(by: compareTimes)
+
+        return times.map { time in
+            let existingSlot = existingSlots.first {
+                $0.time.hour == time.hour && $0.time.minute == time.minute
+            }
+            return EditableDailyDoseSlot(
+                id: existingSlot?.id ?? UUID(),
+                time: time,
+                template: importedTemplate ?? existingSlot?.template
+            )
+        }
+    }
 }
 
 private struct EditableDailyDoseSlot: Identifiable, Equatable {
@@ -1248,7 +1355,7 @@ private struct EditableDailyDoseSlot: Identifiable, Equatable {
     var time: ReminderClockTime
     var template: MedicationDoseTemplate?
 
-    init(
+    nonisolated init(
         id: UUID = UUID(),
         time: ReminderClockTime,
         template: MedicationDoseTemplate?
@@ -1737,6 +1844,13 @@ private struct MedicationImportSuggestionCard: View {
                 Spacer()
 
                 AdaptiveStack(spacing: 8) {
+                    if suggestion.existingPlanID != nil {
+                        StatusBadge(
+                            title: String(localized: "Linked"),
+                            systemImage: "link",
+                            tint: .green
+                        )
+                    }
                     StatusBadge(
                         title: alignmentBadgeTitle,
                         systemImage: alignmentBadgeIcon,
@@ -1801,7 +1915,9 @@ private struct MedicationImportSuggestionCard: View {
                 onCreatePlan()
             } label: {
                 PlanActionButton(
-                    title: String(localized: "medplan.import.review_plan"),
+                    title: suggestion.existingPlanID == nil
+                        ? String(localized: "medplan.import.review_plan")
+                        : String(localized: "medplan.import.review_update"),
                     systemImage: "slider.horizontal.3",
                     style: .primary
                 )

@@ -27,9 +27,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Scan hormone lab reports and extract test result values on device.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.</string>
+	<string>Read body weight, authorized medications, and medication dose events to review local HRT plans and reminders.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Read body weight and medications from Health, and write body weight back to keep your HRT plans and reminders in sync.</string>
+	<string>Write body weight to Health when you choose to keep your local weight up to date.</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
