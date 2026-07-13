@@ -38,6 +38,15 @@ nonisolated struct LabConcentrationUnit: Equatable, Sendable {
         token = token.trimmingCharacters(in: CharacterSet(charactersIn: "()[]{}"))
         token = token.replacingOccurrences(of: "^", with: "")
         token = token.replacingOccurrences(of: "mcg", with: "ug")
+        // A lowercase L is commonly recognized as the digit 1 in a volume
+        // denominator. Repair only denominator-shaped tokens so unrelated
+        // numbers remain untouched while the original report text is kept for
+        // review.
+        token = token
+            .replacingOccurrences(of: "/u1", with: "/ul")
+            .replacingOccurrences(of: "/m1", with: "/ml")
+            .replacingOccurrences(of: "/d1", with: "/dl")
+            .replacingOccurrences(of: "/c1", with: "/cl")
 
         let components: [Substring]
         if token.contains("/") {
@@ -76,6 +85,11 @@ nonisolated struct LabConcentrationUnit: Equatable, Sendable {
         to targetUnit: ConcentrationUnit
     ) -> Double? {
         guard value.isFinite, value >= 0 else { return nil }
+        if isNumericallyEquivalent(to: targetUnit, hormone: hormone) {
+            // Preserve the exact stored value when conversion is an identity.
+            // This matters for reports saved before raw OCR text was retained.
+            return value
+        }
         let basePerLiter = value * numeratorToBase / denominatorLiters
         let gramsPerLiter: Double
         switch basis {

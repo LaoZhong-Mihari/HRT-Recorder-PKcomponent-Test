@@ -4027,7 +4027,7 @@ enum HormoneLabResultParser {
     private static var unitSymbolPattern: String {
         let massUnit = #"(?:m\s*c\s*g|[fpnumcdhkµμ]?\s*g)"#
         let molarUnit = #"(?:[fpnumcdhkµμ]?\s*mol|w\s*mol|mmo[1l])"#
-        let activityUnit = #"(?:u\s*IU|µ\s*IU|μ\s*IU|m\s*IU|m?[i1][uUvV]|IU|IV|1U|1V|U)"#
+        let activityUnit = #"(?:u\s*IU|µ\s*IU|μ\s*IU|m\s*IU|m?[il1][uUvV]|IU|IV|1U|1V|U)"#
         let denominator = #"(?:(?:\d+(?:\.\d+)?\s*)?[fpnumcdµμ]?\s*[lL1])"#
         let separator = #"(?:\s*(?:/|／|per|[·⋅∙])\s*|\s*)"#
         let inverseSuffix = #"(?:\s*(?:\^?\s*[-−]\s*1|⁻¹))?"#
@@ -4112,6 +4112,8 @@ enum HormoneLabResultParser {
             .replacingOccurrences(of: "/m1", with: "/ml", options: [.caseInsensitive])
             .replacingOccurrences(of: "/d1", with: "/dl", options: [.caseInsensitive])
         let lower = compact.lowercased()
+            .replacingOccurrences(of: "mlu", with: "miu")
+            .replacingOccurrences(of: "mlv", with: "miu")
             .replacingOccurrences(of: "iv", with: "iu")
             .replacingOccurrences(of: "miv", with: "miu")
         switch lower {
@@ -4961,6 +4963,7 @@ enum LabReportAIDiagnostics {
     }
 }
 
+#if DEBUG
 @available(iOS 27.0, *)
 enum LabReportFoundationModelDiagnostics {
     static func logStartup() {
@@ -4995,6 +4998,7 @@ enum LabReportFoundationModelDiagnostics {
         }
     }
 }
+#endif
 #endif
 
 private extension LabReportSourceKind {

@@ -124,6 +124,7 @@ enum LabReportOCRFallbackSelfTest {
             (.estradiol, 100, "pg/mL", 100),
             (.estradiol, 100, "pg per mL", 100),
             (.estradiol, 100, "pg／mL", 100),
+            (.estradiol, 100, "pg/m1", 100),
             (.estradiol, 100, "ng/L", 100),
             (.estradiol, 0.1, "ng/mL", 100),
             (.estradiol, 367.129, "pmol/L", 100),
@@ -191,6 +192,15 @@ enum LabReportOCRFallbackSelfTest {
         )
         if contradictory.calibrationMeasurement != nil {
             failures.append("stale legacy unit overrode an unsupported raw unit")
+        }
+
+        let activityUnitOCR = HormoneLabResultParser.parseReport(
+            "Prolactin 168.12 mlU/L 102-496",
+            sourceKind: .pastedText,
+            defaultHormone: .estradiol
+        )
+        if activityUnitOCR.analytes.first(where: { $0.kind == .prolactin })?.unitSymbol != "mIU/L" {
+            failures.append("activity unit OCR l/I confusion was not repaired")
         }
 
         let legacyPreciseValue = 123.456789012345
