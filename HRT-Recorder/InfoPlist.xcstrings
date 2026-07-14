@@ -1,0 +1,254 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "comment": "Bundle display name",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HRT Recorder"
+          }
+        }
+      }
+    },
+    "CFBundleName": {
+      "comment": "Bundle name",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "HRT-Recorder"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "comment": "Privacy - Camera Usage Description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hormonlaborberichte scannen und Messwerte direkt auf dem Gerät extrahieren."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan hormone lab reports and extract test result values on device."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escanea informes hormonales y extrae los valores de los análisis en el dispositivo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scannez des bilans hormonaux et extrayez les résultats sur l’appareil."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ホルモン検査レポートをスキャンし、検査値をデバイス上で抽出します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描激素检验报告并在设备上提取检验结果。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "掃描荷爾蒙檢驗報告並在裝置上擷取檢驗結果。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호르몬 검사 보고서를 스캔하고 기기에서 검사 결과 값을 추출합니다."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "สแกนรายงานผลตรวจฮอร์โมนและแยกค่าผลตรวจบนอุปกรณ์"
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription": {
+      "comment": "Privacy - Health Share Usage Description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liest Körpergewicht, freigegebene Medikamente und Dosisereignisse, um lokale HRT-Pläne und Erinnerungen anzuzeigen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read body weight, authorized medications, and medication dose events to review local HRT plans and reminders."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lee el peso, los medicamentos autorizados y los registros de dosis para consultar planes y recordatorios de THS locales."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lisez le poids, les médicaments autorisés et les prises afin d’afficher vos plans de THS et rappels locaux."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体重、許可した薬剤、投薬記録を読み取り、ローカルのHRTプランとリマインダーを確認します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取体重、已授权的用药和给药记录，以查看本地 HRT 计划与提醒。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀取體重、已授權的用藥和給藥記錄，以查看本機 HRT 計畫與提醒。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 HRT 계획과 알림을 확인하기 위해 체중, 허용된 약물 및 투여 기록을 읽습니다."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "อ่านน้ำหนักตัว ยาที่อนุญาต และเหตุการณ์การใช้ยา เพื่อทบทวนแผน HRT และการแจ้งเตือนภายในเครื่อง"
+          }
+        }
+      }
+    },
+    "NSHealthUpdateUsageDescription": {
+      "comment": "Privacy - Health Update Usage Description",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speichert dein Körpergewicht in Health, wenn du dein lokales Gewicht aktuell halten möchtest."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write body weight to Health when you choose to keep your local weight up to date."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guarda tu peso en Salud cuando elijas mantener actualizado el peso local."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrez votre poids dans Santé lorsque vous choisissez de maintenir votre poids local à jour."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの体重を最新に保つことを選んだ場合、体重をヘルスケアに書き込みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当你选择保持本地体重最新时，将体重写入“健康”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "當你選擇保持本機體重最新時，將體重寫入「健康」。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 체중을 최신 상태로 유지하도록 선택한 경우 체중을 건강 앱에 기록합니다."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เขียนน้ำหนักตัวไปยัง Health เมื่อคุณเลือกให้ข้อมูลน้ำหนักภายในแอปเป็นปัจจุบัน"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.1"
+}

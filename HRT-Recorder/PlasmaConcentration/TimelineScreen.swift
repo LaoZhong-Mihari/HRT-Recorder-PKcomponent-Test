@@ -833,6 +833,18 @@ private struct HRTProfileSelectionView: View {
             } footer: {
                 Text("You can change this later in Settings. Existing lab reports are not changed.")
             }
+
+            Section {
+                Label {
+                    Text("HRT Recorder is a personal record and estimation tool. It does not diagnose conditions, recommend treatment, calculate a prescribed dose, or replace a qualified clinician. Check with a healthcare professional before making medical decisions. Not for emergencies.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "cross.case")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            }
         }
         .navigationTitle("HRT Profile")
         .navigationBarTitleDisplayMode(.inline)
@@ -925,12 +937,34 @@ private enum ProjectCreditsLinks {
     static let transmtfWeb = URL(string: "https://hrt.transmtf.com")!
     static let oyamaRepo = URL(string: "https://github.com/SmirnovaOyama/Oyama-s-HRT-Tracker")!
     static let oyamaWeb = URL(string: "https://hrt.mahiro.uk")!
+    static let privacyPolicy = URL(string: "https://laozhong-mihari.github.io/hrt-recorder-site/privacy.html")!
+    static let methodology = URL(string: "https://github.com/LaoZhong-Mihari/HRT-Recorder-PKcomponent-Test/blob/main/README.md")!
     static let contact = URL(string: "mailto:mihari.suki@icloud.com")!
 }
 
 private struct ProjectCreditsView: View {
     var body: some View {
         List {
+            Section {
+                Text("HRT Recorder is a personal record and estimation tool. It does not diagnose conditions, recommend treatment, calculate a prescribed dose, or replace a qualified clinician. Check with a healthcare professional before making medical decisions. Not for emergencies.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.privacyPolicy,
+                    title: NSLocalizedString("Privacy Policy", comment: "Privacy policy link label"),
+                    subtitle: ProjectCreditsLinks.privacyPolicy.absoluteString
+                )
+
+                ExternalLinkButton(
+                    destination: ProjectCreditsLinks.methodology,
+                    title: NSLocalizedString("Data & Methodology", comment: "PK methodology link label"),
+                    subtitle: ProjectCreditsLinks.methodology.absoluteString
+                )
+            } header: {
+                Text("Safety & Privacy")
+            }
+
             Section {
                 ExternalLinkButton(
                     destination: ProjectCreditsLinks.algorithm,

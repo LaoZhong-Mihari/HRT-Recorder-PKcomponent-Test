@@ -1,0 +1,18 @@
+"Record a dose in ${applicationName}" = "在 ${applicationName} 记录一次用药";
+"Log my dose in ${applicationName}" = "用 ${applicationName} 记录我的用药";
+"Record my dosing in ${applicationName}" = "在 ${applicationName} 记录我的剂量";
+"Log dosing in ${applicationName}" = "用 ${applicationName} 记录剂量";
+"Record ${dosePhrase} in ${applicationName}" = "在 ${applicationName} 记录 ${dosePhrase}";
+"Log ${dosePhrase} in ${applicationName}" = "用 ${applicationName} 记录 ${dosePhrase}";
+"在 ${applicationName} 记录用药" = "在 ${applicationName} 记录用药";
+"在 ${applicationName} 记录 ${dosePhrase}" = "在 ${applicationName} 记下 ${dosePhrase}";
+
+"Record a planned dose in ${applicationName}" = "在 ${applicationName} 记录计划用药";
+"Log my planned dose in ${applicationName}" = "用 ${applicationName} 记录我的计划用药";
+"在 ${applicationName} 记录计划用药" = "在 ${applicationName} 记下计划用药";
+
+"Check my hormone level in ${applicationName}" = "在 ${applicationName} 查看我的激素水平";
+"Get my hormone concentration in ${applicationName}" = "用 ${applicationName} 查看我的激素浓度";
+"What's my ${hormone} level in ${applicationName}" = "在 ${applicationName} 查看我的 ${hormone} 水平";
+"Check ${hormone} level in ${applicationName}" = "用 ${applicationName} 查看 ${hormone} 水平";
+"用 ${applicationName} 查看激素浓度" = "用 ${applicationName} 查看激素浓度";

@@ -1,0 +1,11 @@
+{
+  "name": "HRT-Recorder",
+  "subtitle": "HRT 用药、化验与趋势",
+  "promotionalText": "私密记录 HRT 用药、化验结果、提醒和 E2/T 估算趋势。支持 Siri、快捷指令、小组件与 Apple Watch；无需账户、无广告、不跟踪。",
+  "description": "在一个私密空间中管理你的 HRT 时间线。\n\nHRT Recorder 可帮助你记录用药、化验结果和提醒，并查看雌二醇或睾酮的估算趋势。无需注册账户，记录保存在你的设备上。\n\n主要功能\n• 记录注射剂、贴剂、凝胶、口服及舌下途径的雌二醇和睾酮用药。\n• 在时间线上保留仅用于记录的抗雄激素提醒。\n• 通过平滑、自适应的图表查看估算 PK 曲线、AUC 和趋势。\n• 在设备端扫描激素化验报告，保留原始数值和单位，并只将符合条件的 E2/T 结果换算后用于校准。\n• 使用 Siri、快捷指令、小组件或 Apple Watch 记录用药。\n• 创建用药计划和本地提醒。\n• 经你选择和授权后，从“健康”App 读取支持的用药记录与体重，并写入体重。\n\n隐私优先\n无需登录，没有广告或第三方分析。HRT Recorder 不使用由开发者运营的数据服务器。只有获得你的许可后才会访问健康数据。\n\n重要提示\nPK 曲线和校准数值均为信息性估算。HRT Recorder 不会诊断疾病、推荐治疗、计算处方剂量，也不能替代专业医务人员。做出医疗决定前请咨询医务人员。本应用不适用于紧急情况。",
+  "keywords": "雌二醇,睾酮检测,用药记录,化验报告,服药提醒,药代动力学,跨性别",
+  "whatsNew": "• 现在可通过 Siri 和快捷指令记录用药，追问与确认流程更加清晰。\n• 可选择雌二醇（E2）或睾酮（T）HRT 类型，用于记录、曲线和校准。\n• 改进化验报告扫描：保留原始数值与单位，只换算符合条件的 E2/T 结果用于校准。\n• 时间线更加流畅：Y 轴自适应缩放、范围变化动画、稳定的游标信息框，以及更好的滑动性能。\n• 小组件曲线更清晰，并可设置当前时间前后显示的小时范围。\n• 优化贴近系统的界面，修复深色/浅色模式问题，并改进 iOS 18 及以上版本的兼容性。\n• 新增法语、德语、西班牙语、日语、韩语和泰语，并完善简体中文与繁体中文。",
+  "supportURL": "https://laozhong-mihari.github.io/hrt-recorder-site/support.html",
+  "marketingURL": "https://laozhong-mihari.github.io/hrt-recorder-site/",
+  "privacyPolicyURL": "https://laozhong-mihari.github.io/hrt-recorder-site/privacy.html"
+}

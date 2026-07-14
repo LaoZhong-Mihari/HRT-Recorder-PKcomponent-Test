@@ -1,0 +1,18 @@
+"Record a dose in ${applicationName}" = "Enregistrer une dose dans ${applicationName}";
+"Log my dose in ${applicationName}" = "Consigner ma dose dans ${applicationName}";
+"Record my dosing in ${applicationName}" = "Enregistrer ma prise dans ${applicationName}";
+"Log dosing in ${applicationName}" = "Consigner la prise dans ${applicationName}";
+"Record ${dosePhrase} in ${applicationName}" = "Enregistrer ${dosePhrase} dans ${applicationName}";
+"Log ${dosePhrase} in ${applicationName}" = "Consigner ${dosePhrase} avec ${applicationName}";
+"在 ${applicationName} 记录用药" = "Enregistrer le médicament dans ${applicationName}";
+"在 ${applicationName} 记录 ${dosePhrase}" = "Ajouter ${dosePhrase} dans ${applicationName}";
+
+"Record a planned dose in ${applicationName}" = "Enregistrer une dose prévue dans ${applicationName}";
+"Log my planned dose in ${applicationName}" = "Consigner ma dose prévue dans ${applicationName}";
+"在 ${applicationName} 记录计划用药" = "Ajouter une dose planifiée dans ${applicationName}";
+
+"Check my hormone level in ${applicationName}" = "Consulter mon taux hormonal dans ${applicationName}";
+"Get my hormone concentration in ${applicationName}" = "Afficher ma concentration hormonale dans ${applicationName}";
+"What's my ${hormone} level in ${applicationName}" = "Afficher mon taux de ${hormone} dans ${applicationName}";
+"Check ${hormone} level in ${applicationName}" = "Consulter le taux de ${hormone} dans ${applicationName}";
+"用 ${applicationName} 查看激素浓度" = "Afficher la concentration hormonale dans ${applicationName}";

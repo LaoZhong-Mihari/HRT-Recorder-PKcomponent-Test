@@ -1,0 +1,18 @@
+"Record a dose in ${applicationName}" = "${applicationName}에서 용량 기록하기";
+"Log my dose in ${applicationName}" = "${applicationName}에 내 용량 기록하기";
+"Record my dosing in ${applicationName}" = "${applicationName}에 내 투여 기록 남기기";
+"Log dosing in ${applicationName}" = "${applicationName}에 투여 기록 남기기";
+"Record ${dosePhrase} in ${applicationName}" = "${applicationName}에 ${dosePhrase} 기록하기";
+"Log ${dosePhrase} in ${applicationName}" = "${applicationName}에 ${dosePhrase} 기록 남기기";
+"在 ${applicationName} 记录用药" = "${applicationName}에 복약 기록하기";
+"在 ${applicationName} 记录 ${dosePhrase}" = "${applicationName}에 ${dosePhrase} 남기기";
+
+"Record a planned dose in ${applicationName}" = "${applicationName}에 예정 용량 기록하기";
+"Log my planned dose in ${applicationName}" = "${applicationName}에 내 예정 용량 기록하기";
+"在 ${applicationName} 记录计划用药" = "${applicationName}에 예정된 복약 기록하기";
+
+"Check my hormone level in ${applicationName}" = "${applicationName}에서 내 호르몬 수치 확인하기";
+"Get my hormone concentration in ${applicationName}" = "${applicationName}에서 내 호르몬 농도 확인하기";
+"What's my ${hormone} level in ${applicationName}" = "${applicationName}에서 내 ${hormone} 수치 확인하기";
+"Check ${hormone} level in ${applicationName}" = "${applicationName}에서 ${hormone} 수치 확인하기";
+"用 ${applicationName} 查看激素浓度" = "${applicationName}에서 호르몬 농도 확인하기";
